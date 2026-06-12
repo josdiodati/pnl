@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isDomainError, isForbidden, DomainError } from '@/lib/errors';
 import { crearAsientoManual, crearVentaManual, generarRecurrentes } from '@/lib/movimientos/service';
-import { getFileStorage, sha256 } from '@/lib/storage';
+import { getFileStorage } from '@/lib/storage';
 import { writeAudit } from '@/lib/audit';
 
 function aNumero(v: FormDataEntryValue | null): number | null {
@@ -45,7 +45,6 @@ async function guardarAdjunto(formData: FormData, empresaId: string) {
     mime: archivo.type || 'application/octet-stream',
     empresaId,
   });
-  void sha256;
   return { key, nombre: archivo.name, mime: archivo.type || 'application/octet-stream', hash };
 }
 

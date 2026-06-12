@@ -13,13 +13,14 @@ import type { DocumentExtractor, ExtractorInput } from './index';
 // A filename containing "error" forces a failure, to exercise retries and the
 // ERROR_PROCESAMIENTO path.
 
-// Valid CUITs (correct check digit) used for hash-derived data.
+// Valid CUITs (correct check digit) used for hash-derived data; they match
+// some of the seed contrapartes so uploads auto-match the master.
 const CUITS_DEMO = [
-  '30715095966', // matches seed contrapartes
-  '30714325650',
-  '20128364849',
-  '27234567892',
+  '30714325651',
+  '20128364847',
+  '27234567891',
   '30500010912',
+  '30700000008',
 ];
 
 function hashInt(buffer: Buffer, salt: string): number {
