@@ -50,15 +50,15 @@ export function UploadZone({ empresaSlug }: { empresaSlug: string }) {
           enviar(e.dataTransfer.files, 'WEB');
         }}
         onClick={() => inputRef.current?.click()}
-        className={`cursor-pointer rounded-lg border-2 border-dashed p-10 text-center transition-colors ${
-          arrastrando ? 'border-slate-500 bg-slate-50' : 'border-slate-300 bg-white'
+        className={`cursor-pointer rounded-lg border-2 border-dashed p-12 text-center transition-colors ${
+          arrastrando ? 'border-accent bg-accent-soft/50' : 'border-line bg-surface'
         }`}
       >
-        <p className="text-lg font-medium text-slate-700">
+        <p className="font-display text-xl font-semibold text-ink">
           {subiendo ? 'Subiendo…' : 'Arrastrá tus comprobantes acá'}
         </p>
-        <p className="text-sm text-slate-500 mt-1">PDF, JPG, PNG o WEBP · podés soltar muchos a la vez · 1 archivo = 1 comprobante</p>
-        <p className="text-sm text-slate-400 mt-1">o hacé click para elegirlos</p>
+        <p className="text-sm text-ink-mute mt-1">PDF, JPG, PNG o WEBP · podés soltar muchos a la vez · 1 archivo = 1 comprobante</p>
+        <p className="text-sm text-ink-mute/70 mt-1">o hacé click para elegirlos</p>
       </div>
 
       <input
@@ -88,13 +88,13 @@ export function UploadZone({ empresaSlug }: { empresaSlug: string }) {
         <button type="button" onClick={() => fotoRef.current?.click()} className="btn-secondary" disabled={subiendo}>
           📷 Sacar foto del comprobante
         </button>
-        {subiendo && <span className="text-sm text-slate-500">Procesando archivos…</span>}
+        {subiendo && <span className="text-sm text-ink-mute">Procesando archivos…</span>}
       </div>
 
       {resultado && (
         <div className="mt-3 space-y-1">
           {resultado.ok > 0 && (
-            <p className="text-sm text-emerald-700">
+            <p className="text-sm text-accent-strong">
               {resultado.ok} comprobante{resultado.ok !== 1 ? 's' : ''} ingresado{resultado.ok !== 1 ? 's' : ''} al pipeline.
               El worker los está procesando.
             </p>

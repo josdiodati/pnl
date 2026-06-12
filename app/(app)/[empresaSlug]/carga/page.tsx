@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { rolAlcanza } from '@/lib/roles';
 import { UploadZone } from '@/components/upload-zone';
+import { PageHeader } from '@/components/page-header';
 
 // Home: upload + pipeline status cards, always visible (UX spec: the user
 // must always know how many vouchers are waiting on them).
@@ -19,39 +20,48 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
   const conteo = Object.fromEntries(grupos.map((g) => [g.estado, g._count._all]));
 
   const tarjetas = [
-    { estado: 'INGRESADO', label: 'Ingresados', color: 'border-slate-300' },
-    { estado: 'PROCESANDO', label: 'Procesando', color: 'border-blue-300' },
-    { estado: 'PENDIENTE_VALIDACION', label: 'Pendientes de validación', color: 'border-amber-400' },
-    { estado: 'RETENIDO', label: 'Retenidos (mes cerrado)', color: 'border-orange-400' },
-    { estado: 'OBSERVADO', label: 'Observados', color: 'border-purple-400' },
-    { estado: 'ERROR_PROCESAMIENTO', label: 'Errores', color: 'border-red-400' },
+    { estado: 'INGRESADO', label: 'Ingresados', acento: 'border-t-ink-mute/40' },
+    { estado: 'PROCESANDO', label: 'Procesando', acento: 'border-t-sky-400' },
+    { estado: 'PENDIENTE_VALIDACION', label: 'Pendientes de validación', acento: 'border-t-amber-400' },
+    { estado: 'RETENIDO', label: 'Retenidos (mes cerrado)', acento: 'border-t-orange-400' },
+    { estado: 'OBSERVADO', label: 'Observados', acento: 'border-t-violet-400' },
+    { estado: 'ERROR_PROCESAMIENTO', label: 'Errores', acento: 'border-t-red-400' },
   ];
 
   const destino = (estado: string) =>
-    esValidador && estado !== 'INGRESADO' && estado !== 'PROCESANDO'
+    esValidador && !['INGRESADO', 'PROCESANDO'].includes(estado)
       ? `/${params.empresaSlug}/validacion?estado=${estado}`
-      : `/${params.empresaSlug}/movimientos?estado=${estado}`;
+      : `/${params.empresaSlug}/comprobantes?estado=${estado}`;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-lg font-semibold mb-3">Carga de comprobantes</h1>
+    <div>
+      <PageHeader
+        titulo="Carga de comprobantes"
+        descripcion="Arrastrá facturas en PDF o foto y el pipeline hace el resto: OCR, checks, ARCA y cola de validación."
+      />
+
+      <div className="reveal reveal-2">
         <UploadZone empresaSlug={params.empresaSlug} />
       </div>
 
-      <div>
-        <h2 className="text-sm font-semibold text-slate-600 mb-2">Estado del pipeline</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="reveal reveal-3 mt-8">
+        <h2 className="label !text-[12px] mb-3">Estado del pipeline</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
           {tarjetas.map((t) => (
-            <Link key={t.estado} href={destino(t.estado)} className={`card border-t-4 ${t.color} p-4 hover:shadow`}>
-              <p className="text-2xl font-semibold tabular-nums">{conteo[t.estado] ?? 0}</p>
-              <p className="text-xs text-slate-500 mt-1">{t.label}</p>
+            <Link
+              key={t.estado}
+              href={destino(t.estado)}
+              className={`card border-t-[3px] ${t.acento} p-4 transition-all hover:shadow-lift hover:-translate-y-0.5`}
+            >
+              <p className="font-mono text-[26px] font-semibold leading-none tabular-nums">{conteo[t.estado] ?? 0}</p>
+              <p className="mt-2 text-[11.5px] text-ink-mute leading-tight">{t.label}</p>
             </Link>
           ))}
         </div>
-        <p className="text-xs text-slate-400 mt-2">
-          Los comprobantes también pueden entrar por email y Telegram (configuración → canales). Recordá tener el
-          worker corriendo (<code className="bg-slate-100 px-1 rounded">npm run worker</code>) para que se procesen.
+        <p className="mt-3 text-xs text-ink-mute/80">
+          Los comprobantes también entran por <strong>email</strong> y <strong>Telegram</strong> (Configuración →
+          canales). El worker (<code className="rounded bg-line/50 px-1 font-mono text-[11px]">npm run worker</code>)
+          tiene que estar corriendo para procesarlos.
         </p>
       </div>
     </div>

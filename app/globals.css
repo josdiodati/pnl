@@ -2,50 +2,152 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   P&L Manager — "Libro mayor" design system
+   Warm paper, green-black ink, ledger-green accent, mono figures.
+   Color is reserved for STATES (validated/review/alert), per spec.
+   ============================================================ */
+
 @layer base {
-  html {
-    @apply text-slate-900;
+  :root {
+    --paper: #f6f4ee;
+    --surface: #fdfcf8;
+    --ink: #1b2420;
+    --accent: #1f6f54;
+    --line: #e3ded2;
   }
+
+  html {
+    @apply text-tinta;
+  }
+
   body {
-    @apply bg-slate-100 antialiased;
+    @apply bg-paper font-sans antialiased;
+    /* faint paper grain */
+    background-image: radial-gradient(rgba(27, 36, 32, 0.025) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  h1, h2, h3 {
+    @apply font-display;
+    font-variation-settings: 'opsz' 40;
+  }
+
+  ::selection {
+    background: rgba(31, 111, 84, 0.18);
+  }
+
+  input[type='date'],
+  input[type='month'] {
+    @apply font-mono text-[13px];
   }
 }
 
 @layer components {
+  /* ---------- Buttons: flat ink & ledger green, hairline borders ---------- */
   .btn {
-    @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
   }
   .btn-primary {
-    @apply btn bg-slate-800 text-white hover:bg-slate-700;
+    @apply btn bg-ink text-paper hover:bg-ink-soft active:translate-y-px;
   }
   .btn-secondary {
-    @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+    @apply btn border border-line bg-surface text-tinta hover:border-ink-mute hover:bg-paper active:translate-y-px;
   }
   .btn-success {
-    @apply btn bg-emerald-700 text-white hover:bg-emerald-600;
+    @apply btn bg-accent text-white hover:bg-accent-strong active:translate-y-px;
   }
   .btn-danger {
-    @apply btn border border-red-300 bg-white text-red-700 hover:bg-red-50;
+    @apply btn border border-red-200 bg-surface text-red-800 hover:bg-red-50 active:translate-y-px;
   }
+
+  /* ---------- Inputs ---------- */
   .input {
-    @apply w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400;
+    @apply w-full rounded border border-line bg-surface px-2.5 py-1.5 text-sm text-tinta placeholder:text-ink-mute/60 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors;
   }
   .label {
-    @apply block text-xs font-medium text-slate-600 mb-1;
+    @apply block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-mute mb-1;
   }
+
+  /* ---------- Surfaces ---------- */
   .card {
-    @apply rounded-lg border border-slate-200 bg-white shadow-sm;
+    @apply rounded-lg border border-line bg-surface shadow-card;
   }
+
+  /* Double-rule ledger ornament under page titles */
+  .rule-doble {
+    @apply block h-[3px] w-12 mt-2;
+    border-top: 1px solid var(--ink);
+    border-bottom: 1px solid var(--ink);
+  }
+
+  .titulo-pagina {
+    @apply font-display text-2xl font-semibold tracking-tight text-ink;
+  }
+
+  /* ---------- Tables: ruled like a ledger ---------- */
   .table-base {
     @apply w-full text-sm;
   }
   .table-base th {
-    @apply px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200 bg-slate-50;
+    @apply px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-mute border-b-2 border-ink/15 bg-surface;
   }
   .table-base td {
-    @apply px-3 py-2 border-b border-slate-100 align-top;
+    @apply px-3 py-2 border-b border-line align-top;
+  }
+  .table-base tbody tr {
+    @apply transition-colors;
+  }
+  .table-base tbody tr:hover {
+    background: rgba(31, 111, 84, 0.045);
   }
   .num {
-    @apply text-right tabular-nums whitespace-nowrap;
+    @apply text-right whitespace-nowrap font-mono text-[13px] tabular-nums;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .nav-seccion {
+    @apply px-4 pt-5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-paper/35 select-none;
+  }
+  .nav-item {
+    @apply relative flex items-center gap-2.5 mx-2 px-3 py-[7px] rounded text-[13.5px] text-paper/70 hover:text-paper hover:bg-white/5 transition-colors;
+  }
+  .nav-item-activo {
+    @apply text-paper bg-white/[0.07];
+  }
+  .nav-item-activo::before {
+    content: '';
+    @apply absolute left-[-8px] top-1.5 bottom-1.5 w-[3px] rounded-full bg-accent;
+  }
+  .nav-futuro {
+    @apply text-paper/35 hover:text-paper/60;
+  }
+
+  /* ---------- Page-load reveal (staggered) ---------- */
+  .reveal {
+    opacity: 0;
+    animation: reveal-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  .reveal-1 { animation-delay: 0.03s; }
+  .reveal-2 { animation-delay: 0.09s; }
+  .reveal-3 { animation-delay: 0.15s; }
+  .reveal-4 { animation-delay: 0.21s; }
+}
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    animation: none;
+    opacity: 1;
   }
 }
