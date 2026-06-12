@@ -1,0 +1,372 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity & multi-company ----------
+
+model Usuario {
+  id           String           @id @default(cuid())
+  email        String           @unique
+  passwordHash String
+  nombre       String
+  empresas     UsuarioEmpresa[]
+  movimientosCreados   Movimiento[] @relation("creadoPor")
+  movimientosValidados Movimiento[] @relation("validadoPor")
+  createdAt    DateTime         @default(now())
+}
+
+model Empresa {
+  id                    String           @id @default(cuid())
+  slug                  String           @unique // used in URL, inbound email and telegram linking
+  razonSocial           String
+  cuit                  String
+  inicioEjercicioFiscal Int              @default(7) // month 1-12, default July
+  logoKey               String?
+  telegramCodigoVinculo String?          @unique // one-time-ish linking code shown in config screen
+  usuarios              UsuarioEmpresa[]
+  invitaciones          Invitacion[]
+  categorias            Categoria[]
+  centrosCosto          CentroCosto[]
+  clientesProyectos     ClienteProyecto[]
+  contrapartes          Contraparte[]
+  plantillasDistribucion PlantillaDistribucion[]
+  plantillasRecurrentes PlantillaRecurrente[]
+  movimientos           Movimiento[]
+  periodos              Periodo[]
+  auditLogs             AuditLog[]
+  telegramVinculos      TelegramVinculo[]
+  createdAt             DateTime         @default(now())
+}
+
+enum Rol {
+  CARGADOR
+  VALIDADOR
+  ADMINISTRADOR
+}
+
+model UsuarioEmpresa {
+  id        String  @id @default(cuid())
+  usuarioId String
+  empresaId String
+  rol       Rol
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([usuarioId, empresaId])
+}
+
+model Invitacion {
+  id        String   @id @default(cuid())
+  empresaId String
+  email     String
+  rol       Rol
+  token     String   @unique
+  aceptada  Boolean  @default(false)
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+// ---------- Masters (all scoped by empresa) ----------
+
+enum TipoCategoria {
+  INGRESO
+  EGRESO
+}
+
+model Categoria {
+  id        String        @id @default(cuid())
+  empresaId String
+  nombre    String
+  tipo      TipoCategoria
+  padreId   String? // hierarchy, max 2 levels
+  activa    Boolean       @default(true)
+  empresa   Empresa       @relation(fields: [empresaId], references: [id])
+  padre     Categoria?    @relation("jerarquia", fields: [padreId], references: [id])
+  hijas     Categoria[]   @relation("jerarquia")
+  movimientos Movimiento[]
+
+  @@unique([empresaId, nombre])
+}
+
+enum TipoCentroCosto {
+  NEGOCIO
+  SOPORTE
+}
+
+model CentroCosto {
+  id        String          @id @default(cuid())
+  empresaId String
+  nombre    String
+  tipo      TipoCentroCosto
+  activo    Boolean         @default(true)
+  empresa   Empresa         @relation(fields: [empresaId], references: [id])
+  lineas    MovimientoLinea[]
+  plantillaLineas PlantillaDistribucionLinea[]
+
+  @@unique([empresaId, nombre])
+}
+
+// Second analysis dimension (optional per line)
+model ClienteProyecto {
+  id        String  @id @default(cuid())
+  empresaId String
+  nombre    String
+  codigo    String?
+  activo    Boolean @default(true)
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  lineas    MovimientoLinea[]
+  plantillaLineas PlantillaDistribucionLinea[]
+
+  @@unique([empresaId, nombre])
+}
+
+enum TipoContraparte {
+  PROVEEDOR
+  CLIENTE
+  AMBOS
+}
+
+model Contraparte {
+  id                      String          @id @default(cuid())
+  empresaId               String
+  cuit                    String
+  razonSocial             String
+  tipo                    TipoContraparte
+  condicionIva            String?
+  categoriaDefaultId      String?
+  distribucionDefaultId   String? // default distribution template
+  instruccionesExtraccion String? // recurring corrections, injected into the LLM prompt
+  activa                  Boolean         @default(true)
+  empresa                 Empresa         @relation(fields: [empresaId], references: [id])
+  movimientos             Movimiento[]
+
+  @@unique([empresaId, cuit])
+}
+
+// Reusable distribution template (e.g. "Alquiler 60/30/10")
+model PlantillaDistribucion {
+  id        String                       @id @default(cuid())
+  empresaId String
+  nombre    String
+  empresa   Empresa                      @relation(fields: [empresaId], references: [id])
+  lineas    PlantillaDistribucionLinea[]
+
+  @@unique([empresaId, nombre])
+}
+
+model PlantillaDistribucionLinea {
+  id                String                @id @default(cuid())
+  plantillaId       String
+  centroCostoId     String
+  clienteProyectoId String?
+  porcentaje        Decimal               @db.Decimal(7, 4) // lines must sum 100
+  plantilla         PlantillaDistribucion @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
+  centroCosto       CentroCosto           @relation(fields: [centroCostoId], references: [id])
+  clienteProyecto   ClienteProyecto?      @relation(fields: [clienteProyectoId], references: [id])
+}
+
+// Recurring template (repeated monthly entry: legal fees, salaries, ...)
+model PlantillaRecurrente {
+  id              String   @id @default(cuid())
+  empresaId       String
+  nombre          String
+  categoriaId     String
+  importeSugerido Decimal  @db.Decimal(18, 2)
+  descripcion     String?
+  diaDelMes       Int      @default(1)
+  distribucionId  String? // associated distribution template
+  // If true, "generate month" copies the amount validated for this template the previous month
+  usarImporteMesAnterior Boolean @default(false)
+  activa          Boolean  @default(true)
+  empresa         Empresa  @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, nombre])
+}
+
+// ---------- Movements ----------
+
+enum OrigenMovimiento {
+  COMPROBANTE
+  ASIENTO_MANUAL
+  VENTA_MANUAL
+}
+
+enum EstadoMovimiento {
+  INGRESADO
+  PROCESANDO
+  PENDIENTE_VALIDACION
+  RETENIDO
+  OBSERVADO
+  VALIDADO
+  ANULADO
+  ERROR_PROCESAMIENTO
+}
+
+enum Moneda {
+  ARS
+  USD
+  EUR
+  OTRA
+}
+
+model Movimiento {
+  id                 String           @id @default(cuid())
+  empresaId          String
+  origen             OrigenMovimiento
+  estado             EstadoMovimiento @default(INGRESADO)
+  fechaDevengamiento DateTime? // accrual month (date of the voucher)
+  categoriaId        String?
+  contraparteId      String?
+  descripcion        String?
+  moneda             Moneda           @default(ARS)
+
+  // Amounts (positive; accounting sign derives from categoria + tipoComprobante)
+  netoGravado      Decimal? @db.Decimal(18, 2)
+  iva21            Decimal? @db.Decimal(18, 2)
+  iva105           Decimal? @db.Decimal(18, 2)
+  iva27            Decimal? @db.Decimal(18, 2)
+  percepcionesIva  Decimal? @db.Decimal(18, 2)
+  percepcionesIibb Decimal? @db.Decimal(18, 2)
+  otrosTributos    Decimal? @db.Decimal(18, 2)
+  noGravadoExento  Decimal? @db.Decimal(18, 2)
+  total            Decimal? @db.Decimal(18, 2)
+
+  // Voucher data
+  cuitEmisor      String? // extracted issuer CUIT, used for duplicate detection before matching
+  tipoComprobante String?
+  puntoVenta      String?
+  numero          String?
+  cae             String?
+  vencimientoCae  DateTime?
+
+  // OCR / file
+  archivoKey    String?
+  archivoNombre String?
+  archivoMime   String?
+  archivoHash   String?
+  extraccionRaw Json? // raw JSON returned by the LLM
+  camposRevisar Json? // which fields ended up flagged REVISAR
+  confianza     Json? // per-field confidence when available
+
+  // ARCA
+  arcaEstado       String    @default("NO_VERIFICADO") // NO_VERIFICADO|VALIDO|INVALIDO|ERROR_CONSULTA
+  arcaDetalle      String?
+  arcaConsultadoAt DateTime?
+
+  // Assignment (double dimension, percentage split)
+  lineas MovimientoLinea[]
+
+  flags           Json? // future metadata (e.g. recurring template id, pending "I/O" flag)
+  periodoId       String?
+  creadoPorId     String
+  validadoPorId   String?
+  motivoAnulacion String?
+  canalIngreso    String? // WEB | FOTO | EMAIL | TELEGRAM | MANUAL
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  empresa     Empresa      @relation(fields: [empresaId], references: [id])
+  categoria   Categoria?   @relation(fields: [categoriaId], references: [id])
+  contraparte Contraparte? @relation(fields: [contraparteId], references: [id])
+  periodo     Periodo?     @relation(fields: [periodoId], references: [id])
+  creadoPor   Usuario      @relation("creadoPor", fields: [creadoPorId], references: [id])
+  validadoPor Usuario?     @relation("validadoPor", fields: [validadoPorId], references: [id])
+
+  @@index([empresaId, estado])
+  @@index([empresaId, fechaDevengamiento])
+}
+
+enum OrigenLinea {
+  MANUAL
+  PRORRATEO // reserved for the future automatic allocation engine
+}
+
+model MovimientoLinea {
+  id                String      @id @default(cuid())
+  movimientoId      String
+  centroCostoId     String
+  clienteProyectoId String? // second dimension, optional
+  porcentaje        Decimal     @db.Decimal(7, 4) // sum per movement = 100.0000
+  origen            OrigenLinea @default(MANUAL)
+  movimiento        Movimiento  @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
+  centroCosto       CentroCosto @relation(fields: [centroCostoId], references: [id])
+  clienteProyecto   ClienteProyecto? @relation(fields: [clienteProyectoId], references: [id])
+}
+
+// ---------- Periods ----------
+
+enum EstadoPeriodo {
+  ABIERTO
+  CERRADO
+}
+
+model Periodo {
+  id           String        @id @default(cuid())
+  empresaId    String
+  anio         Int
+  mes          Int
+  estado       EstadoPeriodo @default(ABIERTO)
+  cerradoPorId String?
+  cerradoAt    DateTime?
+  empresa      Empresa       @relation(fields: [empresaId], references: [id])
+  movimientos  Movimiento[]
+
+  @@unique([empresaId, anio, mes])
+}
+
+// ---------- Infra ----------
+
+model Job {
+  id             String    @id @default(cuid())
+  empresaId      String?
+  tipo           String // EXTRACCION | ARCA | RECURRENTES | EMAIL_IN | TELEGRAM_IN
+  payload        Json
+  estado         String    @default("queued") // queued|processing|done|failed
+  intentos       Int       @default(0)
+  maxIntentos    Int       @default(3)
+  proximoIntento DateTime?
+  error          String?
+  createdAt      DateTime  @default(now())
+
+  @@index([estado, proximoIntento])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  empresaId String
+  usuarioId String?
+  entidad   String
+  entidadId String
+  accion    String
+  antes     Json?
+  despues   Json?
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([empresaId, createdAt])
+  @@index([empresaId, entidad, entidadId])
+}
+
+// Telegram chat ↔ empresa link (created via /vincular {code})
+model TelegramVinculo {
+  id        String   @id @default(cuid())
+  empresaId String
+  chatId    String   @unique
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+// Webhook idempotency: email message ids / telegram update ids already processed
+model EventoWebhook {
+  id           String   @id @default(cuid())
+  canal        String // EMAIL | TELEGRAM
+  claveExterna String
+  createdAt    DateTime @default(now())
+
+  @@unique([canal, claveExterna])
+}
