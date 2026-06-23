@@ -141,6 +141,12 @@ export default async function ValidacionDetallePage({
                 <dd>{mov.tipoComprobante?.replace(/_/g, ' ') ?? '—'} {mov.puntoVenta ? `${mov.puntoVenta}-` : ''}{mov.numero ?? ''}</dd>
                 <dt className="text-slate-500">Total</dt>
                 <dd className="tabular-nums">{formatMoney(n(mov.total))}</dd>
+                {(mov.estado === 'VALIDADO' || mov.estado === 'ASIGNADO') && (
+                  <>
+                    <dt className="text-slate-500">Validado por</dt>
+                    <dd>{mov.validadoPor?.nombre ?? 'Automático (sistema)'}</dd>
+                  </>
+                )}
                 {mov.motivoAnulacion && (
                   <>
                     <dt className="text-slate-500">Motivo de anulación</dt>
