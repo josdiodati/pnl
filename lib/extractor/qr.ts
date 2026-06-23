@@ -1,31 +1,43 @@
-// Cross-check del QR de AFIP (RG 4892). SOLO verificación: nunca bloquea el
-// pipeline. parseAfipQrUrl es puro y testeable; leerQrAfip es best-effort sobre
-// el PDF (rasteriza la 1ª página y decodifica el QR) y devuelve null ante
-// cualquier fallo, ausencia de QR o falta de dependencia opcional.
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// QR de comprobantes fiscales (RG 4892). AFIP se renombró ARCA: el QR apunta a
+// arca.gob.ar (o afip.gob.ar en comprobantes viejos), ambos válidos.
+//
+// El QR es la fuente AUTORITATIVA del encabezado: trae cuit (emisor), receptor
+// (nroDocRec), importe total, punto de venta, número y CAE (codAut). Se usa para
+// corregir lo que el LLM extrae con ruido (dirección, montos, CUITs).
+//
+// parseAfipQrUrl es puro y testeable. leerQrAfip es best-effort: rasteriza con
+// pdftoppm (poppler-utils) y decodifica con zbarimg (zbar-tools); ante cualquier
+// fallo o ausencia de binarios devuelve null — nunca lanza ni bloquea.
 
 export type QrAfip = {
   ver: number;
   fecha: string;
-  cuit: number;
+  cuit: number; // CUIT del EMISOR
   ptoVta: number;
   tipoCmp: number;
   nroCmp: number;
-  importe: number;
+  importe: number; // total del comprobante
   moneda: string;
   ctz: number;
-  codAut: number;
+  tipoDocRec?: number; // 80 = CUIT
+  nroDocRec?: number; // documento del RECEPTOR
   tipoCodAut: string;
+  codAut: number; // CAE
 };
 
 export function parseAfipQrUrl(url: string): QrAfip | null {
   try {
     const u = new URL(url);
-    if (!/(?:^|\.)afip\.gob\.ar$/i.test(u.hostname)) return null;
+    if (!/(?:^|\.)(afip|arca)\.gob\.ar$/i.test(u.hostname)) return null;
     const p = u.searchParams.get('p');
     if (!p) return null;
-    const json = Buffer.from(p, 'base64').toString('utf8');
-    const data = JSON.parse(json);
-    if (typeof data?.cuit !== 'number' || typeof data?.codAut !== 'number') return null;
+    const data = JSON.parse(Buffer.from(p, 'base64').toString('utf8'));
+    if (typeof data?.cuit !== 'number') return null;
     return data as QrAfip;
   } catch {
     return null;
@@ -33,28 +45,33 @@ export function parseAfipQrUrl(url: string): QrAfip | null {
 }
 
 export async function leerQrAfip(buffer: Buffer): Promise<QrAfip | null> {
+  const dir = mkdtempSync(join(tmpdir(), 'qr-'));
   try {
-    const url = await decodificarQrDesdePdf(buffer);
-    return url ? parseAfipQrUrl(url) : null;
+    const pdf = join(dir, 'in.pdf');
+    writeFileSync(pdf, buffer);
+    // Rasteriza las 2 primeras páginas (el QR suele estar en la 1ª) a 300 dpi.
+    execFileSync('pdftoppm', ['-png', '-r', '300', '-f', '1', '-l', '2', pdf, join(dir, 'p')], { stdio: 'ignore' });
+    for (const png of readdirSync(dir).filter((f) => f.endsWith('.png'))) {
+      let out = '';
+      try {
+        out = execFileSync('zbarimg', ['--raw', '-q', join(dir, png)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      } catch (e) {
+        // zbarimg sale con código 4 cuando no encuentra símbolos; igual capturamos stdout.
+        out = String((e as { stdout?: unknown })?.stdout ?? '');
+      }
+      const line = out
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => /\/fe\/qr\/\?p=/.test(l));
+      if (line) {
+        const q = parseAfipQrUrl(line);
+        if (q) return q;
+      }
+    }
+    return null;
   } catch {
     return null;
-  }
-}
-
-// Rasteriza la 1ª página y busca un QR. Aislado y best-effort: si la dependencia
-// de decodificación no está disponible, devuelve null sin romper.
-async function decodificarQrDesdePdf(buffer: Buffer): Promise<string | null> {
-  try {
-    const { getDocumentProxy, renderPageAsImage } = await import('unpdf');
-    const doc = await getDocumentProxy(new Uint8Array(buffer));
-    const png = await renderPageAsImage(doc, 1, { scale: 2 });
-    if (!png) return null;
-    const jsqr = (await import('jsqr')).default;
-    const { decodePngToRgba } = await import('./png');
-    const { data, width, height } = await decodePngToRgba(Buffer.from(png as ArrayBuffer));
-    const result = jsqr(new Uint8ClampedArray(data), width, height);
-    return result?.data ?? null;
-  } catch {
-    return null;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 }

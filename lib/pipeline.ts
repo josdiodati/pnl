@@ -98,16 +98,32 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     instrucciones,
   });
 
-  const cuit = extraccion.cuitEmisor ? normalizarCuit(extraccion.cuitEmisor) : null;
   const camposRevisar = evaluarCampos(extraccion);
 
-  // Dirección: venta (emisor = empresa) vs compra (emisor tercero)
+  // El QR de ARCA/AFIP es la fuente AUTORITATIVA del encabezado cuando existe (trae
+  // emisor, receptor, importe, PV, nro y CAE). El LLM queda como fallback y para lo
+  // que el QR no trae (líneas, desglose de IVA). Best-effort: no bloquea si falta.
+  const qrAfip = mov.archivoMime === 'application/pdf' ? await leerQrAfip(buffer) : null;
+
   // Empresa no es un modelo scoped por empresa (ver SCOPED_MODELS en lib/empresa/scope.ts)
   // y el lookup es por su propia PK (el id del tenant, seteado server-side): no hay riesgo
   // cross-tenant. Usamos el cliente global `prisma`, igual que el resto de pipeline.ts.
   const empresa = await prisma.empresa.findUnique({ where: { id: payload.empresaId } });
   const cuitEmpresa = empresa?.cuit ? normalizarCuit(empresa.cuit) : null;
-  const cuitReceptor = extraccion.cuitReceptor ? normalizarCuit(extraccion.cuitReceptor) : null;
+
+  // Campos de encabezado: QR manda; si no hay QR, el LLM.
+  const cuit = qrAfip ? String(qrAfip.cuit) : extraccion.cuitEmisor ? normalizarCuit(extraccion.cuitEmisor) : null;
+  const cuitReceptor =
+    qrAfip && qrAfip.tipoDocRec === 80 && qrAfip.nroDocRec
+      ? String(qrAfip.nroDocRec)
+      : extraccion.cuitReceptor
+        ? normalizarCuit(extraccion.cuitReceptor)
+        : null;
+  const totalFinal = qrAfip ? qrAfip.importe : extraccion.total;
+  const caeFinal = qrAfip ? String(qrAfip.codAut) : extraccion.cae;
+  const puntoVentaFinal = qrAfip ? String(qrAfip.ptoVta).padStart(5, '0') : extraccion.puntoVenta;
+  const numeroFinal = qrAfip ? String(qrAfip.nroCmp).padStart(8, '0') : extraccion.numero;
+
   const direccion = clasificarDireccion(cuit, cuitReceptor, cuitEmpresa);
   const origenFinal: 'COMPROBANTE' | 'VENTA_COMPROBANTE' =
     direccion === 'VENTA' ? 'VENTA_COMPROBANTE' : 'COMPROBANTE';
@@ -120,21 +136,8 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
   if (!contraparte && cuitContraparte) {
     camposRevisar.contraparte = 'Contraparte nueva: no está en el maestro';
   }
-
-  // Cross-check best-effort del QR de AFIP (solo verificación, no bloquea)
-  let qrAfip: unknown = null;
-  if (mov.archivoMime === 'application/pdf') {
-    const qr = await leerQrAfip(buffer);
-    if (qr) {
-      qrAfip = qr;
-      const difs: string[] = [];
-      if (cuit && String(qr.cuit) !== cuit) difs.push('CUIT emisor');
-      const numeroExtraido = extraccion.numero ? parseInt(extraccion.numero, 10) : NaN;
-      if (!Number.isNaN(numeroExtraido) && numeroExtraido !== qr.nroCmp) difs.push('número');
-      if (extraccion.total != null && Math.abs(qr.importe - extraccion.total) > 1) difs.push('importe');
-      if (extraccion.cae && qr.codAut && extraccion.cae !== String(qr.codAut)) difs.push('CAE');
-      if (difs.length) camposRevisar.qr = `QR AFIP no coincide: ${difs.join(', ')}`;
-    }
+  if (!qrAfip && mov.archivoMime === 'application/pdf') {
+    camposRevisar.qr = 'Sin QR legible: el encabezado proviene solo del OCR (verificar).';
   }
 
   // Re-check instructions now that we know the issuer (first attempt case)
@@ -148,8 +151,8 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     {
       cuitEmisor: cuit,
       tipoComprobante: extraccion.tipoComprobante,
-      puntoVenta: extraccion.puntoVenta,
-      numero: extraccion.numero,
+      puntoVenta: puntoVentaFinal,
+      numero: numeroFinal,
     },
     mov.id,
   );
@@ -179,9 +182,9 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       descripcion: extraccion.razonSocialEmisor ? `Comprobante de ${extraccion.razonSocialEmisor}` : mov.descripcion,
       moneda: extraccion.moneda,
       tipoComprobante: extraccion.tipoComprobante,
-      puntoVenta: extraccion.puntoVenta,
-      numero: extraccion.numero,
-      cae: extraccion.cae,
+      puntoVenta: puntoVentaFinal,
+      numero: numeroFinal,
+      cae: caeFinal,
       vencimientoCae: extraccion.vencimientoCae ? new Date(`${extraccion.vencimientoCae}T00:00:00Z`) : null,
       netoGravado: extraccion.netoGravado,
       iva21: extraccion.iva21,
@@ -191,14 +194,14 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       percepcionesIibb: extraccion.percepcionesIibb,
       otrosTributos: extraccion.otrosTributos,
       noGravadoExento: extraccion.noGravadoExento,
-      total: extraccion.total,
+      total: totalFinal,
       origen: origenFinal,
       tokensEntrada: uso?.entrada ?? null,
       tokensSalida: uso?.salida ?? null,
       tokensCacheCreacion: uso?.cacheCreacion ?? null,
       tokensCacheLectura: uso?.cacheLectura ?? null,
       modeloExtractor: uso?.modelo ?? null,
-      extraccionRaw: { ...extraccion, qrAfip } as never,
+      extraccionRaw: { ...extraccion, cuitReceptorEfectivo: cuitReceptor, qrAfip } as never,
       camposRevisar: camposRevisar as never,
       confianza: (extraccion.confianza ?? {}) as never,
       flags: flags as never,
