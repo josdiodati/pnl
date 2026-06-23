@@ -178,6 +178,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
   // comprobante es apto, salta a ASIGNADO; si es apto sin asignación completa,
   // VALIDADO; si no es apto, PENDIENTE_VALIDACION; período cerrado nunca autovalida.
   const n = (v: unknown) => (v == null ? null : Number(v));
+  const descripcionFinal = extraccion.razonSocialEmisor ? `Comprobante de ${extraccion.razonSocialEmisor}` : mov.descripcion;
   let lineasContraparte: LineaDistribucion[] = [];
   if (contraparte?.distribucionDefaultId) {
     const plantilla = await db.plantillaDistribucion.findFirst({
@@ -220,7 +221,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       creadoPorId: mov.creadoPorId,
       cuitEmisor: cuit,
       canalIngreso: mov.canalIngreso,
-      texto: `${extraccion.razonSocialEmisor ?? ''} ${mov.descripcion ?? ''}`,
+      texto: `${extraccion.razonSocialEmisor ?? ''} ${descripcionFinal ?? ''}`,
     });
     if (regla) {
       const asign = await resolverAsignacionDeRegla(db, regla);
@@ -242,7 +243,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       cuitEmisor: cuit,
       contraparteId: contraparte?.id ?? null,
       categoriaId: categoriaEfectiva,
-      descripcion: extraccion.razonSocialEmisor ? `Comprobante de ${extraccion.razonSocialEmisor}` : mov.descripcion,
+      descripcion: descripcionFinal,
       moneda: extraccion.moneda,
       tipoComprobante: extraccion.tipoComprobante,
       puntoVenta: puntoVentaFinal,

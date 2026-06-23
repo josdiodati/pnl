@@ -258,7 +258,8 @@ export async function guardarRegla(formData: FormData): Promise<void> {
     const id = String(formData.get('id') ?? '');
     const nombre = String(formData.get('nombre') ?? '').trim();
     if (!nombre) throw new DomainError('El nombre es obligatorio.');
-    const prioridad = Number(formData.get('prioridad') ?? 100) || 100;
+    const prioridadRaw = String(formData.get('prioridad') ?? '').trim();
+    const prioridad = prioridadRaw === '' || Number.isNaN(Number(prioridadRaw)) ? 100 : Number(prioridadRaw);
     const v = (k: string) => { const s = String(formData.get(k) ?? '').trim(); return s || null; };
     const data = {
       nombre, prioridad,
@@ -271,6 +272,27 @@ export async function guardarRegla(formData: FormData): Promise<void> {
     }
     if (!data.categoriaId || !(data.distribucionId || data.centroCostoId)) {
       throw new DomainError('La acción necesita categoría y (plantilla de distribución o centro de costo).');
+    }
+    if ((data.clienteId || data.proyectoId) && !data.centroCostoId) {
+      throw new DomainError('Cliente/proyecto requieren un centro de costo (línea única).');
+    }
+    // Las columnas de acción no tienen FK (por diseño): validar existencia acá,
+    // como en guardarContraparte, para que una regla no preasigne a maestros
+    // inexistentes/de otra empresa (la auto-asignación del pipeline no revalida).
+    if (data.categoriaId && !(await ctx.db.categoria.findFirst({ where: { id: data.categoriaId } }))) {
+      throw new DomainError('Categoría inexistente.');
+    }
+    if (data.distribucionId && !(await ctx.db.plantillaDistribucion.findFirst({ where: { id: data.distribucionId } }))) {
+      throw new DomainError('Plantilla de distribución inexistente.');
+    }
+    if (data.centroCostoId && !(await ctx.db.centroCosto.findFirst({ where: { id: data.centroCostoId } }))) {
+      throw new DomainError('Centro de costo inexistente.');
+    }
+    if (data.clienteId && !(await ctx.db.cliente.findFirst({ where: { id: data.clienteId } }))) {
+      throw new DomainError('Cliente inexistente.');
+    }
+    if (data.proyectoId && !(await ctx.db.proyecto.findFirst({ where: { id: data.proyectoId } }))) {
+      throw new DomainError('Proyecto inexistente.');
     }
     if (id) {
       const antes = await ctx.db.reglaAsignacion.findFirst({ where: { id } });
