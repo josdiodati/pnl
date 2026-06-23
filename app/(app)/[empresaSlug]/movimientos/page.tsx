@@ -57,11 +57,11 @@ export default async function MovimientosPage({
       {/* Mini-summary over the validated movements of the selection */}
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="card p-3">
-          <p className="text-xs text-slate-500">Ingresos (validados)</p>
+          <p className="text-xs text-slate-500">Ingresos (asignados)</p>
           <p className="text-xl font-semibold tabular-nums text-emerald-700">{formatMoneyFirmado(resumen.ingresos)}</p>
         </div>
         <div className="card p-3">
-          <p className="text-xs text-slate-500">Egresos (validados)</p>
+          <p className="text-xs text-slate-500">Egresos (asignados)</p>
           <p className="text-xl font-semibold tabular-nums text-red-700">{formatMoneyFirmado(resumen.egresos)}</p>
         </div>
         <div className="card p-3">
@@ -112,7 +112,7 @@ export default async function MovimientosPage({
           <label className="label">Estado</label>
           <select name="estado" defaultValue={searchParams.estado ?? ''} className="input text-xs">
             <option value="">Todos</option>
-            {['INGRESADO', 'PROCESANDO', 'PENDIENTE_VALIDACION', 'RETENIDO', 'OBSERVADO', 'VALIDADO', 'ANULADO', 'ERROR_PROCESAMIENTO'].map((e) => (
+            {['INGRESADO', 'PROCESANDO', 'PENDIENTE_VALIDACION', 'RETENIDO', 'OBSERVADO', 'VALIDADO', 'ASIGNADO', 'ANULADO', 'ERROR_PROCESAMIENTO'].map((e) => (
               <option key={e} value={e}>{e.replace(/_/g, ' ')}</option>
             ))}
           </select>
@@ -183,7 +183,7 @@ export default async function MovimientosPage({
           <tfoot>
             <tr className="bg-slate-50 font-medium">
               <td colSpan={7} className="text-right text-sm text-slate-500">
-                Totales de la selección ({movimientos.length} mov.) — solo validados:
+                Totales de la selección ({movimientos.length} mov.) — solo asignados:
               </td>
               <td className={`num ${resumen.resultado < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
                 {formatMoneyFirmado(resumen.resultado)}

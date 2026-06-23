@@ -28,17 +28,17 @@ export default async function PeriodosPage({
   const desde = new Date(Date.UTC(meses[0].anio, meses[0].mes - 1, 1));
   const hasta = new Date(Date.UTC(meses[11].anio, meses[11].mes, 1));
 
-  const [periodos, validados, pendientes] = await Promise.all([
+  const [periodos, asignados, pendientes] = await Promise.all([
     ctx.db.periodo.findMany({
       where: { OR: meses.map((m) => ({ anio: m.anio, mes: m.mes })) },
     }),
     ctx.db.movimiento.findMany({
-      where: { estado: 'VALIDADO', fechaDevengamiento: { gte: desde, lt: hasta } },
+      where: { estado: 'ASIGNADO', fechaDevengamiento: { gte: desde, lt: hasta } },
       include: { categoria: true },
     }),
     ctx.db.movimiento.findMany({
       where: {
-        estado: { in: ['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO'] },
+        estado: { in: ['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO', 'VALIDADO'] },
         fechaDevengamiento: { gte: desde, lt: hasta },
       },
       select: { id: true, estado: true, fechaDevengamiento: true, descripcion: true },
@@ -47,7 +47,7 @@ export default async function PeriodosPage({
 
   const clave = (a: number, m: number) => `${a}-${m}`;
   const totalPorMes = new Map<string, number>();
-  for (const mov of validados) {
+  for (const mov of asignados) {
     if (!mov.fechaDevengamiento || !mov.categoria || mov.total == null) continue;
     const signo = signoMovimiento(mov.categoria.tipo, mov.tipoComprobante);
     const k = clave(mov.fechaDevengamiento.getUTCFullYear(), mov.fechaDevengamiento.getUTCMonth() + 1);
@@ -81,7 +81,7 @@ export default async function PeriodosPage({
             <tr>
               <th>Mes</th>
               <th>Estado</th>
-              <th className="text-right">Resultado validado</th>
+              <th className="text-right">Resultado asignado</th>
               <th>Sin resolver</th>
               <th></th>
             </tr>
@@ -93,8 +93,10 @@ export default async function PeriodosPage({
               const cerrado = periodo?.estado === 'CERRADO';
               const total = totalPorMes.get(k) ?? 0;
               const pend = pendPorMes.get(k) ?? [];
+              const porValidar = pend.filter((p) => p.estado === 'PENDIENTE_VALIDACION' || p.estado === 'OBSERVADO').length;
+              const porAsignar = pend.filter((p) => p.estado === 'VALIDADO').length;
               const retenidos = pend.filter((p) => p.estado === 'RETENIDO').length;
-              const bloqueantes = pend.length - retenidos;
+              const bloqueantes = porValidar + porAsignar + retenidos;
               return (
                 <tr key={k} className={cerrado ? 'bg-slate-50' : ''}>
                   <td className="font-medium whitespace-nowrap">{MES_LABEL[mes]} {anio}</td>
@@ -106,16 +108,21 @@ export default async function PeriodosPage({
                   <td className={`num font-medium ${total < 0 ? 'text-red-700' : total > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
                     {formatMoneyFirmado(total)}
                   </td>
-                  <td className="text-sm">
-                    {bloqueantes > 0 && (
+                  <td className="text-sm space-x-2">
+                    {porValidar > 0 && (
                       <Link href={`/${params.empresaSlug}/validacion`} className="text-amber-700 underline">
-                        {bloqueantes} pendiente{bloqueantes !== 1 ? 's' : ''}/observado{bloqueantes !== 1 ? 's' : ''}
+                        {porValidar} por validar
+                      </Link>
+                    )}
+                    {porAsignar > 0 && (
+                      <Link href={`/${params.empresaSlug}/asignacion`} className="text-amber-700 underline">
+                        {porAsignar} por asignar
                       </Link>
                     )}
                     {retenidos > 0 && (
-                      <span className="text-orange-700 ml-2">{retenidos} retenido{retenidos !== 1 ? 's' : ''}</span>
+                      <span className="text-orange-700">{retenidos} retenido{retenidos !== 1 ? 's' : ''}</span>
                     )}
-                    {pend.length === 0 && <span className="text-slate-400">—</span>}
+                    {bloqueantes === 0 && <span className="text-slate-400">—</span>}
                   </td>
                   <td className="text-right whitespace-nowrap">
                     {!cerrado ? (

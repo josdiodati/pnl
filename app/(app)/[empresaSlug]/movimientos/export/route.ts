@@ -27,7 +27,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
     include: {
       categoria: true,
       contraparte: true,
-      lineas: { include: { centroCosto: true, cliente: true } },
+      lineas: { include: { centroCosto: true, cliente: true, proyecto: true } },
     },
     orderBy: [{ fechaDevengamiento: 'asc' }, { createdAt: 'asc' }],
   });
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
     [
       'fecha', 'origen', 'estado', 'canal', 'contraparte', 'cuit', 'categoria', 'tipo_categoria',
       'tipo_comprobante', 'punto_venta', 'numero', 'descripcion', 'moneda',
-      'centro_costo', 'cliente_proyecto', 'porcentaje', 'importe_linea', 'total_movimiento_firmado',
+      'centro_costo', 'cliente', 'proyecto', 'porcentaje', 'importe_linea', 'total_movimiento_firmado',
     ].join(';'),
   ];
 
@@ -79,6 +79,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
             ...base,
             l.centroCosto.nombre,
             l.cliente?.nombre ?? '',
+            l.proyecto?.nombre ?? '',
             String(Number(l.porcentaje)).replace('.', ','),
             importes ? (importes[i] / 100).toFixed(2).replace('.', ',') : '',
             (firmado / 100).toFixed(2).replace('.', ','),
@@ -87,7 +88,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
       });
     } else {
       filas.push(
-        [...base, '', '', '', '', firmado != null ? (firmado / 100).toFixed(2).replace('.', ',') : ''].map(esc).join(';'),
+        [...base, '', '', '', '', '', firmado != null ? (firmado / 100).toFixed(2).replace('.', ',') : ''].map(esc).join(';'),
       );
     }
   }

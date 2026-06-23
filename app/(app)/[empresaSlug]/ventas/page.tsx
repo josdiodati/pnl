@@ -42,7 +42,7 @@ export default async function VentasPage({
     }),
     ctx.db.contraparte.findMany({ where: { activa: true, tipo: { not: 'PROVEEDOR' } }, orderBy: { razonSocial: 'asc' } }),
     ctx.db.movimiento.findMany({
-      where: { origen: { in: ['VENTA_MANUAL', 'VENTA_COMPROBANTE'] }, estado: 'VALIDADO', fechaDevengamiento: { gte: desdeMes, lt: hastaMes } },
+      where: { origen: { in: ['VENTA_MANUAL', 'VENTA_COMPROBANTE'] }, estado: 'ASIGNADO', fechaDevengamiento: { gte: desdeMes, lt: hastaMes } },
       include: { categoria: true, lineas: true },
     }),
   ]);
@@ -63,7 +63,7 @@ export default async function VentasPage({
 
       <div className="reveal reveal-2 mb-4 grid gap-3 sm:grid-cols-3">
         <div className="card p-4">
-          <p className="label !mb-0.5">Ventas validadas — {nombrePeriodo(anio, mes)}</p>
+          <p className="label !mb-0.5">Ventas asignadas — {nombrePeriodo(anio, mes)}</p>
           <p className="font-mono text-2xl font-semibold tabular-nums text-accent-strong">
             {formatMoneyFirmado(totalMesCentavos)}
           </p>
@@ -71,7 +71,7 @@ export default async function VentasPage({
         </div>
         <div className="card p-4 sm:col-span-2 flex items-center">
           <p className="text-[13px] text-ink-mute leading-relaxed">
-            Solo lo <strong className="text-tinta">validado</strong> impacta el resultado. Las notas de crédito de
+            Solo lo <strong className="text-tinta">asignado</strong> impacta el resultado. Las notas de crédito de
             venta restan automáticamente: el signo se deriva del tipo de comprobante, nunca se tipea.
           </p>
         </div>
@@ -82,6 +82,7 @@ export default async function VentasPage({
           <option value="">Todos los estados</option>
           <option value="PENDIENTE_VALIDACION">Pendientes</option>
           <option value="VALIDADO">Validadas</option>
+          <option value="ASIGNADO">Asignadas</option>
           <option value="ANULADO">Anuladas</option>
         </select>
         <select name="contraparteId" defaultValue={searchParams.contraparteId ?? ''} className="input !w-auto text-xs">

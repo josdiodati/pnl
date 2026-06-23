@@ -510,7 +510,7 @@ export async function generarRecurrentes(ctx: EmpresaContext, anio: number, mes:
       const anterior = await ctx.db.movimiento.findFirst({
         where: {
           origen: 'ASIENTO_MANUAL',
-          estado: 'VALIDADO',
+          estado: { in: ['VALIDADO', 'ASIGNADO'] },
           fechaDevengamiento: { gte: mesAnteriorDesde, lt: desde },
           flags: { path: ['plantillaRecurrenteId'], equals: p.id },
         },
