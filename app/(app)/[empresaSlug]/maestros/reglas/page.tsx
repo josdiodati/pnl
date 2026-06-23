@@ -74,13 +74,12 @@ export default async function ReglasPage({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="label">Cargado por</label>
-                <select name="cargadoPorId" className="input">
+                <select name="cargadoPorId" className="input" defaultValue={editando?.cargadoPorId ?? ''}>
                   <option value="">— cualquiera —</option>
                   {miembros.map((m) => (
                     <option
                       key={m.usuarioId}
                       value={m.usuarioId}
-                      selected={editando?.cargadoPorId === m.usuarioId}
                     >
                       {m.usuario.nombre || m.usuario.email}
                     </option>
@@ -98,10 +97,10 @@ export default async function ReglasPage({
               </div>
               <div>
                 <label className="label">Canal</label>
-                <select name="canal" className="input">
+                <select name="canal" className="input" defaultValue={editando?.canal ?? ''}>
                   <option value="">— cualquiera —</option>
                   {['WEB', 'FOTO', 'EMAIL', 'TELEGRAM', 'MANUAL'].map((c) => (
-                    <option key={c} value={c} selected={editando?.canal === c}>
+                    <option key={c} value={c}>
                       {c}
                     </option>
                   ))}
@@ -127,10 +126,10 @@ export default async function ReglasPage({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="label">Categoría</label>
-                <select name="categoriaId" className="input">
+                <select name="categoriaId" className="input" defaultValue={editando?.categoriaId ?? ''}>
                   <option value="">— elegir —</option>
                   {categorias.map((c) => (
-                    <option key={c.id} value={c.id} selected={editando?.categoriaId === c.id}>
+                    <option key={c.id} value={c.id}>
                       {c.nombre}
                     </option>
                   ))}
@@ -138,10 +137,10 @@ export default async function ReglasPage({
               </div>
               <div>
                 <label className="label">Plantilla de distribución</label>
-                <select name="distribucionId" className="input">
+                <select name="distribucionId" className="input" defaultValue={editando?.distribucionId ?? ''}>
                   <option value="">— ninguna —</option>
                   {plantillas.map((p) => (
-                    <option key={p.id} value={p.id} selected={editando?.distribucionId === p.id}>
+                    <option key={p.id} value={p.id}>
                       {p.nombre}
                     </option>
                   ))}
@@ -149,10 +148,10 @@ export default async function ReglasPage({
               </div>
               <div>
                 <label className="label">Centro de costo (100%)</label>
-                <select name="centroCostoId" className="input">
+                <select name="centroCostoId" className="input" defaultValue={editando?.centroCostoId ?? ''}>
                   <option value="">— ninguno —</option>
                   {centros.map((c) => (
-                    <option key={c.id} value={c.id} selected={editando?.centroCostoId === c.id}>
+                    <option key={c.id} value={c.id}>
                       {c.nombre}
                     </option>
                   ))}
@@ -160,10 +159,10 @@ export default async function ReglasPage({
               </div>
               <div>
                 <label className="label">Cliente</label>
-                <select name="clienteId" className="input">
+                <select name="clienteId" className="input" defaultValue={editando?.clienteId ?? ''}>
                   <option value="">— ninguno —</option>
                   {clientes.map((c) => (
-                    <option key={c.id} value={c.id} selected={editando?.clienteId === c.id}>
+                    <option key={c.id} value={c.id}>
                       {c.nombre}
                     </option>
                   ))}
@@ -171,10 +170,10 @@ export default async function ReglasPage({
               </div>
               <div>
                 <label className="label">Proyecto</label>
-                <select name="proyectoId" className="input">
+                <select name="proyectoId" className="input" defaultValue={editando?.proyectoId ?? ''}>
                   <option value="">— ninguno —</option>
                   {proyectos.map((p) => (
-                    <option key={p.id} value={p.id} selected={editando?.proyectoId === p.id}>
+                    <option key={p.id} value={p.id}>
                       {p.nombre}
                     </option>
                   ))}
