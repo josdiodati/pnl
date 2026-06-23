@@ -1,18 +1,15 @@
 import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { ErrorBanner } from '@/components/error-banner';
-import { guardarClienteProyecto, toggleClienteProyecto } from '../actions';
+import { guardarCliente, toggleCliente } from '../actions';
 
-export default async function ClientesProyectosPage({
+export default async function ClientesPage({
   params,
   searchParams,
 }: {
   params: { empresaSlug: string };
   searchParams: { error?: string; editar?: string };
 }) {
-  // NOTA: la 2ª dimensión (clientes/proyectos) está deshabilitada del menú (ver el link comentado
-  // en app/(app)/[empresaSlug]/layout.tsx). Esta página queda funcional pero no enlazada; se reactiva
-  // descomentando el link. Los clientes se manejan por ahora vía Contrapartes.
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const items = await ctx.db.cliente.findMany({ orderBy: { nombre: 'asc' } });
   const editando = searchParams.editar ? items.find((c) => c.id === searchParams.editar) : null;
@@ -20,13 +17,10 @@ export default async function ClientesProyectosPage({
   return (
     <div className="space-y-4">
       <ErrorBanner mensaje={searchParams.error} />
-      <p className="text-sm text-slate-500">
-        Segunda dimensión de análisis: cada línea de asignación puede (opcionalmente) imputarse a un cliente o proyecto.
-      </p>
 
       <div className="card p-4">
-        <h2 className="font-medium mb-3">{editando ? `Editar "${editando.nombre}"` : 'Nuevo cliente / proyecto'}</h2>
-        <form action={guardarClienteProyecto} className="flex flex-wrap items-end gap-3">
+        <h2 className="font-medium mb-3">{editando ? `Editar "${editando.nombre}"` : 'Nuevo cliente'}</h2>
+        <form action={guardarCliente} className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
           {editando && <input type="hidden" name="id" value={editando.id} />}
           <div className="w-64">
@@ -39,7 +33,7 @@ export default async function ClientesProyectosPage({
           </div>
           <button className="btn-primary">{editando ? 'Guardar cambios' : 'Crear'}</button>
           {editando && (
-            <Link href={`/${params.empresaSlug}/maestros/clientes-proyectos`} className="btn-secondary">Cancelar</Link>
+            <Link href={`/${params.empresaSlug}/maestros/clientes`} className="btn-secondary">Cancelar</Link>
           )}
         </form>
       </div>
@@ -57,7 +51,7 @@ export default async function ClientesProyectosPage({
                 <td>{c.activo ? 'Activo' : 'Inactivo'}</td>
                 <td className="text-right whitespace-nowrap">
                   <Link href={`?editar=${c.id}`} className="text-sm underline text-slate-600 mr-3">Editar</Link>
-                  <form action={toggleClienteProyecto} className="inline">
+                  <form action={toggleCliente} className="inline">
                     <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                     <input type="hidden" name="id" value={c.id} />
                     <button className="text-sm underline text-slate-600">{c.activo ? 'Desactivar' : 'Activar'}</button>
@@ -66,7 +60,7 @@ export default async function ClientesProyectosPage({
               </tr>
             ))}
             {items.length === 0 && (
-              <tr><td colSpan={4} className="text-center text-slate-400 py-6">Sin clientes/proyectos todavía</td></tr>
+              <tr><td colSpan={4} className="text-center text-slate-400 py-6">Sin clientes todavía</td></tr>
             )}
           </tbody>
         </table>

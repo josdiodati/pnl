@@ -53,9 +53,8 @@ export default async function EmpresaLayout({
             items: [
               { href: `${base}/maestros/categorias`, label: 'Categorías', icono: 'categoria' },
               { href: `${base}/maestros/centros-costo`, label: 'Centros de costo', icono: 'centro' },
-              // 2ª dimensión (Clientes/Proyectos) deshabilitada por ahora: manejamos clientes vía Contrapartes.
-              // Reactivar cuando se agregue granularidad (ver también clientes-proyectos/page.tsx).
-              // { href: `${base}/maestros/clientes-proyectos`, label: 'Clientes / Proyectos', icono: 'cliente' },
+              { href: `${base}/maestros/clientes`, label: 'Clientes', icono: 'cliente' },
+              { href: `${base}/maestros/proyectos`, label: 'Proyectos', icono: 'cliente' },
               { href: `${base}/maestros/contrapartes`, label: 'Contrapartes', icono: 'contraparte' },
               { href: `${base}/maestros/distribuciones`, label: 'Distribuciones', icono: 'distribucion' },
             ],

@@ -112,9 +112,9 @@ export async function toggleCentroCosto(formData: FormData): Promise<void> {
   volver(slug, 'centros-costo');
 }
 
-// ---------- Clientes / Proyectos ----------
+// ---------- Clientes ----------
 
-export async function guardarClienteProyecto(formData: FormData): Promise<void> {
+export async function guardarCliente(formData: FormData): Promise<void> {
   const slug = String(formData.get('empresaSlug'));
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
@@ -124,7 +124,7 @@ export async function guardarClienteProyecto(formData: FormData): Promise<void> 
     if (!nombre) throw new DomainError('El nombre es obligatorio.');
     if (id) {
       const antes = await ctx.db.cliente.findFirst({ where: { id } });
-      if (!antes) throw new DomainError('Cliente/proyecto inexistente.');
+      if (!antes) throw new DomainError('Cliente inexistente.');
       await ctx.db.cliente.update({ where: { id }, data: { nombre, codigo } });
       await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Cliente', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, codigo } });
     } else {
@@ -132,24 +132,64 @@ export async function guardarClienteProyecto(formData: FormData): Promise<void> 
       await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Cliente', entidadId: nuevo.id, accion: 'CREAR', despues: { nombre, codigo } });
     }
   } catch (err) {
-    volver(slug, 'clientes-proyectos', mensaje(err));
+    volver(slug, 'clientes', mensaje(err));
   }
-  volver(slug, 'clientes-proyectos');
+  volver(slug, 'clientes');
 }
 
-export async function toggleClienteProyecto(formData: FormData): Promise<void> {
+export async function toggleCliente(formData: FormData): Promise<void> {
   const slug = String(formData.get('empresaSlug'));
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
     const id = String(formData.get('id'));
-    const cp = await ctx.db.cliente.findFirst({ where: { id } });
-    if (!cp) throw new DomainError('Cliente/proyecto inexistente.');
-    await ctx.db.cliente.update({ where: { id }, data: { activo: !cp.activo } });
-    await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Cliente', entidadId: id, accion: cp.activo ? 'DESACTIVAR' : 'ACTIVAR' });
+    const c = await ctx.db.cliente.findFirst({ where: { id } });
+    if (!c) throw new DomainError('Cliente inexistente.');
+    await ctx.db.cliente.update({ where: { id }, data: { activo: !c.activo } });
+    await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Cliente', entidadId: id, accion: c.activo ? 'DESACTIVAR' : 'ACTIVAR' });
   } catch (err) {
-    volver(slug, 'clientes-proyectos', mensaje(err));
+    volver(slug, 'clientes', mensaje(err));
   }
-  volver(slug, 'clientes-proyectos');
+  volver(slug, 'clientes');
+}
+
+// ---------- Proyectos ----------
+
+export async function guardarProyecto(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    const id = String(formData.get('id') ?? '');
+    const nombre = String(formData.get('nombre') ?? '').trim();
+    const codigo = String(formData.get('codigo') ?? '').trim() || null;
+    if (!nombre) throw new DomainError('El nombre es obligatorio.');
+    if (id) {
+      const antes = await ctx.db.proyecto.findFirst({ where: { id } });
+      if (!antes) throw new DomainError('Proyecto inexistente.');
+      await ctx.db.proyecto.update({ where: { id }, data: { nombre, codigo } });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Proyecto', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, codigo } });
+    } else {
+      const nuevo = await ctx.db.proyecto.create({ data: { nombre, codigo } as never });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Proyecto', entidadId: nuevo.id, accion: 'CREAR', despues: { nombre, codigo } });
+    }
+  } catch (err) {
+    volver(slug, 'proyectos', mensaje(err));
+  }
+  volver(slug, 'proyectos');
+}
+
+export async function toggleProyecto(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    const id = String(formData.get('id'));
+    const p = await ctx.db.proyecto.findFirst({ where: { id } });
+    if (!p) throw new DomainError('Proyecto inexistente.');
+    await ctx.db.proyecto.update({ where: { id }, data: { activo: !p.activo } });
+    await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Proyecto', entidadId: id, accion: p.activo ? 'DESACTIVAR' : 'ACTIVAR' });
+  } catch (err) {
+    volver(slug, 'proyectos', mensaje(err));
+  }
+  volver(slug, 'proyectos');
 }
 
 // ---------- Contrapartes ----------
