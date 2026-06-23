@@ -31,6 +31,9 @@ export const extraccionSchema = z.object({
   cuitReceptor: z.string().nullable().default(null),
   razonSocialReceptor: z.string().nullable().default(null),
   esComprobanteFiscalArg: z.boolean().default(false),
+  // Concepto / detalle de lo facturado (resumido). Puede venir largo: se trunca
+  // al persistir (ver pipeline). Alimenta la descripción y el matching de reglas.
+  concepto: z.string().nullable().default(null),
   confianza: z.record(z.number()).default({}),
   observaciones: z.string().nullable().default(null),
 });
@@ -65,6 +68,10 @@ export const extraccionJsonSchema = {
     esComprobanteFiscalArg: {
       type: 'boolean',
       description: 'true si es comprobante fiscal argentino (factura/NC/ND/ticket con CAE); false si es invoice extranjero o no fiscal (AWS, Claude, Google, etc.)',
+    },
+    concepto: {
+      type: ['string', 'null'],
+      description: 'Concepto/detalle principal de lo facturado, resumido en UNA línea (máx ~200 caracteres). Si hay muchos ítems, resumí los más relevantes; no copies tablas enteras.',
     },
     confianza: { type: 'object', additionalProperties: { type: 'number' } },
     observaciones: { type: ['string', 'null'] },

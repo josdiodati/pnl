@@ -24,6 +24,17 @@ function aNumero(v: FormDataEntryValue | null): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+// Imputación opcional cargada en la misma pantalla de validación.
+function leerLineas(formData: FormData) {
+  const ccIds = formData.getAll('linea_centroCostoId').map(String);
+  const cliIds = formData.getAll('linea_clienteId').map(String);
+  const prIds = formData.getAll('linea_proyectoId').map(String);
+  const pcts = formData.getAll('linea_porcentaje').map((v) => Number(String(v).replace(',', '.')));
+  return ccIds
+    .map((cc, i) => ({ centroCostoId: cc, clienteId: cliIds[i] || null, proyectoId: prIds[i] || null, porcentaje: pcts[i] }))
+    .filter((l) => l.centroCostoId);
+}
+
 function volverConError(slug: string, movimientoId: string, err: unknown): never {
   if (isDomainError(err) || isForbidden(err)) {
     redirect(`/${slug}/validacion/${movimientoId}?error=${encodeURIComponent(err.message)}`);
@@ -89,6 +100,9 @@ export async function validarAction(formData: FormData): Promise<void> {
       overrideNoFiscal: formData.get('overrideNoFiscal') === 'on',
       overrideNoFiscalMotivo: String(formData.get('overrideNoFiscalMotivo') ?? '').trim() || null,
       instruccionesExtraccion: String(formData.get('instruccionesExtraccion') ?? '').trim() || undefined,
+      // Imputación opcional en la misma pantalla (validar + asignar juntos).
+      categoriaId: String(formData.get('categoriaId') ?? '') || null,
+      lineas: leerLineas(formData),
     });
 
     if (irAlSiguiente) {

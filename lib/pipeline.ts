@@ -179,9 +179,12 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
   // autovalidación decide el estado: apto+completa→ASIGNADO, apto→VALIDADO,
   // no apto→PENDIENTE_VALIDACION; período cerrado nunca autovalida.
   const n = (v: unknown) => (v == null ? null : Number(v));
-  // La descripción genérica "Comprobante de X" era redundante con la razón
-  // social/contraparte que ya se muestra; no la sintetizamos.
-  const descripcionFinal = mov.descripcion;
+  // Descripción = concepto extraído (lo facturado), truncado: el LLM puede
+  // devolver un detalle largo. Ya no sintetizamos el genérico "Comprobante de X".
+  const conceptoLimpio = extraccion.concepto?.trim() || null;
+  const descripcionFinal = conceptoLimpio
+    ? conceptoLimpio.length > 280 ? `${conceptoLimpio.slice(0, 280)}…` : conceptoLimpio
+    : mov.descripcion;
   let lineasContraparte: LineaDistribucion[] = [];
   if (contraparte?.distribucionDefaultId) {
     const plantilla = await db.plantillaDistribucion.findFirst({

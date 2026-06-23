@@ -7,6 +7,8 @@ import { ValidacionForm } from '@/components/validacion-form';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
 import { ErrorBanner } from '@/components/error-banner';
 import { formatFechaHora, formatMoney, fechaInputValue } from '@/lib/format';
+import { elegirRegla } from '@/lib/reglas/matching';
+import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import {
   observarAction,
   anularAction,
@@ -28,12 +30,18 @@ export default async function ValidacionDetallePage({
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const mov = await ctx.db.movimiento.findFirst({
     where: { id: params.id },
-    include: { contraparte: true, categoria: true, creadoPor: true, validadoPor: true },
+    include: { contraparte: true, categoria: true, lineas: true, creadoPor: true, validadoPor: true },
   });
   if (!mov) notFound();
 
-  const [contrapartes, historial] = await Promise.all([
+  const [contrapartes, categorias, centros, clientes, proyectos, plantillas, reglas, historial] = await Promise.all([
     ctx.db.contraparte.findMany({ where: { activa: true }, orderBy: { razonSocial: 'asc' } }),
+    ctx.db.categoria.findMany({ where: { activa: true }, orderBy: [{ tipo: 'asc' }, { nombre: 'asc' }] }),
+    ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
+    ctx.db.cliente.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
+    ctx.db.proyecto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
+    ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
+    ctx.db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }] }),
     ctx.db.auditLog.findMany({
       where: { entidad: 'Movimiento', entidadId: mov.id },
       orderBy: { createdAt: 'asc' },
@@ -43,6 +51,41 @@ export default async function ValidacionDetallePage({
   const editable = EDITABLES.has(mov.estado);
   const flags = (mov.flags as Record<string, unknown> | null) ?? {};
   const n = (v: unknown) => (v == null ? null : Number(v));
+
+  // Pre-imputación: si el comprobante no tiene líneas, una regla puede pre-llenar
+  // la asignación para que el validador la confirme en la misma pantalla.
+  let reglaSugerida: string | null = null;
+  let sugerida: Awaited<ReturnType<typeof resolverAsignacionDeRegla>> | null = null;
+  if (editable && mov.lineas.length === 0) {
+    const razonSocial = (mov.extraccionRaw as { razonSocialEmisor?: string } | null)?.razonSocialEmisor ?? '';
+    const regla = elegirRegla(reglas, {
+      creadoPorId: mov.creadoPorId,
+      cuitEmisor: mov.cuitEmisor,
+      canalIngreso: mov.canalIngreso,
+      texto: `${razonSocial} ${mov.descripcion ?? ''}`,
+    });
+    if (regla) {
+      sugerida = await resolverAsignacionDeRegla(ctx.db, regla);
+      reglaSugerida = regla.nombre;
+    }
+  }
+  const lineasIniciales =
+    mov.lineas.length > 0
+      ? mov.lineas.map((l) => ({
+          centroCostoId: l.centroCostoId,
+          clienteId: l.clienteId ?? '',
+          proyectoId: l.proyectoId ?? '',
+          porcentaje: String(Number(l.porcentaje)),
+        }))
+      : sugerida && sugerida.lineas.length > 0
+        ? sugerida.lineas.map((l) => ({
+            centroCostoId: l.centroCostoId,
+            clienteId: l.clienteId ?? '',
+            proyectoId: l.proyectoId ?? '',
+            porcentaje: String(l.porcentaje),
+          }))
+        : [];
+  const categoriaInicial = mov.categoriaId ?? sugerida?.categoriaId ?? '';
 
   return (
     <div className="space-y-4">
@@ -130,7 +173,24 @@ export default async function ValidacionDetallePage({
                 },
                 camposRevisar: (mov.camposRevisar as Record<string, string> | null) ?? {},
                 duplicados: ((flags.duplicados as string[] | undefined) ?? []),
+                categoriaId: categoriaInicial,
+                lineas: lineasIniciales,
               }}
+              reglaSugerida={reglaSugerida}
+              categorias={categorias.map((c) => ({ id: c.id, nombre: c.nombre, tipo: c.tipo, padreId: c.padreId }))}
+              centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
+              clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre }))}
+              proyectos={proyectos.map((p) => ({ id: p.id, nombre: p.nombre }))}
+              plantillas={plantillas.map((p) => ({
+                id: p.id,
+                nombre: p.nombre,
+                lineas: p.lineas.map((l) => ({
+                  centroCostoId: l.centroCostoId,
+                  clienteId: l.clienteId ?? null,
+                  proyectoId: l.proyectoId ?? null,
+                  porcentaje: Number(l.porcentaje),
+                })),
+              }))}
               contrapartes={contrapartes.map((c) => ({
                 id: c.id,
                 razonSocial: c.razonSocial,

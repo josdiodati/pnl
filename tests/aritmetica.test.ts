@@ -68,6 +68,7 @@ describe('evaluarCampos: marca campos a revisar', () => {
     cuitReceptor: null,
     razonSocialReceptor: null,
     esComprobanteFiscalArg: true,
+    concepto: null,
     confianza: {},
     observaciones: null,
   };

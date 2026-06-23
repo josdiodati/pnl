@@ -127,6 +127,10 @@ export type DatosValidacion = {
   overrideNoFiscalMotivo?: string | null;
   /** Recurring correction note saved on the contraparte for future extractions. */
   instruccionesExtraccion?: string | null;
+  /** Imputación opcional hecha en la misma pantalla de validación (flujo manual:
+   *  validar + asignar juntos). Si la imputación queda completa → ASIGNADO. */
+  categoriaId?: string | null;
+  lineas?: LineaDistribucion[];
 };
 
 export type DatosAsignacion = { categoriaId: string; lineas: LineaDistribucion[] };
@@ -157,17 +161,26 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
     if (!gate.ok) throw new DomainError(gate.motivo ?? 'No se puede validar por estado de ARCA.');
   }
 
-  // Estado destino: si ya viene con imputación completa (manuales), ASIGNADO; si no, VALIDADO.
+  // Imputación opcional desde la misma pantalla (validar + asignar juntos).
+  if (datos.categoriaId) {
+    const categoria = await ctx.db.categoria.findFirst({ where: { id: datos.categoriaId, activa: true } });
+    if (!categoria) throw new DomainError('Elegí una categoría válida.');
+  }
+  const categoriaEff = datos.categoriaId !== undefined ? (datos.categoriaId || null) : mov.categoriaId;
+
+  // Estado destino: si la imputación queda completa, ASIGNADO; si no, VALIDADO.
+  // Si el form mandó líneas, esas mandan; si no, se evalúan las ya existentes.
   const lineasActuales = await ctx.db.movimientoLinea.findMany({ where: { movimientoId: mov.id } });
-  const yaAsignado = tieneAsignacionCompleta(
-    mov.categoriaId,
-    lineasActuales.map((l) => ({
-      centroCostoId: l.centroCostoId,
-      clienteId: l.clienteId,
-      proyectoId: l.proyectoId,
-      porcentaje: Number(l.porcentaje),
-    })),
-  );
+  const lineasParaEstado: LineaDistribucion[] =
+    datos.lineas !== undefined
+      ? datos.lineas
+      : lineasActuales.map((l) => ({
+          centroCostoId: l.centroCostoId,
+          clienteId: l.clienteId,
+          proyectoId: l.proyectoId,
+          porcentaje: Number(l.porcentaje),
+        }));
+  const yaAsignado = tieneAsignacionCompleta(categoriaEff, lineasParaEstado);
   const estadoDestino = yaAsignado ? 'ASIGNADO' : 'VALIDADO';
   assertTransicion(mov.estado, estadoDestino);
 
@@ -180,6 +193,7 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
       fechaDevengamiento: fecha,
       periodoId,
       contraparteId: datos.contraparteId ?? null,
+      categoriaId: categoriaEff,
       descripcion: datos.descripcion ?? mov.descripcion,
       moneda: datos.moneda ?? mov.moneda,
       tipoComprobante: datos.tipoComprobante !== undefined ? datos.tipoComprobante : mov.tipoComprobante,
@@ -202,6 +216,11 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
         : {}),
     },
   });
+
+  // Si se imputó en la misma pantalla y quedó completa, persistir las líneas.
+  if (yaAsignado && datos.lineas !== undefined) {
+    await reemplazarLineas(ctx, mov.id, datos.lineas);
+  }
 
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,
