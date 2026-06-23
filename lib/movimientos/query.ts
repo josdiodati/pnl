@@ -61,7 +61,7 @@ export function totalFirmadoDe(mov: MovimientoConRelaciones): number | null {
 }
 
 export type ResumenMovimientos = {
-  ingresos: number; // cents, only VALIDADO
+  ingresos: number; // cents, only ASIGNADO
   egresos: number;
   resultado: number;
   porCentroCosto: Map<string, number>;
@@ -69,7 +69,7 @@ export type ResumenMovimientos = {
 };
 
 /**
- * Mini-summary over VALIDADO movements of the selection: income / expenses /
+ * Mini-summary over ASIGNADO movements of the selection: income / expenses /
  * result plus the breakdown by cost center and client/project, distributing
  * each movement's signed total across its percentage lines (cent-exact).
  */
@@ -80,7 +80,7 @@ export function resumirMovimientos(movs: MovimientoConRelaciones[]): ResumenMovi
   const porCliente = new Map<string, number>();
 
   for (const mov of movs) {
-    if (mov.estado !== 'VALIDADO') continue;
+    if (mov.estado !== 'ASIGNADO') continue;
     const firmado = totalFirmadoDe(mov);
     if (firmado == null) continue;
     if (firmado >= 0) ingresos += firmado;

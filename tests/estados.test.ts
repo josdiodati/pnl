@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { puedeTransicionar, assertTransicion, esEstadoInicialValido, impactaResultado, ESTADO_LABEL } from '@/lib/movimientos/estados';
+import { puedeTransicionar, assertTransicion, esEstadoInicialValido, impactaResultado, ESTADO_LABEL, bloqueaCierre } from '@/lib/movimientos/estados';
 import { DomainError } from '@/lib/errors';
 
 describe('máquina de estados de movimientos (doc 07)', () => {
@@ -77,6 +77,14 @@ describe('máquina de estados de movimientos (doc 07)', () => {
     });
     it('tiene label', () => {
       expect(ESTADO_LABEL.ASIGNADO).toBe('Asignado');
+    });
+  });
+
+  describe('bloqueo de cierre', () => {
+    it('VALIDADO sin asignar bloquea; ASIGNADO no', () => {
+      expect(bloqueaCierre('VALIDADO')).toBe(true);
+      expect(bloqueaCierre('ASIGNADO')).toBe(false);
+      expect(bloqueaCierre('PENDIENTE_VALIDACION')).toBe(true);
     });
   });
 });

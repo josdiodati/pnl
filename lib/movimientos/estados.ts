@@ -60,6 +60,13 @@ export function impactaResultado(estado: EstadoMovimiento): boolean {
   return estado === 'ASIGNADO';
 }
 
+/** States that block period closure: unvalidated, observed, retained, or unassigned. */
+export const ESTADOS_BLOQUEAN_CIERRE: EstadoMovimiento[] = ['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO', 'VALIDADO'];
+
+export function bloqueaCierre(estado: EstadoMovimiento): boolean {
+  return ESTADOS_BLOQUEAN_CIERRE.includes(estado);
+}
+
 export const ESTADO_LABEL: Record<EstadoMovimiento, string> = {
   INGRESADO: 'Ingresado',
   PROCESANDO: 'Procesando',

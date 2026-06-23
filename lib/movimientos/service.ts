@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import { DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
-import { assertTransicion, esEstadoInicialValido } from './estados';
+import { assertTransicion, esEstadoInicialValido, ESTADOS_BLOQUEAN_CIERRE } from './estados';
 import { validarDistribucion, type LineaDistribucion } from './distribucion';
 import { getOrCreatePeriodo, periodoDeFecha, nombrePeriodo } from '@/lib/periodos';
 import { checkAritmetica } from '@/lib/checks';
@@ -566,12 +566,12 @@ export async function cerrarPeriodo(ctx: EmpresaContext, anio: number, mes: numb
   const sinResolver = await ctx.db.movimiento.count({
     where: {
       fechaDevengamiento: { gte: desde, lt: hasta },
-      estado: { in: ['PENDIENTE_VALIDACION', 'OBSERVADO'] },
+      estado: { in: ESTADOS_BLOQUEAN_CIERRE },
     },
   });
   if (sinResolver > 0) {
     throw new DomainError(
-      `No se puede cerrar ${nombrePeriodo(anio, mes)}: hay ${sinResolver} movimiento(s) pendiente(s) u observado(s) en ese mes. Validalos o anulalos primero.`,
+      `No se puede cerrar ${nombrePeriodo(anio, mes)}: hay ${sinResolver} movimiento(s) sin validar o sin asignar en ese mes. Resolvelos (validar + asignar) o anulalos primero.`,
     );
   }
   const periodo = await getOrCreatePeriodo(ctx.db, desde);
