@@ -65,6 +65,9 @@ describe('evaluarCampos: marca campos a revisar', () => {
     moneda: 'ARS',
     cae: '70123456789012',
     vencimientoCae: null,
+    cuitReceptor: null,
+    razonSocialReceptor: null,
+    esComprobanteFiscalArg: true,
     confianza: {},
     observaciones: null,
   };

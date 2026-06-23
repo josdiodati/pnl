@@ -26,6 +26,26 @@ export type ImportesInput = {
   total?: number | null;
 };
 
+/** Gate de ARCA: un comprobante solo se valida si ARCA dice VALIDO, salvo override. */
+export function puedeValidarArca(
+  arcaEstado: string,
+  opts: { confirmarArcaInvalido?: boolean; overrideNoFiscal?: boolean; overrideNoFiscalMotivo?: string | null },
+): { ok: boolean; motivo?: string } {
+  if (arcaEstado === 'VALIDO') return { ok: true };
+  if (arcaEstado === 'INVALIDO') {
+    return opts.confirmarArcaInvalido
+      ? { ok: true }
+      : { ok: false, motivo: 'Este comprobante figura como INVÁLIDO en ARCA. Para validarlo igual tenés que marcar la confirmación explícita.' };
+  }
+  // NO_VERIFICADO | ERROR_CONSULTA (sin CAE / no fiscal / extranjero)
+  if (opts.overrideNoFiscal) {
+    return opts.overrideNoFiscalMotivo && opts.overrideNoFiscalMotivo.trim()
+      ? { ok: true }
+      : { ok: false, motivo: 'El override de un comprobante no constatable por ARCA requiere un motivo.' };
+  }
+  return { ok: false, motivo: 'Este comprobante no está constatado como válido por ARCA. Marcá el override (no fiscal / extranjero) con un motivo para validarlo igual.' };
+}
+
 function snapshot(mov: Movimiento): Record<string, unknown> {
   const { extraccionRaw, confianza, camposRevisar, ...rest } = mov as never as Record<string, unknown>;
   return rest;
@@ -87,6 +107,9 @@ export type DatosValidacion = {
   lineas: LineaDistribucion[];
   /** Explicit extra confirmation required when ARCA says INVALIDO (audited). */
   confirmarArcaInvalido?: boolean;
+  /** Override para comprobantes no constatables por ARCA (no fiscales / extranjeros). Requiere motivo. */
+  overrideNoFiscal?: boolean;
+  overrideNoFiscalMotivo?: string | null;
   /** Recurring correction note saved on the contraparte for future extractions. */
   instruccionesExtraccion?: string | null;
 };
@@ -111,10 +134,14 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
   const total = datos.importes?.total ?? (mov.total != null ? Number(mov.total) : null);
   if (total == null) throw new DomainError('El total es obligatorio para validar.');
 
-  if (mov.arcaEstado === 'INVALIDO' && !datos.confirmarArcaInvalido) {
-    throw new DomainError(
-      'Este comprobante figura como INVÁLIDO en ARCA. Para validarlo igual tenés que marcar la confirmación explícita.',
-    );
+  // Gate de ARCA: solo aplica a comprobantes (no a asientos/ventas manuales sin archivo).
+  if (mov.origen === 'COMPROBANTE' || mov.origen === 'VENTA_COMPROBANTE') {
+    const gate = puedeValidarArca(mov.arcaEstado, {
+      confirmarArcaInvalido: datos.confirmarArcaInvalido,
+      overrideNoFiscal: datos.overrideNoFiscal,
+      overrideNoFiscalMotivo: datos.overrideNoFiscalMotivo,
+    });
+    if (!gate.ok) throw new DomainError(gate.motivo ?? 'No se puede validar por estado de ARCA.');
   }
 
   const antes = snapshot(mov);
@@ -161,6 +188,7 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
       ...snapshot(actualizado),
       lineas: datos.lineas,
       ...(mov.arcaEstado === 'INVALIDO' ? { arcaInvalidoConfirmadoPorValidador: true } : {}),
+      ...(datos.overrideNoFiscal ? { overrideNoFiscal: true, overrideNoFiscalMotivo: datos.overrideNoFiscalMotivo ?? null } : {}),
     },
   });
 

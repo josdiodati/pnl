@@ -71,6 +71,7 @@ export class MockExtractor implements DocumentExtractor {
       moneda: 'ARS',
       cae,
       vencimientoCae: new Date(fecha.getTime() + 10 * 24 * 3600 * 1000).toISOString().slice(0, 10),
+      esComprobanteFiscalArg: true,
       confianza: Object.fromEntries(
         ['tipoComprobante', 'numero', 'fechaEmision', 'cuitEmisor', 'netoGravado', 'iva21', 'total'].map((c) => [
           c,

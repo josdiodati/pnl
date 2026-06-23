@@ -99,6 +99,7 @@ export function ValidacionForm({
   const [categoriaId, setCategoriaId] = useState(mov.categoriaId);
   const [tipoComprobante, setTipoComprobante] = useState(mov.tipoComprobante);
   const [total, setTotal] = useState<string>(mov.importes.total != null ? String(mov.importes.total) : '');
+  const [overrideNoFiscal, setOverrideNoFiscal] = useState(false);
 
   const contraparteSel = contrapartes.find((c) => c.id === contraparteId);
   const categoriaSel = categorias.find((c) => c.id === categoriaId);
@@ -134,6 +135,33 @@ export function ValidacionForm({
             <input type="checkbox" name="confirmarArcaInvalido" className="mt-0.5" />
             Este comprobante figura como inválido en ARCA; confirmo validarlo igual (queda registrado en auditoría).
           </label>
+        </div>
+      )}
+
+      {(mov.arcaEstado === 'NO_VERIFICADO' || mov.arcaEstado === 'ERROR_CONSULTA') && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 space-y-2">
+          <p>
+            ⚠ <strong>ARCA: no constatado.</strong> Este comprobante no figura como válido en ARCA
+            (sin CAE, no fiscal o servicio extranjero como AWS / Claude / Google).
+          </p>
+          <label className="flex items-start gap-2 font-medium">
+            <input
+              type="checkbox"
+              name="overrideNoFiscal"
+              className="mt-0.5"
+              checked={overrideNoFiscal}
+              onChange={(e) => setOverrideNoFiscal(e.target.checked)}
+            />
+            Lo valido igual con override (no fiscal / extranjero). Queda registrado en auditoría.
+          </label>
+          <input
+            type="text"
+            name="overrideNoFiscalMotivo"
+            placeholder="Motivo del override (obligatorio)"
+            className="input w-full"
+            required={overrideNoFiscal}
+            disabled={!overrideNoFiscal}
+          />
         </div>
       )}
 
