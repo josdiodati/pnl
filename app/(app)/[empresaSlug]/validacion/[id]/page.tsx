@@ -125,6 +125,12 @@ export default async function ValidacionDetallePage({
           Observado: {String(flags.notaObservacion)}
         </div>
       )}
+      {mov.estado === 'DUPLICADO' && (
+        <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          Detectado como <strong>duplicado</strong> (mismo CUIT + tipo + punto de venta + número que otro comprobante),
+          confirmado por QR/ARCA. Si en realidad no es un duplicado, usá «No es duplicado: volver a pendiente».
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="card p-3">
@@ -245,11 +251,13 @@ export default async function ValidacionDetallePage({
                 <button className="btn-secondary">Observar</button>
               </form>
             )}
-            {mov.estado === 'OBSERVADO' && (
+            {(mov.estado === 'OBSERVADO' || mov.estado === 'DUPLICADO') && (
               <form action={volverAPendienteAction}>
                 <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                 <input type="hidden" name="movimientoId" value={mov.id} />
-                <button className="btn-secondary">Volver a pendiente</button>
+                <button className="btn-secondary">
+                  {mov.estado === 'DUPLICADO' ? 'No es duplicado: volver a pendiente' : 'Volver a pendiente'}
+                </button>
               </form>
             )}
             {mov.estado === 'ERROR_PROCESAMIENTO' && (
@@ -273,7 +281,7 @@ export default async function ValidacionDetallePage({
                 <button className="btn-secondary">Re-consultar ARCA</button>
               </form>
             )}
-            {['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO', 'VALIDADO'].includes(mov.estado) && (
+            {['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO', 'VALIDADO', 'DUPLICADO'].includes(mov.estado) && (
               <form action={anularAction} className="flex items-end gap-2 ml-auto">
                 <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                 <input type="hidden" name="movimientoId" value={mov.id} />

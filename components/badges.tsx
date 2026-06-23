@@ -14,6 +14,7 @@ const ESTADO_COLOR: Record<EstadoMovimiento, string> = {
   ASIGNADO: 'bg-accent-soft text-accent-strong',
   ANULADO: 'bg-red-100 text-red-700 line-through',
   ERROR_PROCESAMIENTO: 'bg-red-100 text-red-800',
+  DUPLICADO: 'bg-slate-200 text-slate-600',
 };
 
 export function EstadoBadge({ estado }: { estado: EstadoMovimiento }) {

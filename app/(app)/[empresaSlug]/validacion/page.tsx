@@ -8,7 +8,7 @@ import { formatMoney, formatFecha } from '@/lib/format';
 // Validation queue: filterable list with counters, ordered "most doubtful
 // first" (lowest extraction confidence, then oldest).
 
-const ESTADOS_COLA: EstadoMovimiento[] = ['PENDIENTE_VALIDACION', 'RETENIDO', 'OBSERVADO', 'ERROR_PROCESAMIENTO'];
+const ESTADOS_COLA: EstadoMovimiento[] = ['PENDIENTE_VALIDACION', 'RETENIDO', 'OBSERVADO', 'DUPLICADO', 'ERROR_PROCESAMIENTO'];
 
 export default async function ValidacionPage({
   params,
@@ -53,6 +53,7 @@ export default async function ValidacionPage({
     { estado: 'PENDIENTE_VALIDACION', label: 'Pendientes' },
     { estado: 'RETENIDO', label: 'Retenidos' },
     { estado: 'OBSERVADO', label: 'Observados' },
+    { estado: 'DUPLICADO', label: 'Duplicados' },
     { estado: 'ERROR_PROCESAMIENTO', label: 'Errores' },
   ];
 

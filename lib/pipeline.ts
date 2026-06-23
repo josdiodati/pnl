@@ -14,6 +14,7 @@ import { elegirRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { tieneAsignacionCompleta } from '@/lib/movimientos/service';
 import type { LineaDistribucion } from '@/lib/movimientos/distribucion';
+import type { EstadoMovimiento } from '@prisma/client';
 
 // The single ingestion pipeline shared by ALL channels (web, photo, email,
 // telegram): store immutable file -> Movimiento INGRESADO -> Job EXTRACCION ->
@@ -221,6 +222,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     total: totalFinal != null ? Number(totalFinal) : null,
     hayDuplicados: duplicados.length > 0,
   });
+  let observarPorRegla: string | null = null;
   if (estadoFinal !== 'RETENIDO') {
     const reglas = await db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }] });
     const regla = elegirRegla(reglas, {
@@ -229,7 +231,9 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       canalIngreso: mov.canalIngreso,
       texto: `${extraccion.razonSocialEmisor ?? ''} ${descripcionFinal ?? ''}`,
     });
-    if (regla) {
+    if (regla?.accion === 'OBSERVAR') {
+      observarPorRegla = regla.nombre; // descarte automático
+    } else if (regla) {
       const asign = await resolverAsignacionDeRegla(db, regla);
       categoriaEfectiva = asign.categoriaId;
       lineasEfectivas = asign.lineas;
@@ -237,8 +241,22 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       flags.reglaPreasignacion = regla.nombre; // marcador para la vista de Validación
     }
   }
+
+  // Duplicado confirmado: el QR aporta la identidad autoritativa (cuit/pv/nro);
+  // si además hay un duplicado, lo apartamos a DUPLICADO automáticamente.
+  const duplicadoConfirmado = duplicados.length > 0 && qrEstado === 'OK';
+
   const completa = tieneAsignacionCompleta(categoriaEfectiva, lineasEfectivas);
-  const estadoFinalReal = decidirAutovalidacion({ apto: auto.apto, completa, estadoBase: estadoFinal });
+  let estadoFinalReal: EstadoMovimiento;
+  if (duplicadoConfirmado) {
+    estadoFinalReal = 'DUPLICADO';
+  } else if (observarPorRegla) {
+    estadoFinalReal = 'OBSERVADO';
+    flags.notaObservacion = `Observado automáticamente por la regla «${observarPorRegla}»`;
+    flags.observadoPorRegla = observarPorRegla;
+  } else {
+    estadoFinalReal = decidirAutovalidacion({ apto: auto.apto, completa, estadoBase: estadoFinal });
+  }
   assertTransicion('PROCESANDO', estadoFinalReal);
 
   await db.movimiento.update({
@@ -301,13 +319,27 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     despues: { estado: estadoFinalReal, camposRevisar, duplicados: duplicados.map((d) => d.id), contraparte: contraparte?.razonSocial ?? null },
   });
 
-  // Acción del sistema (sin usuarioId): autovalidación / auto-asignación.
+  // Acción del sistema (sin usuarioId): autovalidación / auto-asignación / descarte / duplicado.
   if (estadoFinalReal === 'VALIDADO' || estadoFinalReal === 'ASIGNADO') {
     await writeAudit(db, {
       entidad: 'Movimiento',
       entidadId: mov.id,
       accion: estadoFinalReal === 'ASIGNADO' ? 'AUTO_ASIGNAR' : 'AUTO_VALIDAR',
       despues: { estado: estadoFinalReal, regla: reglaAplicada, motivos: auto.motivos },
+    });
+  } else if (estadoFinalReal === 'DUPLICADO') {
+    await writeAudit(db, {
+      entidad: 'Movimiento',
+      entidadId: mov.id,
+      accion: 'AUTO_DUPLICADO',
+      despues: { estado: 'DUPLICADO', duplicados: duplicados.map((d) => d.id), confirmadoPor: 'QR' },
+    });
+  } else if (estadoFinalReal === 'OBSERVADO' && observarPorRegla) {
+    await writeAudit(db, {
+      entidad: 'Movimiento',
+      entidadId: mov.id,
+      accion: 'AUTO_OBSERVAR',
+      despues: { estado: 'OBSERVADO', regla: observarPorRegla },
     });
   }
 
@@ -350,6 +382,20 @@ export async function procesarArca(payload: { movimientoId: string; empresaId: s
     accion: 'ARCA_CONSTATAR',
     despues: { estado: resultado.estado, detalle: resultado.detalle },
   });
+
+  // Si ARCA confirma el comprobante (VALIDO) y había duplicado detectado (cuando
+  // no hubo QR para confirmarlo en la extracción), apartarlo a DUPLICADO.
+  const dupIds = (mov.flags as { duplicados?: string[] } | null)?.duplicados ?? [];
+  if (resultado.estado === 'VALIDO' && dupIds.length > 0 && mov.estado === 'PENDIENTE_VALIDACION') {
+    assertTransicion(mov.estado, 'DUPLICADO');
+    await db.movimiento.update({ where: { id: mov.id }, data: { estado: 'DUPLICADO' } });
+    await writeAudit(db, {
+      entidad: 'Movimiento',
+      entidadId: mov.id,
+      accion: 'AUTO_DUPLICADO',
+      despues: { estado: 'DUPLICADO', duplicados: dupIds, confirmadoPor: 'ARCA' },
+    });
+  }
 }
 
 /** Final-failure hook: the worker flips the movement to ERROR_PROCESAMIENTO. */

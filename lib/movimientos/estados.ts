@@ -24,14 +24,16 @@ const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
   INGRESADO: ['PROCESANDO'],
   // VALIDADO/ASIGNADO directos: autovalidación en el pipeline (QR + aritmética;
   // ASIGNADO si una regla de preasignación da asignación completa).
-  PROCESANDO: ['PENDIENTE_VALIDACION', 'RETENIDO', 'VALIDADO', 'ASIGNADO', 'ERROR_PROCESAMIENTO'],
-  PENDIENTE_VALIDACION: ['VALIDADO', 'OBSERVADO', 'RETENIDO', 'ANULADO', 'ASIGNADO'],
+  // OBSERVADO: descarte automático por regla. DUPLICADO: duplicado confirmado por QR/ARCA.
+  PROCESANDO: ['PENDIENTE_VALIDACION', 'RETENIDO', 'VALIDADO', 'ASIGNADO', 'OBSERVADO', 'DUPLICADO', 'ERROR_PROCESAMIENTO'],
+  PENDIENTE_VALIDACION: ['VALIDADO', 'OBSERVADO', 'RETENIDO', 'ANULADO', 'ASIGNADO', 'DUPLICADO'],
   OBSERVADO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO', 'ASIGNADO'],
   RETENIDO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO', 'ASIGNADO'],
   VALIDADO: ['ASIGNADO', 'ANULADO'],
   ASIGNADO: ['VALIDADO', 'ANULADO'],
   ANULADO: [],
   ERROR_PROCESAMIENTO: ['PROCESANDO', 'PENDIENTE_VALIDACION'],
+  DUPLICADO: ['PENDIENTE_VALIDACION', 'ANULADO'],
 };
 
 // Valid initial states per origin: vouchers always enter the OCR pipeline;
@@ -79,4 +81,5 @@ export const ESTADO_LABEL: Record<EstadoMovimiento, string> = {
   ASIGNADO: 'Asignado',
   ANULADO: 'Anulado',
   ERROR_PROCESAMIENTO: 'Error de procesamiento',
+  DUPLICADO: 'Duplicado',
 };

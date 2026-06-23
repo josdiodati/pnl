@@ -124,10 +124,21 @@ export default async function ReglasPage({
             </div>
           </fieldset>
 
+          <div className="w-64">
+            <label className="label">Acción</label>
+            <select name="accion" className="input" defaultValue={editando?.accion ?? 'ASIGNAR'}>
+              <option value="ASIGNAR">Asignar (categoría + distribución)</option>
+              <option value="OBSERVAR">Observar (descartar a la cola de Observados)</option>
+            </select>
+            <p className="mt-1 text-[11px] text-slate-500">
+              «Observar» aparta el comprobante automáticamente (p. ej. adjuntos que no son comprobantes); ignora la imputación de abajo.
+            </p>
+          </div>
+
           <fieldset className="border border-slate-200 rounded p-3 space-y-3">
             <legend className="text-sm font-medium text-slate-600 px-1">
-              Acción: elegí categoría y una plantilla de distribución, o un centro de costo (línea
-              única 100%).
+              Acción Asignar: elegí categoría y una plantilla de distribución, o un centro de costo (línea
+              única 100%). (Se ignora si la acción es «Observar».)
             </legend>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -229,7 +240,9 @@ export default async function ReglasPage({
               const cc = r.centroCostoId ? centros.find((c) => c.id === r.centroCostoId) : null;
 
               let accionLabel = '—';
-              if (cat) {
+              if (r.accion === 'OBSERVAR') {
+                accionLabel = 'Observar (descartar)';
+              } else if (cat) {
                 const extra = dist ? dist.nombre : cc ? cc.nombre : null;
                 accionLabel = extra ? `${cat.nombre} / ${extra}` : cat.nombre;
               }

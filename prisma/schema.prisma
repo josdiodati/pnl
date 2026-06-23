@@ -213,6 +213,7 @@ model ReglaAsignacion {
   nombre         String
   prioridad      Int      @default(100) // menor = se evalúa primero
   activa         Boolean  @default(true)
+  accion         String   @default("ASIGNAR") // ASIGNAR | OBSERVAR (descarta a Observado)
   cargadoPorId   String?
   cuit           String?
   canal          String?
@@ -248,6 +249,7 @@ enum EstadoMovimiento {
   ASIGNADO
   ANULADO
   ERROR_PROCESAMIENTO
+  DUPLICADO
 }
 
 enum Moneda {

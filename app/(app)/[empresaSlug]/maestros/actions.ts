@@ -261,17 +261,22 @@ export async function guardarRegla(formData: FormData): Promise<void> {
     const prioridadRaw = String(formData.get('prioridad') ?? '').trim();
     const prioridad = prioridadRaw === '' || Number.isNaN(Number(prioridadRaw)) ? 100 : Number(prioridadRaw);
     const v = (k: string) => { const s = String(formData.get(k) ?? '').trim(); return s || null; };
+    const accion = String(formData.get('accion') ?? 'ASIGNAR') === 'OBSERVAR' ? 'OBSERVAR' : 'ASIGNAR';
+    // Una regla OBSERVAR (descarte) no lleva imputación: limpiamos los campos de acción.
     const data = {
-      nombre, prioridad,
+      nombre, prioridad, accion,
       cargadoPorId: v('cargadoPorId'), cuit: v('cuit'), canal: v('canal'), palabraClave: v('palabraClave'),
-      categoriaId: v('categoriaId'), distribucionId: v('distribucionId'),
-      centroCostoId: v('centroCostoId'), clienteId: v('clienteId'), proyectoId: v('proyectoId'),
+      categoriaId: accion === 'OBSERVAR' ? null : v('categoriaId'),
+      distribucionId: accion === 'OBSERVAR' ? null : v('distribucionId'),
+      centroCostoId: accion === 'OBSERVAR' ? null : v('centroCostoId'),
+      clienteId: accion === 'OBSERVAR' ? null : v('clienteId'),
+      proyectoId: accion === 'OBSERVAR' ? null : v('proyectoId'),
     };
     if (![data.cargadoPorId, data.cuit, data.canal, data.palabraClave].some(Boolean)) {
       throw new DomainError('La regla necesita al menos una condición.');
     }
-    if (!data.categoriaId || !(data.distribucionId || data.centroCostoId)) {
-      throw new DomainError('La acción necesita categoría y (plantilla de distribución o centro de costo).');
+    if (accion === 'ASIGNAR' && (!data.categoriaId || !(data.distribucionId || data.centroCostoId))) {
+      throw new DomainError('La acción Asignar necesita categoría y (plantilla de distribución o centro de costo).');
     }
     if ((data.clienteId || data.proyectoId) && !data.centroCostoId) {
       throw new DomainError('Cliente/proyecto requieren un centro de costo (línea única).');
