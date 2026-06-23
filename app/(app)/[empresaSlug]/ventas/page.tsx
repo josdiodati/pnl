@@ -22,7 +22,7 @@ export default async function VentasPage({
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
 
   const where: Prisma.MovimientoWhereInput = {
-    origen: 'VENTA_MANUAL',
+    origen: { in: ['VENTA_MANUAL', 'VENTA_COMPROBANTE'] },
     ...(esValidador ? {} : { creadoPorId: ctx.usuario.id }),
     ...(searchParams.estado ? { estado: searchParams.estado as EstadoMovimiento } : {}),
     ...(searchParams.contraparteId ? { contraparteId: searchParams.contraparteId } : {}),
@@ -42,7 +42,7 @@ export default async function VentasPage({
     }),
     ctx.db.contraparte.findMany({ where: { activa: true, tipo: { not: 'PROVEEDOR' } }, orderBy: { razonSocial: 'asc' } }),
     ctx.db.movimiento.findMany({
-      where: { origen: 'VENTA_MANUAL', estado: 'VALIDADO', fechaDevengamiento: { gte: desdeMes, lt: hastaMes } },
+      where: { origen: { in: ['VENTA_MANUAL', 'VENTA_COMPROBANTE'] }, estado: 'VALIDADO', fechaDevengamiento: { gte: desdeMes, lt: hastaMes } },
       include: { categoria: true, lineas: true },
     }),
   ]);
