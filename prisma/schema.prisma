@@ -33,6 +33,7 @@ model Empresa {
   categorias            Categoria[]
   centrosCosto          CentroCosto[]
   clientes              Cliente[]
+  proyectos             Proyecto[]
   contrapartes          Contraparte[]
   plantillasDistribucion PlantillaDistribucion[]
   plantillasRecurrentes PlantillaRecurrente[]
@@ -125,6 +126,20 @@ model Cliente {
   @@unique([empresaId, nombre])
 }
 
+// Third analysis dimension (optional per line)
+model Proyecto {
+  id        String  @id @default(cuid())
+  empresaId String
+  nombre    String
+  codigo    String?
+  activo    Boolean @default(true)
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  lineas    MovimientoLinea[]
+  plantillaLineas PlantillaDistribucionLinea[]
+
+  @@unique([empresaId, nombre])
+}
+
 enum TipoContraparte {
   PROVEEDOR
   CLIENTE
@@ -164,10 +179,12 @@ model PlantillaDistribucionLinea {
   plantillaId       String
   centroCostoId     String
   clienteId         String?
+  proyectoId        String?
   porcentaje        Decimal               @db.Decimal(7, 4) // lines must sum 100
   plantilla         PlantillaDistribucion @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
   centroCosto       CentroCosto           @relation(fields: [centroCostoId], references: [id])
   cliente           Cliente?              @relation(fields: [clienteId], references: [id])
+  proyecto          Proyecto?             @relation(fields: [proyectoId], references: [id])
 }
 
 // Recurring template (repeated monthly entry: legal fees, salaries, ...)
@@ -300,11 +317,13 @@ model MovimientoLinea {
   movimientoId      String
   centroCostoId     String
   clienteId         String? // second dimension, optional
+  proyectoId        String? // third dimension, optional
   porcentaje        Decimal     @db.Decimal(7, 4) // sum per movement = 100.0000
   origen            OrigenLinea @default(MANUAL)
   movimiento        Movimiento  @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
   centroCosto       CentroCosto @relation(fields: [centroCostoId], references: [id])
   cliente           Cliente?    @relation(fields: [clienteId], references: [id])
+  proyecto          Proyecto?   @relation(fields: [proyectoId], references: [id])
 }
 
 // ---------- Periods ----------

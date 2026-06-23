@@ -98,6 +98,15 @@ describe('importes por línea: la última absorbe el redondeo', () => {
   });
 });
 
+describe('distribución con cliente y proyecto por línea', () => {
+  it('acepta líneas con cliente y proyecto opcionales que suman 100', () => {
+    expect(() => validarDistribucion([
+      { centroCostoId: 'cc1', clienteId: 'cli1', proyectoId: 'pr1', porcentaje: 60 },
+      { centroCostoId: 'cc2', clienteId: null, proyectoId: null, porcentaje: 40 },
+    ])).not.toThrow();
+  });
+});
+
 describe('tabla de signos contables (doc 07)', () => {
   it('ingreso suma, egreso resta', () => {
     expect(signoMovimiento('INGRESO', 'FACTURA_A')).toBe(1);

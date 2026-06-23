@@ -8,6 +8,7 @@ export const SCOPED_MODELS = new Set([
   'Categoria',
   'CentroCosto',
   'Cliente',
+  'Proyecto',
   'Contraparte',
   'PlantillaDistribucion',
   'PlantillaRecurrente',

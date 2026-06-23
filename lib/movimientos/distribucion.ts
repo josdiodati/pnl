@@ -8,6 +8,7 @@ import { DomainError } from '@/lib/errors';
 export type LineaDistribucion = {
   centroCostoId: string;
   clienteId?: string | null;
+  proyectoId?: string | null;
   porcentaje: number; // 0 < p <= 100, up to 4 decimals
 };
 
