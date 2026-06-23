@@ -6,3 +6,6 @@ storage/
 *.tsbuildinfo
 next-env.d.ts
 .remember/
+
+# Comprobantes fiscales reales (datos sensibles: CUITs, importes, clientes)
+Docs/ComprobantesEjemplos/
