@@ -35,15 +35,20 @@ export function ArcaBadge({ estado }: { estado: string }) {
 }
 
 export function QrBadge({ estado }: { estado: string | null }) {
-  // Verde: tiene QR y se leyó. Amarillo: tiene pero no se pudo usar. Rojo: no tiene.
+  // Siempre dice "QR"; el color indica el estado: verde = tiene y se leyó,
+  // amarillo = tiene pero no se pudo usar, rojo = no tiene.
   const estilos: Record<string, [string, string]> = {
-    OK: ['bg-accent-soft text-accent-strong', 'QR ✓'],
-    ILEGIBLE: ['bg-amber-100 text-amber-800', 'QR ilegible'],
-    SIN_QR: ['bg-red-100 text-red-700', 'sin QR'],
+    OK: ['bg-accent-soft text-accent-strong', 'QR leído e interpretado (ARCA/AFIP)'],
+    ILEGIBLE: ['bg-amber-100 text-amber-800', 'Tiene QR pero no se pudo usar'],
+    SIN_QR: ['bg-red-100 text-red-700', 'Sin QR'],
   };
   if (!estado || !estilos[estado]) return null;
-  const [clase, label] = estilos[estado];
-  return <span className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${clase}`}>{label}</span>;
+  const [clase, titulo] = estilos[estado];
+  return (
+    <span title={titulo} className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${clase}`}>
+      QR
+    </span>
+  );
 }
 
 export function CanalBadge({ canal }: { canal: string | null }) {
