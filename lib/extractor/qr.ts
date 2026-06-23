@@ -51,34 +51,67 @@ export function parseAfipQrUrl(url: string): QrAfip | null {
 export type EstadoQr = 'OK' | 'ILEGIBLE' | 'SIN_QR';
 export type ResultadoQr = { qr: QrAfip | null; estado: EstadoQr };
 
+// Corre zbarimg sobre un PNG y devuelve las URLs de los símbolos QR encontrados.
+// Sin --raw: zbarimg prefija cada símbolo con su tipo ("QR-Code:..."), así
+// distinguimos un QR de otros códigos (databar/barras 1D).
+function zbarQrUrls(pngPath: string): string[] {
+  let out = '';
+  try {
+    out = execFileSync('zbarimg', ['-q', pngPath], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch (e) {
+    // zbarimg sale con código 4 cuando no encuentra símbolos; igual capturamos stdout.
+    out = String((e as { stdout?: unknown })?.stdout ?? '');
+  }
+  return out
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('QR-Code:'))
+    .map((l) => l.slice('QR-Code:'.length));
+}
+
 export async function leerQrAfip(buffer: Buffer): Promise<ResultadoQr> {
   const dir = mkdtempSync(join(tmpdir(), 'qr-'));
+  let tieneSimboloQr = false;
+  // Prueba zbar sobre un PNG; marca si vio algún QR y devuelve el primero que parsea como ARCA/AFIP.
+  const probar = (png: string): QrAfip | null => {
+    for (const url of zbarQrUrls(png)) {
+      tieneSimboloQr = true;
+      const q = parseAfipQrUrl(url);
+      if (q) return q;
+    }
+    return null;
+  };
   try {
     const pdf = join(dir, 'in.pdf');
     writeFileSync(pdf, buffer);
-    // Rasteriza las 2 primeras páginas (el QR suele estar en la 1ª) a 300 dpi.
+
+    // Paso 1: render normal de las 2 primeras páginas a 300 dpi (caso común).
     execFileSync('pdftoppm', ['-png', '-r', '300', '-f', '1', '-l', '2', pdf, join(dir, 'p')], { stdio: 'ignore' });
-    let tieneSimboloQr = false;
-    for (const png of readdirSync(dir).filter((f) => f.endsWith('.png'))) {
-      let out = '';
-      try {
-        // Sin --raw: zbarimg prefija cada símbolo con su tipo ("QR-Code:..."), así
-        // distinguimos un QR de otros códigos (databar/barras).
-        out = execFileSync('zbarimg', ['-q', join(dir, png)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-      } catch (e) {
-        // zbarimg sale con código 4 cuando no encuentra símbolos; igual capturamos stdout.
-        out = String((e as { stdout?: unknown })?.stdout ?? '');
-      }
-      for (const line of out.split('\n').map((l) => l.trim())) {
-        if (!line.startsWith('QR-Code:')) continue;
-        tieneSimboloQr = true;
-        const q = parseAfipQrUrl(line.slice('QR-Code:'.length));
+    for (const png of readdirSync(dir).filter((f) => /^p-.*\.png$/.test(f))) {
+      const q = probar(join(dir, png));
+      if (q) return { qr: q, estado: 'OK' };
+    }
+
+    // Paso 2 (fallback): muchos QR no los lee zbar por el anti-aliasing del render.
+    // Binarizamos la página 1 a 400 dpi (gris + threshold) con ImageMagick y reintentamos.
+    execFileSync('pdftoppm', ['-png', '-r', '400', '-f', '1', '-l', '1', pdf, join(dir, 'hi')], { stdio: 'ignore' });
+    const hi = readdirSync(dir).find((f) => /^hi-.*\.png$/.test(f));
+    if (hi) {
+      for (const th of ['50%', '55%', '60%']) {
+        const thp = join(dir, `th${th.replace('%', '')}.png`);
+        try {
+          execFileSync('convert', [join(dir, hi), '-colorspace', 'Gray', '-threshold', th, thp], { stdio: 'ignore' });
+        } catch {
+          continue; // sin ImageMagick: el fallback queda inactivo (best-effort)
+        }
+        const q = probar(thp);
         if (q) return { qr: q, estado: 'OK' };
       }
     }
+
     return { qr: null, estado: tieneSimboloQr ? 'ILEGIBLE' : 'SIN_QR' };
   } catch {
-    return { qr: null, estado: 'ILEGIBLE' };
+    return { qr: null, estado: tieneSimboloQr ? 'ILEGIBLE' : 'SIN_QR' };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
