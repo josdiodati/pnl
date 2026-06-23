@@ -47,7 +47,10 @@ export default async function MovimientosPage({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-lg font-semibold">Movimientos</h1>
+        <div>
+          <h1 className="text-lg font-semibold">Movimientos</h1>
+          <p className="text-xs text-slate-500">Libro de movimientos validados y asignados. Lo pendiente vive en las colas de Validación y Asignación.</p>
+        </div>
         <a href={`/${params.empresaSlug}/movimientos/export${qs ? `?${qs}` : ''}`} className="btn-secondary text-sm">
           Exportar CSV
         </a>
@@ -111,10 +114,9 @@ export default async function MovimientosPage({
         <div>
           <label className="label">Estado</label>
           <select name="estado" defaultValue={searchParams.estado ?? ''} className="input text-xs">
-            <option value="">Todos</option>
-            {['INGRESADO', 'PROCESANDO', 'PENDIENTE_VALIDACION', 'RETENIDO', 'OBSERVADO', 'VALIDADO', 'ASIGNADO', 'ANULADO', 'ERROR_PROCESAMIENTO'].map((e) => (
-              <option key={e} value={e}>{e.replace(/_/g, ' ')}</option>
-            ))}
+            <option value="">Validados y asignados</option>
+            <option value="VALIDADO">Solo validados</option>
+            <option value="ASIGNADO">Solo asignados</option>
           </select>
         </div>
         <div className="flex gap-1">

@@ -16,6 +16,11 @@ export type FiltrosMovimientos = {
   canal?: string;
 };
 
+// Movimientos is the ledger: it ONLY shows validated and assigned movements.
+// In-flight states (ingresado/procesando/pendiente/observado/retenido), errors
+// and voided entries live in the Validación / Asignación queues, not here.
+export const ESTADOS_LIBRO = ['VALIDADO', 'ASIGNADO'] as const;
+
 export function buildWhereMovimientos(
   f: FiltrosMovimientos,
   opts: { esValidador: boolean; usuarioId: string },
@@ -32,7 +37,11 @@ export function buildWhereMovimientos(
   if (f.categoriaId) where.categoriaId = f.categoriaId;
   if (f.contraparteId) where.contraparteId = f.contraparteId;
   if (f.origen) where.origen = f.origen as never;
-  if (f.estado) where.estado = f.estado as never;
+  // Hard-constrain to the ledger states; an explicit filter can only narrow
+  // within them, never widen to in-flight/voided states.
+  where.estado = (f.estado && (ESTADOS_LIBRO as readonly string[]).includes(f.estado)
+    ? f.estado
+    : { in: ESTADOS_LIBRO }) as never;
   if (f.canal) where.canalIngreso = f.canal;
   if (f.centroCostoId || f.clienteId) {
     where.lineas = {
