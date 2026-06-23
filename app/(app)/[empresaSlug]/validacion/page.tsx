@@ -112,6 +112,7 @@ export default async function ValidacionPage({
             {conConfianza.map(({ m, confMin }) => {
               const revisar = Object.keys((m.camposRevisar as object | null) ?? {}).length;
               const duplicados = ((m.flags as { duplicados?: string[] } | null)?.duplicados ?? []).length;
+              const reglaPre = (m.flags as { reglaPreasignacion?: string } | null)?.reglaPreasignacion;
               const extr = m.extraccionRaw as { razonSocialEmisor?: string } | null;
               return (
                 <tr key={m.id} className="hover:bg-slate-50">
@@ -141,6 +142,14 @@ export default async function ValidacionPage({
                     )}
                     {confMin < 0.7 && (
                       <span className="inline-block rounded bg-amber-50 text-amber-700 px-1.5 py-0.5 text-xs">confianza baja</span>
+                    )}
+                    {reglaPre && (
+                      <span
+                        title={`Pre-asignado por la regla «${reglaPre}». La imputación ya viene cargada.`}
+                        className="cursor-help inline-block rounded bg-sky-100 text-sky-800 px-1.5 py-0.5 text-xs font-medium"
+                      >
+                        ⚡ regla
+                      </span>
                     )}
                   </td>
                   <td><CanalBadge canal={m.canalIngreso} /></td>

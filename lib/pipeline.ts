@@ -172,13 +172,16 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
   const flags: Record<string, unknown> = { ...(mov.flags as object | null ?? {}) };
   if (duplicados.length) flags.duplicados = duplicados.map((d) => d.id);
 
-  // --- Autovalidación (QR + aritmética) + preasignación por reglas ---
-  // Líneas/categoría efectivas: una regla que matchea tiene precedencia sobre
-  // los defaults de la contraparte. Si la asignación resulta completa y el
-  // comprobante es apto, salta a ASIGNADO; si es apto sin asignación completa,
-  // VALIDADO; si no es apto, PENDIENTE_VALIDACION; período cerrado nunca autovalida.
+  // --- Preasignación por reglas + autovalidación (QR + aritmética) ---
+  // Las reglas se evalúan SIEMPRE (período abierto), no solo cuando autovalida:
+  // así un comprobante que queda PENDIENTE igual llega a la cola de Validación
+  // con su preasignación ya cargada (regla > defaults de contraparte). La
+  // autovalidación decide el estado: apto+completa→ASIGNADO, apto→VALIDADO,
+  // no apto→PENDIENTE_VALIDACION; período cerrado nunca autovalida.
   const n = (v: unknown) => (v == null ? null : Number(v));
-  const descripcionFinal = extraccion.razonSocialEmisor ? `Comprobante de ${extraccion.razonSocialEmisor}` : mov.descripcion;
+  // La descripción genérica "Comprobante de X" era redundante con la razón
+  // social/contraparte que ya se muestra; no la sintetizamos.
+  const descripcionFinal = mov.descripcion;
   let lineasContraparte: LineaDistribucion[] = [];
   if (contraparte?.distribucionDefaultId) {
     const plantilla = await db.plantillaDistribucion.findFirst({
@@ -215,7 +218,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     total: totalFinal != null ? Number(totalFinal) : null,
     hayDuplicados: duplicados.length > 0,
   });
-  if (estadoFinal !== 'RETENIDO' && auto.apto) {
+  if (estadoFinal !== 'RETENIDO') {
     const reglas = await db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }] });
     const regla = elegirRegla(reglas, {
       creadoPorId: mov.creadoPorId,
@@ -228,6 +231,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       categoriaEfectiva = asign.categoriaId;
       lineasEfectivas = asign.lineas;
       reglaAplicada = regla.nombre;
+      flags.reglaPreasignacion = regla.nombre; // marcador para la vista de Validación
     }
   }
   const completa = tieneAsignacionCompleta(categoriaEfectiva, lineasEfectivas);

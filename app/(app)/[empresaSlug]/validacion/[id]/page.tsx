@@ -55,6 +55,14 @@ export default async function ValidacionDetallePage({
         {mov.cae && <ArcaBadge estado={mov.arcaEstado} />}
         <QrBadge estado={mov.qrEstado} />
         <CanalBadge canal={mov.canalIngreso} />
+        {Boolean(flags.reglaPreasignacion) && (
+          <span
+            title={`Pre-asignado por la regla «${String(flags.reglaPreasignacion)}». La imputación ya viene cargada; al validar, si está completa pasará directo a Asignado.`}
+            className="cursor-help rounded bg-sky-100 text-sky-800 px-1.5 py-0.5 text-[11px] font-semibold"
+          >
+            ⚡ regla
+          </span>
+        )}
         {mov.estado === 'RETENIDO' && (
           <span className="text-xs text-orange-700">
             El período de la fecha del comprobante está cerrado: un administrador debe reabrirlo para poder validar.
@@ -103,6 +111,8 @@ export default async function ValidacionDetallePage({
                 puntoVenta: mov.puntoVenta ?? '',
                 numero: mov.numero ?? '',
                 cuitEmisor: mov.cuitEmisor ?? '',
+                cuitReceptor: String((mov.extraccionRaw as { cuitReceptorEfectivo?: string } | null)?.cuitReceptorEfectivo ?? ''),
+                esVenta: mov.origen === 'VENTA_COMPROBANTE' || mov.origen === 'VENTA_MANUAL',
                 contraparteId: mov.contraparteId ?? '',
                 descripcion: mov.descripcion ?? '',
                 moneda: mov.moneda,

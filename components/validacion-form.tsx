@@ -18,6 +18,8 @@ export type CampoMovimiento = {
   puntoVenta: string;
   numero: string;
   cuitEmisor: string;
+  cuitReceptor: string;
+  esVenta: boolean;
   contraparteId: string;
   descripcion: string;
   moneda: string;
@@ -161,9 +163,14 @@ export function ValidacionForm({
         <Campo label="Número" revisar={r.numero}>
           <input name="numero" defaultValue={mov.numero} className="input" />
         </Campo>
-        <Campo label="CUIT del emisor" revisar={r.cuitEmisor}>
+        <Campo label={mov.esVenta ? 'CUIT del emisor (nuestro)' : 'CUIT del emisor'} revisar={r.cuitEmisor}>
           <input name="cuitEmisor" defaultValue={mov.cuitEmisor} className="input" />
         </Campo>
+        {mov.esVenta && (
+          <Campo label="CUIT receptor (cliente)">
+            <input value={mov.cuitReceptor || '—'} readOnly disabled className="input bg-slate-50 text-slate-600" />
+          </Campo>
+        )}
         <Campo label="CAE" revisar={r.cae}>
           <input name="cae" defaultValue={mov.cae} className="input" />
         </Campo>
