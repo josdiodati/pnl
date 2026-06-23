@@ -28,7 +28,7 @@ export default async function ValidacionDetallePage({
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const mov = await ctx.db.movimiento.findFirst({
     where: { id: params.id },
-    include: { contraparte: true, categoria: true, lineas: true, creadoPor: true, validadoPor: true },
+    include: { contraparte: true, categoria: true, creadoPor: true, validadoPor: true },
   });
   if (!mov) notFound();
 
