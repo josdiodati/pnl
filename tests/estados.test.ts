@@ -85,6 +85,9 @@ describe('máquina de estados de movimientos (doc 07)', () => {
       expect(bloqueaCierre('VALIDADO')).toBe(true);
       expect(bloqueaCierre('ASIGNADO')).toBe(false);
       expect(bloqueaCierre('PENDIENTE_VALIDACION')).toBe(true);
+      expect(bloqueaCierre('OBSERVADO')).toBe(true);
+      expect(bloqueaCierre('RETENIDO')).toBe(true);
+      expect(bloqueaCierre('ANULADO')).toBe(false);
     });
   });
 });
