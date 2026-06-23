@@ -35,7 +35,9 @@ describe('máquina de estados de movimientos (doc 07)', () => {
   it('rechaza transiciones ilegales', () => {
     expect(puedeTransicionar('INGRESADO', 'VALIDADO')).toBe(false);
     expect(puedeTransicionar('VALIDADO', 'PENDIENTE_VALIDACION')).toBe(false);
-    expect(puedeTransicionar('PROCESANDO', 'VALIDADO')).toBe(false);
+    // PROCESANDO→VALIDADO/ASIGNADO ahora SÍ es válido (autovalidación); usamos
+    // una transición que sigue siendo ilegal para cubrir el rechazo.
+    expect(puedeTransicionar('INGRESADO', 'ASIGNADO')).toBe(false);
     expect(() => assertTransicion('INGRESADO', 'VALIDADO')).toThrow(DomainError);
   });
 

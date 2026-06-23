@@ -9,6 +9,11 @@ import { getOrCreatePeriodo } from '@/lib/periodos';
 import { writeAudit } from '@/lib/audit';
 import { enqueueJob } from '@/lib/jobs';
 import { leerQrAfip } from '@/lib/extractor/qr';
+import { evaluarAutovalidacion, decidirAutovalidacion } from '@/lib/autovalidacion';
+import { elegirRegla } from '@/lib/reglas/matching';
+import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
+import { tieneAsignacionCompleta } from '@/lib/movimientos/service';
+import type { LineaDistribucion } from '@/lib/movimientos/distribucion';
 
 // The single ingestion pipeline shared by ALL channels (web, photo, email,
 // telegram): store immutable file -> Movimiento INGRESADO -> Job EXTRACCION ->
@@ -164,20 +169,79 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     periodoId = periodo.id;
     if (periodo.estado === 'CERRADO') estadoFinal = 'RETENIDO';
   }
-  assertTransicion('PROCESANDO', estadoFinal);
-
   const flags: Record<string, unknown> = { ...(mov.flags as object | null ?? {}) };
   if (duplicados.length) flags.duplicados = duplicados.map((d) => d.id);
+
+  // --- Autovalidación (QR + aritmética) + preasignación por reglas ---
+  // Líneas/categoría efectivas: una regla que matchea tiene precedencia sobre
+  // los defaults de la contraparte. Si la asignación resulta completa y el
+  // comprobante es apto, salta a ASIGNADO; si es apto sin asignación completa,
+  // VALIDADO; si no es apto, PENDIENTE_VALIDACION; período cerrado nunca autovalida.
+  const n = (v: unknown) => (v == null ? null : Number(v));
+  let lineasContraparte: LineaDistribucion[] = [];
+  if (contraparte?.distribucionDefaultId) {
+    const plantilla = await db.plantillaDistribucion.findFirst({
+      where: { id: contraparte.distribucionDefaultId },
+      include: { lineas: true },
+    });
+    if (plantilla) {
+      lineasContraparte = plantilla.lineas.map((l) => ({
+        centroCostoId: l.centroCostoId,
+        clienteId: l.clienteId ?? null,
+        proyectoId: l.proyectoId ?? null,
+        porcentaje: Number(l.porcentaje),
+      }));
+    }
+  }
+  let categoriaEfectiva: string | null = contraparte?.categoriaDefaultId ?? null;
+  let lineasEfectivas: LineaDistribucion[] = lineasContraparte;
+  let reglaAplicada: string | null = null;
+  const auto = evaluarAutovalidacion({
+    qrEstado,
+    esComprobanteFiscalArg: !!extraccion.esComprobanteFiscalArg,
+    cae: caeFinal,
+    qrAporto: qrAfip != null,
+    importes: {
+      netoGravado: n(extraccion.netoGravado),
+      iva21: n(extraccion.iva21),
+      iva105: n(extraccion.iva105),
+      iva27: n(extraccion.iva27),
+      percepcionesIva: n(extraccion.percepcionesIva),
+      percepcionesIibb: n(extraccion.percepcionesIibb),
+      otrosTributos: n(extraccion.otrosTributos),
+      noGravadoExento: n(extraccion.noGravadoExento),
+    },
+    total: totalFinal != null ? Number(totalFinal) : null,
+    hayDuplicados: duplicados.length > 0,
+  });
+  if (estadoFinal !== 'RETENIDO' && auto.apto) {
+    const reglas = await db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }] });
+    const regla = elegirRegla(reglas, {
+      creadoPorId: mov.creadoPorId,
+      cuitEmisor: cuit,
+      canalIngreso: mov.canalIngreso,
+      texto: `${extraccion.razonSocialEmisor ?? ''} ${mov.descripcion ?? ''}`,
+    });
+    if (regla) {
+      const asign = await resolverAsignacionDeRegla(db, regla);
+      categoriaEfectiva = asign.categoriaId;
+      lineasEfectivas = asign.lineas;
+      reglaAplicada = regla.nombre;
+    }
+  }
+  const completa = tieneAsignacionCompleta(categoriaEfectiva, lineasEfectivas);
+  const estadoFinalReal = decidirAutovalidacion({ apto: auto.apto, completa, estadoBase: estadoFinal });
+  assertTransicion('PROCESANDO', estadoFinalReal);
 
   await db.movimiento.update({
     where: { id: mov.id },
     data: {
-      estado: estadoFinal,
+      estado: estadoFinalReal,
       fechaDevengamiento,
       periodoId,
       cuitEmisor: cuit,
       contraparteId: contraparte?.id ?? null,
-      categoriaId: contraparte?.categoriaDefaultId ?? null,
+      categoriaId: categoriaEfectiva,
       descripcion: extraccion.razonSocialEmisor ? `Comprobante de ${extraccion.razonSocialEmisor}` : mov.descripcion,
       moneda: extraccion.moneda,
       tipoComprobante: extraccion.tipoComprobante,
@@ -208,31 +272,36 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     },
   });
 
-  // Pre-create assignment lines from the supplier's default distribution
-  if (contraparte?.distribucionDefaultId) {
-    const plantilla = await db.plantillaDistribucion.findFirst({
-      where: { id: contraparte.distribucionDefaultId },
-      include: { lineas: true },
+  // Persistir las líneas efectivas (regla > contraparte). Reemplaza preexistentes.
+  if (lineasEfectivas.length) {
+    await prisma.movimientoLinea.deleteMany({ where: { movimientoId: mov.id } });
+    await prisma.movimientoLinea.createMany({
+      data: lineasEfectivas.map((l) => ({
+        movimientoId: mov.id,
+        centroCostoId: l.centroCostoId,
+        clienteId: l.clienteId ?? null,
+        proyectoId: l.proyectoId ?? null,
+        porcentaje: l.porcentaje,
+      })),
     });
-    if (plantilla && plantilla.lineas.length) {
-      await prisma.movimientoLinea.deleteMany({ where: { movimientoId: mov.id } });
-      await prisma.movimientoLinea.createMany({
-        data: plantilla.lineas.map((l) => ({
-          movimientoId: mov.id,
-          centroCostoId: l.centroCostoId,
-          clienteId: l.clienteId,
-          porcentaje: l.porcentaje,
-        })),
-      });
-    }
   }
 
   await writeAudit(db, {
     entidad: 'Movimiento',
     entidadId: mov.id,
     accion: 'EXTRAER',
-    despues: { estado: estadoFinal, camposRevisar, duplicados: duplicados.map((d) => d.id), contraparte: contraparte?.razonSocial ?? null },
+    despues: { estado: estadoFinalReal, camposRevisar, duplicados: duplicados.map((d) => d.id), contraparte: contraparte?.razonSocial ?? null },
   });
+
+  // Acción del sistema (sin usuarioId): autovalidación / auto-asignación.
+  if (estadoFinalReal === 'VALIDADO' || estadoFinalReal === 'ASIGNADO') {
+    await writeAudit(db, {
+      entidad: 'Movimiento',
+      entidadId: mov.id,
+      accion: estadoFinalReal === 'ASIGNADO' ? 'AUTO_ASIGNAR' : 'AUTO_VALIDAR',
+      despues: { estado: estadoFinalReal, regla: reglaAplicada, motivos: auto.motivos },
+    });
+  }
 
   // Solo se constata por ARCA un comprobante fiscal argentino con CAE. Los no
   // fiscales/extranjeros (esComprobanteFiscalArg=false) quedan NO_VERIFICADO y
