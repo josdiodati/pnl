@@ -102,6 +102,9 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
   const camposRevisar = evaluarCampos(extraccion);
 
   // Dirección: venta (emisor = empresa) vs compra (emisor tercero)
+  // Empresa no es un modelo scoped por empresa (ver SCOPED_MODELS en lib/empresa/scope.ts)
+  // y el lookup es por su propia PK (el id del tenant, seteado server-side): no hay riesgo
+  // cross-tenant. Usamos el cliente global `prisma`, igual que el resto de pipeline.ts.
   const empresa = await prisma.empresa.findUnique({ where: { id: payload.empresaId } });
   const cuitEmpresa = empresa?.cuit ? normalizarCuit(empresa.cuit) : null;
   const cuitReceptor = extraccion.cuitReceptor ? normalizarCuit(extraccion.cuitReceptor) : null;
@@ -126,7 +129,8 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       qrAfip = qr;
       const difs: string[] = [];
       if (cuit && String(qr.cuit) !== cuit) difs.push('CUIT emisor');
-      if (extraccion.numero && Number(extraccion.numero) !== qr.nroCmp) difs.push('número');
+      const numeroExtraido = extraccion.numero ? parseInt(extraccion.numero, 10) : NaN;
+      if (!Number.isNaN(numeroExtraido) && numeroExtraido !== qr.nroCmp) difs.push('número');
       if (extraccion.total != null && Math.abs(qr.importe - extraccion.total) > 1) difs.push('importe');
       if (extraccion.cae && qr.codAut && extraccion.cae !== String(qr.codAut)) difs.push('CAE');
       if (difs.length) camposRevisar.qr = `QR AFIP no coincide: ${difs.join(', ')}`;
