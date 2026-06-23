@@ -8,11 +8,23 @@ import { assertTransicion } from '@/lib/movimientos/estados';
 import { getOrCreatePeriodo } from '@/lib/periodos';
 import { writeAudit } from '@/lib/audit';
 import { enqueueJob } from '@/lib/jobs';
+import { leerQrAfip } from '@/lib/extractor/qr';
 
 // The single ingestion pipeline shared by ALL channels (web, photo, email,
 // telegram): store immutable file -> Movimiento INGRESADO -> Job EXTRACCION ->
 // worker extracts -> deterministic checks -> contraparte matching -> ARCA ->
 // PENDIENTE_VALIDACION (or RETENIDO if the accrual period is closed).
+
+/** Determina si un comprobante es una compra (emisor tercero) o una venta
+ *  emitida por la propia empresa (emisor === CUIT de la empresa). */
+export function clasificarDireccion(
+  cuitEmisor: string | null,
+  _cuitReceptor: string | null,
+  cuitEmpresa: string | null,
+): 'COMPRA' | 'VENTA' {
+  if (cuitEmisor && cuitEmpresa && cuitEmisor === cuitEmpresa) return 'VENTA';
+  return 'COMPRA';
+}
 
 export type CanalIngreso = 'WEB' | 'FOTO' | 'EMAIL' | 'TELEGRAM' | 'MANUAL';
 
@@ -89,9 +101,37 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
   const cuit = extraccion.cuitEmisor ? normalizarCuit(extraccion.cuitEmisor) : null;
   const camposRevisar = evaluarCampos(extraccion);
 
-  // Matching against the company's contraparte master
-  const contraparte = cuit ? await db.contraparte.findFirst({ where: { cuit, activa: true } }) : null;
-  if (!contraparte && cuit) camposRevisar.contraparte = 'Contraparte nueva: no está en el maestro';
+  // Dirección: venta (emisor = empresa) vs compra (emisor tercero)
+  const empresa = await prisma.empresa.findUnique({ where: { id: payload.empresaId } });
+  const cuitEmpresa = empresa?.cuit ? normalizarCuit(empresa.cuit) : null;
+  const cuitReceptor = extraccion.cuitReceptor ? normalizarCuit(extraccion.cuitReceptor) : null;
+  const direccion = clasificarDireccion(cuit, cuitReceptor, cuitEmpresa);
+  const origenFinal: 'COMPROBANTE' | 'VENTA_COMPROBANTE' =
+    direccion === 'VENTA' ? 'VENTA_COMPROBANTE' : 'COMPROBANTE';
+
+  // En ventas, la contraparte es el RECEPTOR (cliente); en compras, el EMISOR (proveedor).
+  const cuitContraparte = direccion === 'VENTA' ? cuitReceptor : cuit;
+  const contraparte = cuitContraparte
+    ? await db.contraparte.findFirst({ where: { cuit: cuitContraparte, activa: true } })
+    : null;
+  if (!contraparte && cuitContraparte) {
+    camposRevisar.contraparte = 'Contraparte nueva: no está en el maestro';
+  }
+
+  // Cross-check best-effort del QR de AFIP (solo verificación, no bloquea)
+  let qrAfip: unknown = null;
+  if (mov.archivoMime === 'application/pdf') {
+    const qr = await leerQrAfip(buffer);
+    if (qr) {
+      qrAfip = qr;
+      const difs: string[] = [];
+      if (cuit && String(qr.cuit) !== cuit) difs.push('CUIT emisor');
+      if (extraccion.numero && Number(extraccion.numero) !== qr.nroCmp) difs.push('número');
+      if (extraccion.total != null && Math.abs(qr.importe - extraccion.total) > 1) difs.push('importe');
+      if (extraccion.cae && qr.codAut && extraccion.cae !== String(qr.codAut)) difs.push('CAE');
+      if (difs.length) camposRevisar.qr = `QR AFIP no coincide: ${difs.join(', ')}`;
+    }
+  }
 
   // Re-check instructions now that we know the issuer (first attempt case)
   if (contraparte?.instruccionesExtraccion && !instrucciones) {
@@ -148,7 +188,8 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       otrosTributos: extraccion.otrosTributos,
       noGravadoExento: extraccion.noGravadoExento,
       total: extraccion.total,
-      extraccionRaw: extraccion as never,
+      origen: origenFinal,
+      extraccionRaw: { ...extraccion, qrAfip } as never,
       camposRevisar: camposRevisar as never,
       confianza: (extraccion.confianza ?? {}) as never,
       flags: flags as never,
