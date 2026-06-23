@@ -10,6 +10,18 @@ import { rolAlcanza } from '@/lib/roles';
 import { enqueueJob } from '@/lib/jobs';
 import type { Movimiento, Moneda } from '@prisma/client';
 
+/** Asignar requiere estar fiscalmente validado (o re-asignar). */
+export function puedeAsignar(estado: string): boolean {
+  return estado === 'VALIDADO' || estado === 'ASIGNADO';
+}
+
+/** ¿El movimiento ya tiene imputación completa (categoría + líneas que suman 100)? */
+export function tieneAsignacionCompleta(categoriaId: string | null | undefined, lineas: LineaDistribucion[]): boolean {
+  if (!categoriaId || !lineas.length) return false;
+  const suma = lineas.reduce((a, l) => a + Math.round(l.porcentaje * 10000), 0);
+  return suma === 1000000 && lineas.every((l) => l.centroCostoId);
+}
+
 // Service layer: every relevant mutation passes through here so state
 // transitions, period locks, 100% splits and audit trail are enforced in ONE
 // place — never in page components.
@@ -69,8 +81,12 @@ async function reemplazarLineas(ctx: EmpresaContext, movimientoId: string, linea
     const cc = await ctx.db.centroCosto.findFirst({ where: { id: linea.centroCostoId } });
     if (!cc) throw new DomainError('Centro de costo inexistente en esta empresa.');
     if (linea.clienteId) {
-      const cp = await ctx.db.cliente.findFirst({ where: { id: linea.clienteId } });
-      if (!cp) throw new DomainError('Cliente/proyecto inexistente en esta empresa.');
+      const cli = await ctx.db.cliente.findFirst({ where: { id: linea.clienteId } });
+      if (!cli) throw new DomainError('Cliente inexistente en esta empresa.');
+    }
+    if (linea.proyectoId) {
+      const pr = await ctx.db.proyecto.findFirst({ where: { id: linea.proyectoId } });
+      if (!pr) throw new DomainError('Proyecto inexistente en esta empresa.');
     }
   }
   await prisma.movimientoLinea.deleteMany({ where: { movimientoId } });
@@ -79,6 +95,7 @@ async function reemplazarLineas(ctx: EmpresaContext, movimientoId: string, linea
       movimientoId,
       centroCostoId: l.centroCostoId,
       clienteId: l.clienteId ?? null,
+      proyectoId: l.proyectoId ?? null,
       porcentaje: l.porcentaje,
     })),
   });
@@ -94,7 +111,6 @@ async function getMovimientoOrThrow(ctx: EmpresaContext, id: string): Promise<Mo
 
 export type DatosValidacion = {
   fechaDevengamiento: string; // YYYY-MM-DD
-  categoriaId: string;
   contraparteId?: string | null;
   descripcion?: string | null;
   moneda?: Moneda;
@@ -104,7 +120,6 @@ export type DatosValidacion = {
   cae?: string | null;
   cuitEmisor?: string | null;
   importes?: ImportesInput;
-  lineas: LineaDistribucion[];
   /** Explicit extra confirmation required when ARCA says INVALIDO (audited). */
   confirmarArcaInvalido?: boolean;
   /** Override para comprobantes no constatables por ARCA (no fiscales / extranjeros). Requiere motivo. */
@@ -114,17 +129,15 @@ export type DatosValidacion = {
   instruccionesExtraccion?: string | null;
 };
 
+export type DatosAsignacion = { categoriaId: string; lineas: LineaDistribucion[] };
+
 export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: DatosValidacion): Promise<void> {
   const mov = await getMovimientoOrThrow(ctx, id);
-  assertTransicion(mov.estado, 'VALIDADO');
 
   if (!datos.fechaDevengamiento) throw new DomainError('La fecha de devengamiento es obligatoria.');
   const fecha = new Date(`${datos.fechaDevengamiento}T00:00:00Z`);
   if (Number.isNaN(fecha.getTime())) throw new DomainError('Fecha de devengamiento inválida.');
   const periodoId = await assertPeriodoAbierto(ctx, fecha, 'validar');
-
-  const categoria = await ctx.db.categoria.findFirst({ where: { id: datos.categoriaId, activa: true } });
-  if (!categoria) throw new DomainError('Elegí una categoría válida.');
 
   if (datos.contraparteId) {
     const contraparte = await ctx.db.contraparte.findFirst({ where: { id: datos.contraparteId } });
@@ -144,16 +157,28 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
     if (!gate.ok) throw new DomainError(gate.motivo ?? 'No se puede validar por estado de ARCA.');
   }
 
+  // Estado destino: si ya viene con imputación completa (manuales), ASIGNADO; si no, VALIDADO.
+  const lineasActuales = await ctx.db.movimientoLinea.findMany({ where: { movimientoId: mov.id } });
+  const yaAsignado = tieneAsignacionCompleta(
+    mov.categoriaId,
+    lineasActuales.map((l) => ({
+      centroCostoId: l.centroCostoId,
+      clienteId: l.clienteId,
+      proyectoId: l.proyectoId,
+      porcentaje: Number(l.porcentaje),
+    })),
+  );
+  const estadoDestino = yaAsignado ? 'ASIGNADO' : 'VALIDADO';
+  assertTransicion(mov.estado, estadoDestino);
+
   const antes = snapshot(mov);
-  await reemplazarLineas(ctx, mov.id, datos.lineas);
   const actualizado = await ctx.db.movimiento.update({
     where: { id: mov.id },
     data: {
-      estado: 'VALIDADO',
+      estado: estadoDestino,
       validadoPorId: ctx.usuario.id,
       fechaDevengamiento: fecha,
       periodoId,
-      categoriaId: datos.categoriaId,
       contraparteId: datos.contraparteId ?? null,
       descripcion: datos.descripcion ?? mov.descripcion,
       moneda: datos.moneda ?? mov.moneda,
@@ -186,7 +211,6 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
     antes,
     despues: {
       ...snapshot(actualizado),
-      lineas: datos.lineas,
       ...(mov.arcaEstado === 'INVALIDO' ? { arcaInvalidoConfirmadoPorValidador: true } : {}),
       ...(datos.overrideNoFiscal ? { overrideNoFiscal: true, overrideNoFiscalMotivo: datos.overrideNoFiscalMotivo ?? null } : {}),
     },
@@ -210,6 +234,32 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
       });
     }
   }
+}
+
+// ---------- Assignment ----------
+
+export async function asignarMovimiento(ctx: EmpresaContext, id: string, datos: DatosAsignacion): Promise<void> {
+  const mov = await getMovimientoOrThrow(ctx, id);
+  if (!puedeAsignar(mov.estado)) throw new DomainError('Solo se pueden asignar comprobantes validados.');
+  const categoria = await ctx.db.categoria.findFirst({ where: { id: datos.categoriaId, activa: true } });
+  if (!categoria) throw new DomainError('Elegí una categoría válida.');
+  if (mov.fechaDevengamiento) await assertPeriodoAbierto(ctx, mov.fechaDevengamiento, 'asignar');
+  const antes = snapshot(mov);
+  await reemplazarLineas(ctx, mov.id, datos.lineas);
+  // Allow re-assign from ASIGNADO without assertTransicion (reflexive transition not in state machine).
+  if (mov.estado !== 'ASIGNADO') assertTransicion(mov.estado, 'ASIGNADO');
+  const actualizado = await ctx.db.movimiento.update({
+    where: { id: mov.id },
+    data: { estado: 'ASIGNADO', categoriaId: datos.categoriaId, validadoPorId: ctx.usuario.id },
+  });
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'Movimiento',
+    entidadId: mov.id,
+    accion: 'ASIGNAR',
+    antes,
+    despues: { ...snapshot(actualizado), lineas: datos.lineas },
+  });
 }
 
 // ---------- Observe / back to pending / void ----------
@@ -364,8 +414,9 @@ async function crearMovimientoManual(
   validarDistribucion(datos.lineas);
 
   // Only validators+ may validate at save time; loaders always create pending.
+  // Manuals carry full assignment (category + lines) so they are born ASIGNADO directly.
   const validaDirecto = Boolean(datos.validarAlGuardar) && rolAlcanza(ctx.rol, 'VALIDADOR');
-  const estado = validaDirecto ? 'VALIDADO' : 'PENDIENTE_VALIDACION';
+  const estado = validaDirecto ? 'ASIGNADO' : 'PENDIENTE_VALIDACION';
   if (!esEstadoInicialValido(origen, estado)) throw new DomainError('Estado inicial inválido.');
 
   const mov = await ctx.db.movimiento.create({

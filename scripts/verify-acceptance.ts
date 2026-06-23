@@ -7,6 +7,7 @@ import { scopedDb } from '../lib/empresa/scope';
 import type { EmpresaContext } from '../lib/empresa/require-empresa';
 import {
   validarMovimiento,
+  asignarMovimiento,
   anularMovimiento,
   cerrarPeriodo,
   reabrirPeriodo,
@@ -89,9 +90,11 @@ async function main() {
 
   await validarMovimiento(ctx, movimientoId, {
     fechaDevengamiento: `${m0.anio}-${String(m0.mes).padStart(2, '0')}-05`,
-    categoriaId: catIt.id,
     contraparteId: mov.contraparteId,
     importes: { total: 121000, netoGravado: 100000, iva21: 21000 },
+  });
+  await asignarMovimiento(ctx, movimientoId, {
+    categoriaId: catIt.id,
     lineas: [
       { centroCostoId: bpo.id, clienteId: telecom.id, porcentaje: 60 },
       { centroCostoId: sf.id, porcentaje: 40 },
@@ -100,14 +103,14 @@ async function main() {
   mov = await db.movimiento.findFirstOrThrow({ where: { id: movimientoId }, include: { lineas: true } });
   const importes = mov.lineas.map((l) => (-121000 * Number(l.porcentaje)) / 100);
   reportar(
-    '3b validación 60/40',
-    mov.estado === 'VALIDADO' && mov.lineas.length === 2,
+    '3b validación+asignación 60/40',
+    mov.estado === 'ASIGNADO' && mov.lineas.length === 2,
     `estado=${mov.estado}; importes por línea ≈ ${importes.map((i) => i.toFixed(2)).join(' / ')} (suman ${importes.reduce((a, b) => a + b, 0).toFixed(2)})`,
   );
 
   // ---- Criterio 4: doble dimensión, total por cliente/proyecto ----
   const movsTelecom = await db.movimiento.findMany({
-    where: { lineas: { some: { clienteId: telecom.id } }, estado: 'VALIDADO' },
+    where: { lineas: { some: { clienteId: telecom.id } }, estado: 'ASIGNADO' },
     include: { categoria: true, lineas: true },
   });
   const resumenTelecom = resumirMovimientos(movsTelecom as never);
@@ -121,19 +124,15 @@ async function main() {
   try {
     await validarMovimiento(ctx, invalido.id, {
       fechaDevengamiento: invalido.fechaDevengamiento!.toISOString().slice(0, 10),
-      categoriaId: invalido.categoriaId!,
       contraparteId: invalido.contraparteId,
-      lineas: [{ centroCostoId: bpo.id, porcentaje: 100 }],
     });
   } catch (e) {
     bloqueado = e instanceof DomainError;
   }
   await validarMovimiento(ctx, invalido.id, {
     fechaDevengamiento: invalido.fechaDevengamiento!.toISOString().slice(0, 10),
-    categoriaId: invalido.categoriaId!,
     contraparteId: invalido.contraparteId,
     confirmarArcaInvalido: true,
-    lineas: [{ centroCostoId: bpo.id, porcentaje: 100 }],
   });
   const auditConfirm = await db.auditLog.findFirst({
     where: { entidad: 'Movimiento', entidadId: invalido.id, accion: 'VALIDAR' },
@@ -157,7 +156,7 @@ async function main() {
   const flagsDup = (dup.flags as { duplicados?: string[] } | null)?.duplicados ?? [];
   reportar('6 duplicados', flagsDup.includes(movimientoId), `la segunda subida alerta duplicado de ${flagsDup.length} movimiento(s)`);
 
-  // ---- Criterio 7: retenido en mes cerrado → reabrir (admin, auditado) → validar → cerrar ----
+  // ---- Criterio 7: retenido en mes cerrado → reabrir (admin, auditado) → validar → asignar → cerrar ----
   const retenido = await db.movimiento.findFirstOrThrow({ where: { estado: 'RETENIDO' } });
   const fechaRet = retenido.fechaDevengamiento!;
   const ymRet = { anio: fechaRet.getUTCFullYear(), mes: fechaRet.getUTCMonth() + 1 };
@@ -165,9 +164,7 @@ async function main() {
   try {
     await validarMovimiento(ctx, retenido.id, {
       fechaDevengamiento: fechaRet.toISOString().slice(0, 10),
-      categoriaId: retenido.categoriaId!,
       contraparteId: retenido.contraparteId,
-      lineas: [{ centroCostoId: bpo.id, porcentaje: 100 }],
     });
   } catch (e) {
     validarEnCerradoFalla = e instanceof DomainError;
@@ -175,8 +172,10 @@ async function main() {
   await reabrirPeriodo(ctx, ymRet.anio, ymRet.mes, 'Verificación: factura llegó tarde, hay que imputarla');
   await validarMovimiento(ctx, retenido.id, {
     fechaDevengamiento: fechaRet.toISOString().slice(0, 10),
-    categoriaId: retenido.categoriaId!,
     contraparteId: retenido.contraparteId,
+  });
+  await asignarMovimiento(ctx, retenido.id, {
+    categoriaId: retenido.categoriaId!,
     lineas: [
       { centroCostoId: bpo.id, porcentaje: 70 },
       { centroCostoId: sf.id, porcentaje: 30 },

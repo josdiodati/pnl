@@ -31,8 +31,8 @@ const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
 const ESTADOS_INICIALES: Record<OrigenMovimiento, EstadoMovimiento[]> = {
   COMPROBANTE: ['INGRESADO'],
   VENTA_COMPROBANTE: ['INGRESADO'],
-  ASIENTO_MANUAL: ['PENDIENTE_VALIDACION', 'VALIDADO'],
-  VENTA_MANUAL: ['PENDIENTE_VALIDACION', 'VALIDADO'],
+  ASIENTO_MANUAL: ['PENDIENTE_VALIDACION', 'VALIDADO', 'ASIGNADO'],
+  VENTA_MANUAL: ['PENDIENTE_VALIDACION', 'VALIDADO', 'ASIGNADO'],
 };
 
 export function puedeTransicionar(desde: EstadoMovimiento, hacia: EstadoMovimiento): boolean {

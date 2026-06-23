@@ -24,15 +24,6 @@ function aNumero(v: FormDataEntryValue | null): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-function leerLineas(formData: FormData) {
-  const ccIds = formData.getAll('linea_centroCostoId').map(String);
-  const cpIds = formData.getAll('linea_clienteId').map(String);
-  const pcts = formData.getAll('linea_porcentaje').map((v) => Number(String(v).replace(',', '.')));
-  return ccIds
-    .map((cc, i) => ({ centroCostoId: cc, clienteId: cpIds[i] || null, porcentaje: pcts[i] }))
-    .filter((l) => l.centroCostoId);
-}
-
 function volverConError(slug: string, movimientoId: string, err: unknown): never {
   if (isDomainError(err) || isForbidden(err)) {
     redirect(`/${slug}/validacion/${movimientoId}?error=${encodeURIComponent(err.message)}`);
@@ -75,7 +66,6 @@ export async function validarAction(formData: FormData): Promise<void> {
 
     await validarMovimiento(ctx, movimientoId, {
       fechaDevengamiento: String(formData.get('fechaDevengamiento') ?? ''),
-      categoriaId: String(formData.get('categoriaId') ?? ''),
       contraparteId,
       descripcion: String(formData.get('descripcion') ?? '').trim() || null,
       moneda: (String(formData.get('moneda') ?? 'ARS')) as Moneda,
@@ -95,7 +85,6 @@ export async function validarAction(formData: FormData): Promise<void> {
         noGravadoExento: aNumero(formData.get('noGravadoExento')),
         total: aNumero(formData.get('total')),
       },
-      lineas: leerLineas(formData),
       confirmarArcaInvalido: formData.get('confirmarArcaInvalido') === 'on',
       overrideNoFiscal: formData.get('overrideNoFiscal') === 'on',
       overrideNoFiscalMotivo: String(formData.get('overrideNoFiscalMotivo') ?? '').trim() || null,
