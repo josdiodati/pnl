@@ -11,4 +11,8 @@ describe('SCOPED_MODELS membership', () => {
   it('includes Proyecto', () => {
     expect(SCOPED_MODELS.has('Proyecto')).toBe(true);
   });
+
+  it('ReglaAsignacion es empresa-scoped', () => {
+    expect(SCOPED_MODELS.has('ReglaAsignacion')).toBe(true);
+  });
 });

@@ -12,6 +12,7 @@ export const SCOPED_MODELS = new Set([
   'Contraparte',
   'PlantillaDistribucion',
   'PlantillaRecurrente',
+  'ReglaAsignacion',
   'Movimiento',
   'Periodo',
   'AuditLog',

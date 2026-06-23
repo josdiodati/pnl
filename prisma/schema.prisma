@@ -37,6 +37,7 @@ model Empresa {
   contrapartes          Contraparte[]
   plantillasDistribucion PlantillaDistribucion[]
   plantillasRecurrentes PlantillaRecurrente[]
+  reglasAsignacion      ReglaAsignacion[]
   movimientos           Movimiento[]
   periodos              Periodo[]
   auditLogs             AuditLog[]
@@ -201,6 +202,29 @@ model PlantillaRecurrente {
   usarImporteMesAnterior Boolean @default(false)
   activa          Boolean  @default(true)
   empresa         Empresa  @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, nombre])
+}
+
+// Regla de preasignación: condiciones (AND) -> acción (categoría + distribución)
+model ReglaAsignacion {
+  id             String   @id @default(cuid())
+  empresaId      String
+  nombre         String
+  prioridad      Int      @default(100) // menor = se evalúa primero
+  activa         Boolean  @default(true)
+  cargadoPorId   String?
+  cuit           String?
+  canal          String?
+  palabraClave   String?
+  categoriaId    String?
+  distribucionId String?
+  centroCostoId  String?
+  clienteId      String?
+  proyectoId     String?
+  empresa        Empresa  @relation(fields: [empresaId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@unique([empresaId, nombre])
 }
