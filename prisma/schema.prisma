@@ -192,6 +192,7 @@ model PlantillaRecurrente {
 
 enum OrigenMovimiento {
   COMPROBANTE
+  VENTA_COMPROBANTE
   ASIENTO_MANUAL
   VENTA_MANUAL
 }

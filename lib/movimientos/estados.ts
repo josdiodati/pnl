@@ -28,6 +28,7 @@ const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
 // manual entries are born pending (or validated directly by a validator+).
 const ESTADOS_INICIALES: Record<OrigenMovimiento, EstadoMovimiento[]> = {
   COMPROBANTE: ['INGRESADO'],
+  VENTA_COMPROBANTE: ['INGRESADO'],
   ASIENTO_MANUAL: ['PENDIENTE_VALIDACION', 'VALIDADO'],
   VENTA_MANUAL: ['PENDIENTE_VALIDACION', 'VALIDADO'],
 };
