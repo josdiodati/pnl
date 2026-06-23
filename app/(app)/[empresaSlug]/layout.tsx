@@ -60,6 +60,7 @@ export default async function EmpresaLayout({
               { href: `${base}/maestros/proyectos`, label: 'Proyectos', icono: 'cliente' },
               { href: `${base}/maestros/contrapartes`, label: 'Contrapartes', icono: 'contraparte' },
               { href: `${base}/maestros/distribuciones`, label: 'Distribuciones', icono: 'distribucion' },
+              { href: `${base}/maestros/reglas`, label: 'Reglas', icono: 'distribucion' },
             ],
           },
           {

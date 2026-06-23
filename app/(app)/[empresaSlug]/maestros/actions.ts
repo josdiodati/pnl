@@ -249,6 +249,59 @@ export async function toggleContraparte(formData: FormData): Promise<void> {
   volver(slug, 'contrapartes');
 }
 
+// ---------- Reglas de asignación ----------
+
+export async function guardarRegla(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    const id = String(formData.get('id') ?? '');
+    const nombre = String(formData.get('nombre') ?? '').trim();
+    if (!nombre) throw new DomainError('El nombre es obligatorio.');
+    const prioridad = Number(formData.get('prioridad') ?? 100) || 100;
+    const v = (k: string) => { const s = String(formData.get(k) ?? '').trim(); return s || null; };
+    const data = {
+      nombre, prioridad,
+      cargadoPorId: v('cargadoPorId'), cuit: v('cuit'), canal: v('canal'), palabraClave: v('palabraClave'),
+      categoriaId: v('categoriaId'), distribucionId: v('distribucionId'),
+      centroCostoId: v('centroCostoId'), clienteId: v('clienteId'), proyectoId: v('proyectoId'),
+    };
+    if (![data.cargadoPorId, data.cuit, data.canal, data.palabraClave].some(Boolean)) {
+      throw new DomainError('La regla necesita al menos una condición.');
+    }
+    if (!data.categoriaId || !(data.distribucionId || data.centroCostoId)) {
+      throw new DomainError('La acción necesita categoría y (plantilla de distribución o centro de costo).');
+    }
+    if (id) {
+      const antes = await ctx.db.reglaAsignacion.findFirst({ where: { id } });
+      if (!antes) throw new DomainError('Regla inexistente.');
+      await ctx.db.reglaAsignacion.update({ where: { id }, data });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'ReglaAsignacion', entidadId: id, accion: 'EDITAR', antes, despues: data });
+    } else {
+      const nueva = await ctx.db.reglaAsignacion.create({ data: data as never });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'ReglaAsignacion', entidadId: nueva.id, accion: 'CREAR', despues: data });
+    }
+  } catch (err) {
+    volver(slug, 'reglas', mensaje(err));
+  }
+  volver(slug, 'reglas');
+}
+
+export async function toggleRegla(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    const id = String(formData.get('id'));
+    const r = await ctx.db.reglaAsignacion.findFirst({ where: { id } });
+    if (!r) throw new DomainError('Regla inexistente.');
+    await ctx.db.reglaAsignacion.update({ where: { id }, data: { activa: !r.activa } });
+    await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'ReglaAsignacion', entidadId: id, accion: r.activa ? 'DESACTIVAR' : 'ACTIVAR' });
+  } catch (err) {
+    volver(slug, 'reglas', mensaje(err));
+  }
+  volver(slug, 'reglas');
+}
+
 // ---------- Plantillas de distribución ----------
 
 export async function guardarPlantillaDistribucion(formData: FormData): Promise<void> {
