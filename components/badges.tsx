@@ -11,6 +11,7 @@ const ESTADO_COLOR: Record<EstadoMovimiento, string> = {
   RETENIDO: 'bg-orange-100 text-orange-800',
   OBSERVADO: 'bg-violet-100 text-violet-800',
   VALIDADO: 'bg-accent-soft text-accent-strong',
+  ASIGNADO: 'bg-accent-soft text-accent-strong',
   ANULADO: 'bg-red-100 text-red-700 line-through',
   ERROR_PROCESAMIENTO: 'bg-red-100 text-red-800',
 };

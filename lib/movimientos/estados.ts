@@ -3,11 +3,12 @@ import { DomainError } from '@/lib/errors';
 
 // State machine (doc 07):
 //
-// INGRESADO → PROCESANDO → PENDIENTE_VALIDACION → VALIDADO
+// INGRESADO → PROCESANDO → PENDIENTE_VALIDACION → VALIDADO → ASIGNADO
 //                               ↘ RETENIDO (closed period)
 //                               ↘ OBSERVADO (set aside)
 // PENDIENTE_VALIDACION / OBSERVADO / RETENIDO → VALIDADO
-// VALIDADO → ANULADO (reason required)
+// VALIDADO → ASIGNADO / ANULADO (reason required)
+// ASIGNADO → VALIDADO / ANULADO
 // PROCESANDO → ERROR_PROCESAMIENTO (OCR failed; retry or manual entry)
 //
 // Pending/observed/retained movements can also be voided (closing a month
@@ -19,7 +20,8 @@ const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
   PENDIENTE_VALIDACION: ['VALIDADO', 'OBSERVADO', 'RETENIDO', 'ANULADO'],
   OBSERVADO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO'],
   RETENIDO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO'],
-  VALIDADO: ['ANULADO'],
+  VALIDADO: ['ASIGNADO', 'ANULADO'],
+  ASIGNADO: ['VALIDADO', 'ANULADO'],
   ANULADO: [],
   ERROR_PROCESAMIENTO: ['PROCESANDO', 'PENDIENTE_VALIDACION'],
 };
@@ -47,9 +49,9 @@ export function esEstadoInicialValido(origen: OrigenMovimiento, estado: EstadoMo
   return ESTADOS_INICIALES[origen]?.includes(estado) ?? false;
 }
 
-/** Only VALIDADO hits the P&L / totals. */
+/** Only ASIGNADO hits the P&L / totals. */
 export function impactaResultado(estado: EstadoMovimiento): boolean {
-  return estado === 'VALIDADO';
+  return estado === 'ASIGNADO';
 }
 
 export const ESTADO_LABEL: Record<EstadoMovimiento, string> = {
@@ -59,6 +61,7 @@ export const ESTADO_LABEL: Record<EstadoMovimiento, string> = {
   RETENIDO: 'Retenido',
   OBSERVADO: 'Observado',
   VALIDADO: 'Validado',
+  ASIGNADO: 'Asignado',
   ANULADO: 'Anulado',
   ERROR_PROCESAMIENTO: 'Error de procesamiento',
 };

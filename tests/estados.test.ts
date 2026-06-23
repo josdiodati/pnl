@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { puedeTransicionar, assertTransicion, esEstadoInicialValido, impactaResultado } from '@/lib/movimientos/estados';
+import { puedeTransicionar, assertTransicion, esEstadoInicialValido, impactaResultado, ESTADO_LABEL } from '@/lib/movimientos/estados';
 import { DomainError } from '@/lib/errors';
 
 describe('máquina de estados de movimientos (doc 07)', () => {
@@ -47,10 +47,28 @@ describe('máquina de estados de movimientos (doc 07)', () => {
     expect(esEstadoInicialValido('VENTA_MANUAL', 'INGRESADO')).toBe(false);
   });
 
-  it('solo VALIDADO impacta el resultado', () => {
-    expect(impactaResultado('VALIDADO')).toBe(true);
-    for (const e of ['INGRESADO', 'PROCESANDO', 'PENDIENTE_VALIDACION', 'RETENIDO', 'OBSERVADO', 'ANULADO', 'ERROR_PROCESAMIENTO'] as const) {
+  it('solo ASIGNADO impacta el resultado', () => {
+    expect(impactaResultado('ASIGNADO')).toBe(true);
+    for (const e of ['INGRESADO', 'PROCESANDO', 'PENDIENTE_VALIDACION', 'RETENIDO', 'OBSERVADO', 'VALIDADO', 'ANULADO', 'ERROR_PROCESAMIENTO'] as const) {
       expect(impactaResultado(e)).toBe(false);
     }
+  });
+
+  describe('estado ASIGNADO', () => {
+    it('VALIDADO puede pasar a ASIGNADO y a ANULADO', () => {
+      expect(puedeTransicionar('VALIDADO', 'ASIGNADO')).toBe(true);
+      expect(puedeTransicionar('VALIDADO', 'ANULADO')).toBe(true);
+    });
+    it('ASIGNADO puede des-asignarse (→VALIDADO) o anularse', () => {
+      expect(puedeTransicionar('ASIGNADO', 'VALIDADO')).toBe(true);
+      expect(puedeTransicionar('ASIGNADO', 'ANULADO')).toBe(true);
+    });
+    it('solo ASIGNADO impacta el resultado', () => {
+      expect(impactaResultado('ASIGNADO')).toBe(true);
+      expect(impactaResultado('VALIDADO')).toBe(false);
+    });
+    it('tiene label', () => {
+      expect(ESTADO_LABEL.ASIGNADO).toBe('Asignado');
+    });
   });
 });
