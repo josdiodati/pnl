@@ -26,4 +26,9 @@ describe('parseAfipQrUrl', () => {
   it('devuelve null para un payload corrupto', () => {
     expect(parseAfipQrUrl('https://www.afip.gob.ar/fe/qr/?p=no-es-base64-json')).toBeNull();
   });
+
+  it('rechaza un host que sólo termina en afip.gob.ar pero no es AFIP (anti-spoofing)', () => {
+    const spoof = 'https://evil-afip.gob.ar/fe/qr/?p=' + Buffer.from(JSON.stringify(PAYLOAD)).toString('base64');
+    expect(parseAfipQrUrl(spoof)).toBeNull();
+  });
 });

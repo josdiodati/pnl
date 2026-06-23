@@ -20,7 +20,7 @@ export type QrAfip = {
 export function parseAfipQrUrl(url: string): QrAfip | null {
   try {
     const u = new URL(url);
-    if (!/afip\.gob\.ar$/i.test(u.hostname) && !u.hostname.includes('afip.gob.ar')) return null;
+    if (!/(?:^|\.)afip\.gob\.ar$/i.test(u.hostname)) return null;
     const p = u.searchParams.get('p');
     if (!p) return null;
     const json = Buffer.from(p, 'base64').toString('utf8');
