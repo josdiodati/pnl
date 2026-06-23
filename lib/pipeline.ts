@@ -103,7 +103,9 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
   // El QR de ARCA/AFIP es la fuente AUTORITATIVA del encabezado cuando existe (trae
   // emisor, receptor, importe, PV, nro y CAE). El LLM queda como fallback y para lo
   // que el QR no trae (líneas, desglose de IVA). Best-effort: no bloquea si falta.
-  const qrAfip = mov.archivoMime === 'application/pdf' ? await leerQrAfip(buffer) : null;
+  const resultadoQr = mov.archivoMime === 'application/pdf' ? await leerQrAfip(buffer) : null;
+  const qrAfip = resultadoQr?.qr ?? null;
+  const qrEstado = resultadoQr?.estado ?? null; // null = no aplica (imagen / no PDF)
 
   // Empresa no es un modelo scoped por empresa (ver SCOPED_MODELS en lib/empresa/scope.ts)
   // y el lookup es por su propia PK (el id del tenant, seteado server-side): no hay riesgo
@@ -135,9 +137,6 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     : null;
   if (!contraparte && cuitContraparte) {
     camposRevisar.contraparte = 'Contraparte nueva: no está en el maestro';
-  }
-  if (!qrAfip && mov.archivoMime === 'application/pdf') {
-    camposRevisar.qr = 'Sin QR legible: el encabezado proviene solo del OCR (verificar).';
   }
 
   // Re-check instructions now that we know the issuer (first attempt case)
@@ -201,6 +200,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       tokensCacheCreacion: uso?.cacheCreacion ?? null,
       tokensCacheLectura: uso?.cacheLectura ?? null,
       modeloExtractor: uso?.modelo ?? null,
+      qrEstado,
       extraccionRaw: { ...extraccion, cuitReceptorEfectivo: cuitReceptor, qrAfip } as never,
       camposRevisar: camposRevisar as never,
       confianza: (extraccion.confianza ?? {}) as never,

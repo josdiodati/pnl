@@ -4,7 +4,7 @@ import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { getFileStorage } from '@/lib/storage';
 import { DocViewer } from '@/components/doc-viewer';
 import { ValidacionForm } from '@/components/validacion-form';
-import { EstadoBadge, ArcaBadge, CanalBadge } from '@/components/badges';
+import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
 import { ErrorBanner } from '@/components/error-banner';
 import { formatFechaHora, formatMoney, fechaInputValue } from '@/lib/format';
 import {
@@ -57,6 +57,7 @@ export default async function ValidacionDetallePage({
         </h1>
         <EstadoBadge estado={mov.estado} />
         {mov.cae && <ArcaBadge estado={mov.arcaEstado} />}
+        <QrBadge estado={mov.qrEstado} />
         <CanalBadge canal={mov.canalIngreso} />
         {mov.estado === 'RETENIDO' && (
           <span className="text-xs text-orange-700">

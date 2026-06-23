@@ -44,33 +44,41 @@ export function parseAfipQrUrl(url: string): QrAfip | null {
   }
 }
 
-export async function leerQrAfip(buffer: Buffer): Promise<QrAfip | null> {
+// Estado del QR para el marcador en validación:
+// - OK: tiene QR y se pudo leer e interpretar como QR de ARCA/AFIP.
+// - ILEGIBLE: tiene un símbolo QR pero no se pudo usar (no es de ARCA/AFIP, corrupto, o falló el decode).
+// - SIN_QR: no se detectó ningún símbolo QR en el documento.
+export type EstadoQr = 'OK' | 'ILEGIBLE' | 'SIN_QR';
+export type ResultadoQr = { qr: QrAfip | null; estado: EstadoQr };
+
+export async function leerQrAfip(buffer: Buffer): Promise<ResultadoQr> {
   const dir = mkdtempSync(join(tmpdir(), 'qr-'));
   try {
     const pdf = join(dir, 'in.pdf');
     writeFileSync(pdf, buffer);
     // Rasteriza las 2 primeras páginas (el QR suele estar en la 1ª) a 300 dpi.
     execFileSync('pdftoppm', ['-png', '-r', '300', '-f', '1', '-l', '2', pdf, join(dir, 'p')], { stdio: 'ignore' });
+    let tieneSimboloQr = false;
     for (const png of readdirSync(dir).filter((f) => f.endsWith('.png'))) {
       let out = '';
       try {
-        out = execFileSync('zbarimg', ['--raw', '-q', join(dir, png)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        // Sin --raw: zbarimg prefija cada símbolo con su tipo ("QR-Code:..."), así
+        // distinguimos un QR de otros códigos (databar/barras).
+        out = execFileSync('zbarimg', ['-q', join(dir, png)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       } catch (e) {
         // zbarimg sale con código 4 cuando no encuentra símbolos; igual capturamos stdout.
         out = String((e as { stdout?: unknown })?.stdout ?? '');
       }
-      const line = out
-        .split('\n')
-        .map((l) => l.trim())
-        .find((l) => /\/fe\/qr\/\?p=/.test(l));
-      if (line) {
-        const q = parseAfipQrUrl(line);
-        if (q) return q;
+      for (const line of out.split('\n').map((l) => l.trim())) {
+        if (!line.startsWith('QR-Code:')) continue;
+        tieneSimboloQr = true;
+        const q = parseAfipQrUrl(line.slice('QR-Code:'.length));
+        if (q) return { qr: q, estado: 'OK' };
       }
     }
-    return null;
+    return { qr: null, estado: tieneSimboloQr ? 'ILEGIBLE' : 'SIN_QR' };
   } catch {
-    return null;
+    return { qr: null, estado: 'ILEGIBLE' };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

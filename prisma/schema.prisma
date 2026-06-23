@@ -265,6 +265,7 @@ model Movimiento {
   tokensCacheCreacion Int? // cache_creation_input_tokens
   tokensCacheLectura  Int? // cache_read_input_tokens
   modeloExtractor     String? // modelo usado (p.ej. claude-opus-4-8); null en mock
+  qrEstado            String? // QR AFIP/ARCA: OK | ILEGIBLE | SIN_QR | null (no aplica / imagen)
 
   // Assignment (double dimension, percentage split)
   lineas MovimientoLinea[]

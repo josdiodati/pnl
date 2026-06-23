@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { EstadoMovimiento, Prisma } from '@prisma/client';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
-import { EstadoBadge, ArcaBadge, CanalBadge } from '@/components/badges';
+import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { formatMoney, formatFecha } from '@/lib/format';
 
@@ -130,6 +130,7 @@ export default async function ValidacionPage({
                   <td className="space-x-1 whitespace-nowrap">
                     <EstadoBadge estado={m.estado} />
                     {m.cae && <ArcaBadge estado={m.arcaEstado} />}
+                    <QrBadge estado={m.qrEstado} />
                     {duplicados > 0 && (
                       <span className="inline-block rounded bg-red-100 text-red-800 px-1.5 py-0.5 text-xs font-medium">⚠ posible duplicado</span>
                     )}
