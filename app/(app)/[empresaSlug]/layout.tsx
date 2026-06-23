@@ -33,7 +33,10 @@ export default async function EmpresaLayout({
       items: [
         { href: `${base}/carga`, label: 'Carga', icono: 'carga' },
         ...(esValidador
-          ? [{ href: `${base}/validacion`, label: 'Validación', icono: 'validacion', badge: pendientes }]
+          ? [
+              { href: `${base}/validacion`, label: 'Validación', icono: 'validacion', badge: pendientes },
+              { href: `${base}/asignacion`, label: 'Asignación', icono: 'validacion' },
+            ]
           : []),
         { href: `${base}/movimientos`, label: 'Movimientos', icono: 'movimientos' },
       ],
