@@ -226,7 +226,10 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     despues: { estado: estadoFinal, camposRevisar, duplicados: duplicados.map((d) => d.id), contraparte: contraparte?.razonSocial ?? null },
   });
 
-  if (extraccion.cae) {
+  // Solo se constata por ARCA un comprobante fiscal argentino con CAE. Los no
+  // fiscales/extranjeros (esComprobanteFiscalArg=false) quedan NO_VERIFICADO y
+  // exigen overrideNoFiscal en la validación.
+  if (extraccion.cae && extraccion.esComprobanteFiscalArg) {
     await enqueueJob('ARCA', { movimientoId: mov.id, empresaId: payload.empresaId }, payload.empresaId);
   }
 }

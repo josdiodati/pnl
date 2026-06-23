@@ -99,6 +99,7 @@ export function ValidacionForm({
   const [categoriaId, setCategoriaId] = useState(mov.categoriaId);
   const [tipoComprobante, setTipoComprobante] = useState(mov.tipoComprobante);
   const [total, setTotal] = useState<string>(mov.importes.total != null ? String(mov.importes.total) : '');
+  const [overrideNoFiscal, setOverrideNoFiscal] = useState(false);
 
   const contraparteSel = contrapartes.find((c) => c.id === contraparteId);
   const categoriaSel = categorias.find((c) => c.id === categoriaId);
@@ -144,7 +145,13 @@ export function ValidacionForm({
             (sin CAE, no fiscal o servicio extranjero como AWS / Claude / Google).
           </p>
           <label className="flex items-start gap-2 font-medium">
-            <input type="checkbox" name="overrideNoFiscal" className="mt-0.5" />
+            <input
+              type="checkbox"
+              name="overrideNoFiscal"
+              className="mt-0.5"
+              checked={overrideNoFiscal}
+              onChange={(e) => setOverrideNoFiscal(e.target.checked)}
+            />
             Lo valido igual con override (no fiscal / extranjero). Queda registrado en auditoría.
           </label>
           <input
@@ -152,6 +159,8 @@ export function ValidacionForm({
             name="overrideNoFiscalMotivo"
             placeholder="Motivo del override (obligatorio)"
             className="input w-full"
+            required={overrideNoFiscal}
+            disabled={!overrideNoFiscal}
           />
         </div>
       )}
