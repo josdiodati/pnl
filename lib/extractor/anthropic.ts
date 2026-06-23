@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { extraccionSchema, extraccionJsonSchema, type Extraccion } from './schema';
-import type { DocumentExtractor, ExtractorInput } from './index';
+import { extraccionSchema, extraccionJsonSchema } from './schema';
+import type { DocumentExtractor, ExtractorInput, ExtractorResult } from './index';
 
 // Real extractor (EXTRACTOR_MODE=real + ANTHROPIC_API_KEY). Strategy per spec:
 // - PDFs with a text layer (electronic invoices): send extracted TEXT (cheaper
@@ -25,7 +25,7 @@ export class AnthropicExtractor implements DocumentExtractor {
   private client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   private model = process.env.EXTRACTOR_MODEL ?? 'claude-opus-4-8';
 
-  async extract(input: ExtractorInput): Promise<Extraccion> {
+  async extract(input: ExtractorInput): Promise<ExtractorResult> {
     const content: Anthropic.ContentBlockParam[] = [];
 
     if (input.mime === 'application/pdf') {
@@ -75,7 +75,18 @@ export class AnthropicExtractor implements DocumentExtractor {
     if (!toolUse || toolUse.type !== 'tool_use') {
       throw new Error('El modelo no devolvió la extracción estructurada');
     }
-    return extraccionSchema.parse(toolUse.input);
+
+    const u = response.usage;
+    return {
+      extraccion: extraccionSchema.parse(toolUse.input),
+      uso: {
+        entrada: u.input_tokens ?? 0,
+        salida: u.output_tokens ?? 0,
+        cacheCreacion: u.cache_creation_input_tokens ?? 0,
+        cacheLectura: u.cache_read_input_tokens ?? 0,
+        modelo: this.model,
+      },
+    };
   }
 
   private async tryPdfText(buffer: Buffer): Promise<string | null> {

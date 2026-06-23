@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { extraccionSchema, type Extraccion } from './schema';
-import type { DocumentExtractor, ExtractorInput } from './index';
+import { extraccionSchema } from './schema';
+import type { DocumentExtractor, ExtractorInput, ExtractorResult } from './index';
 
 // Deterministic extractor used by default (EXTRACTOR_MODE=mock). Two behaviors:
 //
@@ -29,7 +29,7 @@ function hashInt(buffer: Buffer, salt: string): number {
 }
 
 export class MockExtractor implements DocumentExtractor {
-  async extract(input: ExtractorInput): Promise<Extraccion> {
+  async extract(input: ExtractorInput): Promise<ExtractorResult> {
     if (input.filename.toLowerCase().includes('error')) {
       throw new Error('Extracción simulada fallida (el nombre del archivo contiene "error")');
     }
@@ -39,7 +39,8 @@ export class MockExtractor implements DocumentExtractor {
     const marker = text.match(/PNL-MOCK:(\{.*?\})\s*(?:\)|$|\n)/s);
     if (marker) {
       const parsed = JSON.parse(marker[1]);
-      return extraccionSchema.parse({ confianza: {}, observaciones: null, moneda: 'ARS', ...parsed });
+      // Mock consume 0 tokens reales -> uso null.
+      return { extraccion: extraccionSchema.parse({ confianza: {}, observaciones: null, moneda: 'ARS', ...parsed }), uso: null };
     }
 
     // Behavior 2: hash-derived plausible voucher
@@ -52,7 +53,7 @@ export class MockExtractor implements DocumentExtractor {
     const cae = String(70000000000000 + (hashInt(input.buffer, 'cae') % 9999999999));
     const numero = String(1 + n('numero', 99999999)).padStart(8, '0');
 
-    return extraccionSchema.parse({
+    const extraccion = extraccionSchema.parse({
       tipoComprobante: 'FACTURA_A',
       puntoVenta: String(1 + n('pv', 30)).padStart(4, '0'),
       numero,
@@ -80,5 +81,6 @@ export class MockExtractor implements DocumentExtractor {
       ),
       observaciones: 'Extracción simulada (EXTRACTOR_MODE=mock)',
     });
+    return { extraccion, uso: null };
   }
 }
