@@ -97,6 +97,8 @@ export async function validarAction(formData: FormData): Promise<void> {
       },
       lineas: leerLineas(formData),
       confirmarArcaInvalido: formData.get('confirmarArcaInvalido') === 'on',
+      overrideNoFiscal: formData.get('overrideNoFiscal') === 'on',
+      overrideNoFiscalMotivo: String(formData.get('overrideNoFiscalMotivo') ?? '').trim() || null,
       instruccionesExtraccion: String(formData.get('instruccionesExtraccion') ?? '').trim() || undefined,
     });
 

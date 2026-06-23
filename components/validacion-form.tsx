@@ -137,6 +137,25 @@ export function ValidacionForm({
         </div>
       )}
 
+      {(mov.arcaEstado === 'NO_VERIFICADO' || mov.arcaEstado === 'ERROR_CONSULTA') && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 space-y-2">
+          <p>
+            ⚠ <strong>ARCA: no constatado.</strong> Este comprobante no figura como válido en ARCA
+            (sin CAE, no fiscal o servicio extranjero como AWS / Claude / Google).
+          </p>
+          <label className="flex items-start gap-2 font-medium">
+            <input type="checkbox" name="overrideNoFiscal" className="mt-0.5" />
+            Lo valido igual con override (no fiscal / extranjero). Queda registrado en auditoría.
+          </label>
+          <input
+            type="text"
+            name="overrideNoFiscalMotivo"
+            placeholder="Motivo del override (obligatorio)"
+            className="input w-full"
+          />
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <Campo label="Fecha del comprobante (devengamiento)" revisar={r.fechaEmision}>
           <input type="date" name="fechaDevengamiento" defaultValue={mov.fechaDevengamiento} required className="input" />
