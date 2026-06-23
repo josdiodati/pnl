@@ -259,6 +259,13 @@ model Movimiento {
   arcaDetalle      String?
   arcaConsultadoAt DateTime?
 
+  // Consumo de tokens del LLM por comprobante (monitoreo de costo vía DB; sin frontend)
+  tokensEntrada       Int? // input_tokens
+  tokensSalida        Int? // output_tokens
+  tokensCacheCreacion Int? // cache_creation_input_tokens
+  tokensCacheLectura  Int? // cache_read_input_tokens
+  modeloExtractor     String? // modelo usado (p.ej. claude-opus-4-8); null en mock
+
   // Assignment (double dimension, percentage split)
   lineas MovimientoLinea[]
 

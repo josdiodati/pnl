@@ -91,7 +91,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     instrucciones = previa?.instruccionesExtraccion ?? null;
   }
 
-  const extraccion = await getExtractor().extract({
+  const { extraccion, uso } = await getExtractor().extract({
     buffer,
     mime: mov.archivoMime ?? 'application/pdf',
     filename: mov.archivoNombre ?? 'comprobante',
@@ -193,6 +193,11 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       noGravadoExento: extraccion.noGravadoExento,
       total: extraccion.total,
       origen: origenFinal,
+      tokensEntrada: uso?.entrada ?? null,
+      tokensSalida: uso?.salida ?? null,
+      tokensCacheCreacion: uso?.cacheCreacion ?? null,
+      tokensCacheLectura: uso?.cacheLectura ?? null,
+      modeloExtractor: uso?.modelo ?? null,
       extraccionRaw: { ...extraccion, qrAfip } as never,
       camposRevisar: camposRevisar as never,
       confianza: (extraccion.confianza ?? {}) as never,

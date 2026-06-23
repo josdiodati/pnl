@@ -10,8 +10,23 @@ export type ExtractorInput = {
   instrucciones?: string | null;
 };
 
+/** Token usage of one LLM extraction call, for per-comprobante cost monitoring. */
+export type UsoTokens = {
+  entrada: number; // input_tokens
+  salida: number; // output_tokens
+  cacheCreacion: number; // cache_creation_input_tokens
+  cacheLectura: number; // cache_read_input_tokens
+  modelo: string;
+};
+
+export type ExtractorResult = {
+  extraccion: Extraccion;
+  /** null when no tokens were consumed (e.g. mock extractor). */
+  uso: UsoTokens | null;
+};
+
 export interface DocumentExtractor {
-  extract(input: ExtractorInput): Promise<Extraccion>;
+  extract(input: ExtractorInput): Promise<ExtractorResult>;
 }
 
 /**
