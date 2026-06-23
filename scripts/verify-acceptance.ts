@@ -50,7 +50,7 @@ async function main() {
     db.centroCosto.findFirstOrThrow({ where: { nombre: 'BPO' } }),
     db.centroCosto.findFirstOrThrow({ where: { nombre: 'SF' } }),
   ]);
-  const telecom = await db.clienteProyecto.findFirstOrThrow({ where: { nombre: 'Cliente Telecom' } });
+  const telecom = await db.cliente.findFirstOrThrow({ where: { nombre: 'Cliente Telecom' } });
   const catIt = await db.categoria.findFirstOrThrow({ where: { nombre: 'IT & COM Services' } });
 
   // ---- Criterio 3: captura + OCR + asignación 60/40 con cliente/proyecto ----
@@ -93,7 +93,7 @@ async function main() {
     contraparteId: mov.contraparteId,
     importes: { total: 121000, netoGravado: 100000, iva21: 21000 },
     lineas: [
-      { centroCostoId: bpo.id, clienteProyectoId: telecom.id, porcentaje: 60 },
+      { centroCostoId: bpo.id, clienteId: telecom.id, porcentaje: 60 },
       { centroCostoId: sf.id, porcentaje: 40 },
     ],
   });
@@ -107,11 +107,11 @@ async function main() {
 
   // ---- Criterio 4: doble dimensión, total por cliente/proyecto ----
   const movsTelecom = await db.movimiento.findMany({
-    where: { lineas: { some: { clienteProyectoId: telecom.id } }, estado: 'VALIDADO' },
+    where: { lineas: { some: { clienteId: telecom.id } }, estado: 'VALIDADO' },
     include: { categoria: true, lineas: true },
   });
   const resumenTelecom = resumirMovimientos(movsTelecom as never);
-  const totalTelecom = resumenTelecom.porClienteProyecto.get(telecom.id) ?? 0;
+  const totalTelecom = resumenTelecom.porCliente.get(telecom.id) ?? 0;
   reportar('4 filtro por cliente/proyecto', movsTelecom.length >= 2 && totalTelecom !== 0,
     `${movsTelecom.length} movimientos validados con Cliente Telecom; total asignado $${(totalTelecom / 100).toFixed(2)}`);
 

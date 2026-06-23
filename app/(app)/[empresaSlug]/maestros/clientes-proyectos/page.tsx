@@ -14,7 +14,7 @@ export default async function ClientesProyectosPage({
   // en app/(app)/[empresaSlug]/layout.tsx). Esta página queda funcional pero no enlazada; se reactiva
   // descomentando el link. Los clientes se manejan por ahora vía Contrapartes.
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
-  const items = await ctx.db.clienteProyecto.findMany({ orderBy: { nombre: 'asc' } });
+  const items = await ctx.db.cliente.findMany({ orderBy: { nombre: 'asc' } });
   const editando = searchParams.editar ? items.find((c) => c.id === searchParams.editar) : null;
 
   return (

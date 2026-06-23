@@ -220,7 +220,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
         data: plantilla.lineas.map((l) => ({
           movimientoId: mov.id,
           centroCostoId: l.centroCostoId,
-          clienteProyectoId: l.clienteProyectoId,
+          clienteId: l.clienteId,
           porcentaje: l.porcentaje,
         })),
       });

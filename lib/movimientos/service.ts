@@ -68,8 +68,8 @@ async function reemplazarLineas(ctx: EmpresaContext, movimientoId: string, linea
   for (const linea of lineas) {
     const cc = await ctx.db.centroCosto.findFirst({ where: { id: linea.centroCostoId } });
     if (!cc) throw new DomainError('Centro de costo inexistente en esta empresa.');
-    if (linea.clienteProyectoId) {
-      const cp = await ctx.db.clienteProyecto.findFirst({ where: { id: linea.clienteProyectoId } });
+    if (linea.clienteId) {
+      const cp = await ctx.db.cliente.findFirst({ where: { id: linea.clienteId } });
       if (!cp) throw new DomainError('Cliente/proyecto inexistente en esta empresa.');
     }
   }
@@ -78,7 +78,7 @@ async function reemplazarLineas(ctx: EmpresaContext, movimientoId: string, linea
     data: lineas.map((l) => ({
       movimientoId,
       centroCostoId: l.centroCostoId,
-      clienteProyectoId: l.clienteProyectoId ?? null,
+      clienteId: l.clienteId ?? null,
       porcentaje: l.porcentaje,
     })),
   });
@@ -475,7 +475,7 @@ export async function generarRecurrentes(ctx: EmpresaContext, anio: number, mes:
       if (plantillaDist) {
         lineas = plantillaDist.lineas.map((l) => ({
           centroCostoId: l.centroCostoId,
-          clienteProyectoId: l.clienteProyectoId,
+          clienteId: l.clienteId,
           porcentaje: Number(l.porcentaje),
         }));
       }

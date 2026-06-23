@@ -15,7 +15,7 @@ export default async function DistribucionesPage({
   const [plantillas, centros, clientes] = await Promise.all([
     ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
-    ctx.db.clienteProyecto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
+    ctx.db.cliente.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
   ]);
   const editando = searchParams.editar ? plantillas.find((p) => p.id === searchParams.editar) : null;
 
@@ -42,7 +42,7 @@ export default async function DistribucionesPage({
             clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre }))}
             inicial={editando?.lineas.map((l) => ({
               centroCostoId: l.centroCostoId,
-              clienteProyectoId: l.clienteProyectoId ?? '',
+              clienteId: l.clienteId ?? '',
               porcentaje: String(Number(l.porcentaje)),
             }))}
           />
@@ -69,7 +69,7 @@ export default async function DistribucionesPage({
                     <span key={l.id} className="text-sm text-slate-600">
                       {i > 0 && ' · '}
                       {centros.find((c) => c.id === l.centroCostoId)?.nombre ?? '?'}
-                      {l.clienteProyectoId ? ` / ${clientes.find((c) => c.id === l.clienteProyectoId)?.nombre ?? '?'}` : ''}{' '}
+                      {l.clienteId ? ` / ${clientes.find((c) => c.id === l.clienteId)?.nombre ?? '?'}` : ''}{' '}
                       {Number(l.porcentaje).toLocaleString('es-AR')}%
                     </span>
                   ))}

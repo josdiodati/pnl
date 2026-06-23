@@ -28,7 +28,7 @@ export default async function MovimientosPage({
     }),
     ctx.db.categoria.findMany({ orderBy: { nombre: 'asc' } }),
     ctx.db.centroCosto.findMany({ orderBy: { nombre: 'asc' } }),
-    ctx.db.clienteProyecto.findMany({ orderBy: { nombre: 'asc' } }),
+    ctx.db.cliente.findMany({ orderBy: { nombre: 'asc' } }),
     ctx.db.contraparte.findMany({ orderBy: { razonSocial: 'asc' } }),
   ]);
 
@@ -40,7 +40,7 @@ export default async function MovimientosPage({
   const filtros: { name: keyof FiltrosMovimientos; label: string; opciones: { id: string; nombre: string }[] }[] = [
     { name: 'categoriaId', label: 'Categoría', opciones: categorias.map((c) => ({ id: c.id, nombre: `${c.nombre} (${c.tipo})` })) },
     { name: 'centroCostoId', label: 'Centro de costo', opciones: centros.map((c) => ({ id: c.id, nombre: c.nombre })) },
-    { name: 'clienteProyectoId', label: 'Cliente / proyecto', opciones: clientes.map((c) => ({ id: c.id, nombre: c.nombre })) },
+    { name: 'clienteId', label: 'Cliente / proyecto', opciones: clientes.map((c) => ({ id: c.id, nombre: c.nombre })) },
     { name: 'contraparteId', label: 'Contraparte', opciones: contrapartes.map((c) => ({ id: c.id, nombre: c.razonSocial })) },
   ];
 
@@ -160,7 +160,7 @@ export default async function MovimientosPage({
                       <span key={l.id}>
                         {i > 0 && ' · '}
                         {centros.find((c) => c.id === l.centroCostoId)?.nombre ?? '?'}
-                        {l.clienteProyectoId ? `/${clientes.find((c) => c.id === l.clienteProyectoId)?.nombre ?? '?'}` : ''}{' '}
+                        {l.clienteId ? `/${clientes.find((c) => c.id === l.clienteId)?.nombre ?? '?'}` : ''}{' '}
                         {Number(l.porcentaje).toLocaleString('es-AR')}%
                       </span>
                     ))}

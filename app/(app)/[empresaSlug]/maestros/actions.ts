@@ -123,13 +123,13 @@ export async function guardarClienteProyecto(formData: FormData): Promise<void> 
     const codigo = String(formData.get('codigo') ?? '').trim() || null;
     if (!nombre) throw new DomainError('El nombre es obligatorio.');
     if (id) {
-      const antes = await ctx.db.clienteProyecto.findFirst({ where: { id } });
+      const antes = await ctx.db.cliente.findFirst({ where: { id } });
       if (!antes) throw new DomainError('Cliente/proyecto inexistente.');
-      await ctx.db.clienteProyecto.update({ where: { id }, data: { nombre, codigo } });
-      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'ClienteProyecto', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, codigo } });
+      await ctx.db.cliente.update({ where: { id }, data: { nombre, codigo } });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Cliente', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, codigo } });
     } else {
-      const nuevo = await ctx.db.clienteProyecto.create({ data: { nombre, codigo } as never });
-      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'ClienteProyecto', entidadId: nuevo.id, accion: 'CREAR', despues: { nombre, codigo } });
+      const nuevo = await ctx.db.cliente.create({ data: { nombre, codigo } as never });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Cliente', entidadId: nuevo.id, accion: 'CREAR', despues: { nombre, codigo } });
     }
   } catch (err) {
     volver(slug, 'clientes-proyectos', mensaje(err));
@@ -142,10 +142,10 @@ export async function toggleClienteProyecto(formData: FormData): Promise<void> {
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
     const id = String(formData.get('id'));
-    const cp = await ctx.db.clienteProyecto.findFirst({ where: { id } });
+    const cp = await ctx.db.cliente.findFirst({ where: { id } });
     if (!cp) throw new DomainError('Cliente/proyecto inexistente.');
-    await ctx.db.clienteProyecto.update({ where: { id }, data: { activo: !cp.activo } });
-    await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'ClienteProyecto', entidadId: id, accion: cp.activo ? 'DESACTIVAR' : 'ACTIVAR' });
+    await ctx.db.cliente.update({ where: { id }, data: { activo: !cp.activo } });
+    await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Cliente', entidadId: id, accion: cp.activo ? 'DESACTIVAR' : 'ACTIVAR' });
   } catch (err) {
     volver(slug, 'clientes-proyectos', mensaje(err));
   }
@@ -221,17 +221,17 @@ export async function guardarPlantillaDistribucion(formData: FormData): Promise<
 
     // Parallel arrays from the dynamic rows
     const ccIds = formData.getAll('linea_centroCostoId').map(String);
-    const cpIds = formData.getAll('linea_clienteProyectoId').map(String);
+    const cpIds = formData.getAll('linea_clienteId').map(String);
     const pcts = formData.getAll('linea_porcentaje').map((v) => Number(String(v).replace(',', '.')));
     const lineas = ccIds
-      .map((cc, i) => ({ centroCostoId: cc, clienteProyectoId: cpIds[i] || null, porcentaje: pcts[i] }))
+      .map((cc, i) => ({ centroCostoId: cc, clienteId: cpIds[i] || null, porcentaje: pcts[i] }))
       .filter((l) => l.centroCostoId && l.porcentaje > 0);
     validarDistribucion(lineas);
     for (const l of lineas) {
       if (!(await ctx.db.centroCosto.findFirst({ where: { id: l.centroCostoId } }))) {
         throw new DomainError('Centro de costo inexistente en una línea.');
       }
-      if (l.clienteProyectoId && !(await ctx.db.clienteProyecto.findFirst({ where: { id: l.clienteProyectoId } }))) {
+      if (l.clienteId && !(await ctx.db.cliente.findFirst({ where: { id: l.clienteId } }))) {
         throw new DomainError('Cliente/proyecto inexistente en una línea.');
       }
     }

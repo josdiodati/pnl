@@ -9,7 +9,7 @@ export type FiltrosMovimientos = {
   hasta?: string;
   categoriaId?: string;
   centroCostoId?: string;
-  clienteProyectoId?: string;
+  clienteId?: string;
   contraparteId?: string;
   origen?: string;
   estado?: string;
@@ -34,11 +34,11 @@ export function buildWhereMovimientos(
   if (f.origen) where.origen = f.origen as never;
   if (f.estado) where.estado = f.estado as never;
   if (f.canal) where.canalIngreso = f.canal;
-  if (f.centroCostoId || f.clienteProyectoId) {
+  if (f.centroCostoId || f.clienteId) {
     where.lineas = {
       some: {
         ...(f.centroCostoId ? { centroCostoId: f.centroCostoId } : {}),
-        ...(f.clienteProyectoId ? { clienteProyectoId: f.clienteProyectoId } : {}),
+        ...(f.clienteId ? { clienteId: f.clienteId } : {}),
       },
     };
   }
@@ -51,7 +51,7 @@ export type MovimientoConRelaciones = {
   total: unknown;
   tipoComprobante: string | null;
   categoria: { tipo: 'INGRESO' | 'EGRESO'; nombre: string } | null;
-  lineas: { centroCostoId: string; clienteProyectoId: string | null; porcentaje: unknown }[];
+  lineas: { centroCostoId: string; clienteId: string | null; porcentaje: unknown }[];
 };
 
 /** Signed total in cents; null when not computable (no category/total yet). */
@@ -65,7 +65,7 @@ export type ResumenMovimientos = {
   egresos: number;
   resultado: number;
   porCentroCosto: Map<string, number>;
-  porClienteProyecto: Map<string, number>;
+  porCliente: Map<string, number>;
 };
 
 /**
@@ -77,7 +77,7 @@ export function resumirMovimientos(movs: MovimientoConRelaciones[]): ResumenMovi
   let ingresos = 0;
   let egresos = 0;
   const porCentroCosto = new Map<string, number>();
-  const porClienteProyecto = new Map<string, number>();
+  const porCliente = new Map<string, number>();
 
   for (const mov of movs) {
     if (mov.estado !== 'VALIDADO') continue;
@@ -89,15 +89,15 @@ export function resumirMovimientos(movs: MovimientoConRelaciones[]): ResumenMovi
     if (mov.lineas.length) {
       const lineas = mov.lineas.map((l) => ({
         centroCostoId: l.centroCostoId,
-        clienteProyectoId: l.clienteProyectoId,
+        clienteId: l.clienteId,
         porcentaje: Number(l.porcentaje),
       }));
       try {
         const importes = importesPorLinea(firmado, lineas);
         lineas.forEach((l, i) => {
           porCentroCosto.set(l.centroCostoId, (porCentroCosto.get(l.centroCostoId) ?? 0) + importes[i]);
-          if (l.clienteProyectoId) {
-            porClienteProyecto.set(l.clienteProyectoId, (porClienteProyecto.get(l.clienteProyectoId) ?? 0) + importes[i]);
+          if (l.clienteId) {
+            porCliente.set(l.clienteId, (porCliente.get(l.clienteId) ?? 0) + importes[i]);
           }
         });
       } catch {
@@ -105,5 +105,5 @@ export function resumirMovimientos(movs: MovimientoConRelaciones[]): ResumenMovi
       }
     }
   }
-  return { ingresos, egresos, resultado: ingresos + egresos, porCentroCosto, porClienteProyecto };
+  return { ingresos, egresos, resultado: ingresos + egresos, porCentroCosto, porCliente };
 }

@@ -7,7 +7,7 @@ import { ForbiddenError } from '@/lib/errors';
 export const SCOPED_MODELS = new Set([
   'Categoria',
   'CentroCosto',
-  'ClienteProyecto',
+  'Cliente',
   'Contraparte',
   'PlantillaDistribucion',
   'PlantillaRecurrente',

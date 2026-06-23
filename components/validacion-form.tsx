@@ -27,7 +27,7 @@ export type CampoMovimiento = {
   importes: Record<string, number | null>;
   camposRevisar: Record<string, string>;
   duplicados: string[];
-  lineas: { centroCostoId: string; clienteProyectoId: string; porcentaje: string }[];
+  lineas: { centroCostoId: string; clienteId: string; porcentaje: string }[];
 };
 
 export type CategoriaOpcion = { id: string; nombre: string; tipo: 'INGRESO' | 'EGRESO'; padreId: string | null };

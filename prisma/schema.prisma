@@ -32,7 +32,7 @@ model Empresa {
   invitaciones          Invitacion[]
   categorias            Categoria[]
   centrosCosto          CentroCosto[]
-  clientesProyectos     ClienteProyecto[]
+  clientes              Cliente[]
   contrapartes          Contraparte[]
   plantillasDistribucion PlantillaDistribucion[]
   plantillasRecurrentes PlantillaRecurrente[]
@@ -112,7 +112,7 @@ model CentroCosto {
 }
 
 // Second analysis dimension (optional per line)
-model ClienteProyecto {
+model Cliente {
   id        String  @id @default(cuid())
   empresaId String
   nombre    String
@@ -163,11 +163,11 @@ model PlantillaDistribucionLinea {
   id                String                @id @default(cuid())
   plantillaId       String
   centroCostoId     String
-  clienteProyectoId String?
+  clienteId         String?
   porcentaje        Decimal               @db.Decimal(7, 4) // lines must sum 100
   plantilla         PlantillaDistribucion @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
   centroCosto       CentroCosto           @relation(fields: [centroCostoId], references: [id])
-  clienteProyecto   ClienteProyecto?      @relation(fields: [clienteProyectoId], references: [id])
+  cliente           Cliente?              @relation(fields: [clienteId], references: [id])
 }
 
 // Recurring template (repeated monthly entry: legal fees, salaries, ...)
@@ -299,12 +299,12 @@ model MovimientoLinea {
   id                String      @id @default(cuid())
   movimientoId      String
   centroCostoId     String
-  clienteProyectoId String? // second dimension, optional
+  clienteId         String? // second dimension, optional
   porcentaje        Decimal     @db.Decimal(7, 4) // sum per movement = 100.0000
   origen            OrigenLinea @default(MANUAL)
   movimiento        Movimiento  @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
   centroCosto       CentroCosto @relation(fields: [centroCostoId], references: [id])
-  clienteProyecto   ClienteProyecto? @relation(fields: [clienteProyectoId], references: [id])
+  cliente           Cliente?    @relation(fields: [clienteId], references: [id])
 }
 
 // ---------- Periods ----------

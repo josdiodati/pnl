@@ -36,7 +36,7 @@ export default async function VentasPage({
   const [ventas, clientes, delMes] = await Promise.all([
     ctx.db.movimiento.findMany({
       where,
-      include: { contraparte: true, categoria: true, lineas: { include: { clienteProyecto: true } } },
+      include: { contraparte: true, categoria: true, lineas: { include: { cliente: true } } },
       orderBy: [{ fechaDevengamiento: 'desc' }, { createdAt: 'desc' }],
       take: 300,
     }),
@@ -120,7 +120,7 @@ export default async function VentasPage({
                   {v.lineas.map((l, i) => (
                     <span key={l.id}>
                       {i > 0 && ' · '}
-                      {l.clienteProyecto?.nombre ?? 'sin cliente'} {Number(l.porcentaje).toLocaleString('es-AR')}%
+                      {l.cliente?.nombre ?? 'sin cliente'} {Number(l.porcentaje).toLocaleString('es-AR')}%
                     </span>
                   ))}
                 </td>

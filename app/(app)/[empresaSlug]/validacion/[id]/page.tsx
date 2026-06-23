@@ -36,7 +36,7 @@ export default async function ValidacionDetallePage({
     ctx.db.categoria.findMany({ where: { activa: true }, orderBy: [{ tipo: 'asc' }, { nombre: 'asc' }] }),
     ctx.db.contraparte.findMany({ where: { activa: true }, orderBy: { razonSocial: 'asc' } }),
     ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
-    ctx.db.clienteProyecto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
+    ctx.db.cliente.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.auditLog.findMany({
       where: { entidad: 'Movimiento', entidadId: mov.id },
@@ -127,7 +127,7 @@ export default async function ValidacionDetallePage({
                 duplicados: ((flags.duplicados as string[] | undefined) ?? []),
                 lineas: mov.lineas.map((l) => ({
                   centroCostoId: l.centroCostoId,
-                  clienteProyectoId: l.clienteProyectoId ?? '',
+                  clienteId: l.clienteId ?? '',
                   porcentaje: String(Number(l.porcentaje)),
                 })),
               }}
@@ -146,7 +146,7 @@ export default async function ValidacionDetallePage({
                 nombre: p.nombre,
                 lineas: p.lineas.map((l) => ({
                   centroCostoId: l.centroCostoId,
-                  clienteProyectoId: l.clienteProyectoId,
+                  clienteId: l.clienteId,
                   porcentaje: Number(l.porcentaje),
                 })),
               }))}

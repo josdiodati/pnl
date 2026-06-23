@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
   const sp = req.nextUrl.searchParams;
   const filtros: FiltrosMovimientos = Object.fromEntries(
-    ['desde', 'hasta', 'categoriaId', 'centroCostoId', 'clienteProyectoId', 'contraparteId', 'origen', 'estado', 'canal']
+    ['desde', 'hasta', 'categoriaId', 'centroCostoId', 'clienteId', 'contraparteId', 'origen', 'estado', 'canal']
       .map((k) => [k, sp.get(k) ?? undefined]),
   );
 
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
     include: {
       categoria: true,
       contraparte: true,
-      lineas: { include: { centroCosto: true, clienteProyecto: true } },
+      lineas: { include: { centroCosto: true, cliente: true } },
     },
     orderBy: [{ fechaDevengamiento: 'asc' }, { createdAt: 'asc' }],
   });
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
     if (m.lineas.length && firmado != null) {
       const lineas = m.lineas.map((l) => ({
         centroCostoId: l.centroCostoId,
-        clienteProyectoId: l.clienteProyectoId,
+        clienteId: l.clienteId,
         porcentaje: Number(l.porcentaje),
       }));
       let importes: number[] | null = null;
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
           [
             ...base,
             l.centroCosto.nombre,
-            l.clienteProyecto?.nombre ?? '',
+            l.cliente?.nombre ?? '',
             String(Number(l.porcentaje)).replace('.', ','),
             importes ? (importes[i] / 100).toFixed(2).replace('.', ',') : '',
             (firmado / 100).toFixed(2).replace('.', ','),

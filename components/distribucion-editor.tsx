@@ -5,15 +5,15 @@ import { useState } from 'react';
 // Reusable editor for percentage splits (doc 06): N rows of
 // cost center (required) + client/project (optional) + percentage.
 // Shows the live amount per row and how much is missing to reach 100%.
-// Inputs are named linea_centroCostoId / linea_clienteProyectoId /
+// Inputs are named linea_centroCostoId / linea_clienteId /
 // linea_porcentaje so plain server actions can read them as parallel arrays.
 
 export type OpcionId = { id: string; nombre: string };
-export type LineaEditor = { centroCostoId: string; clienteProyectoId: string; porcentaje: string };
+export type LineaEditor = { centroCostoId: string; clienteId: string; porcentaje: string };
 export type PlantillaOpcion = {
   id: string;
   nombre: string;
-  lineas: { centroCostoId: string; clienteProyectoId: string | null; porcentaje: number }[];
+  lineas: { centroCostoId: string; clienteId: string | null; porcentaje: number }[];
 };
 
 const moneyFmt = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -34,7 +34,7 @@ export function DistribucionEditor({
 }) {
   const filaVacia = (): LineaEditor => ({
     centroCostoId: centros[0]?.id ?? '',
-    clienteProyectoId: '',
+    clienteId: '',
     porcentaje: '100',
   });
   const [lineas, setLineas] = useState<LineaEditor[]>(
@@ -74,7 +74,7 @@ export function DistribucionEditor({
     setLineas(
       p.lineas.map((l) => ({
         centroCostoId: l.centroCostoId,
-        clienteProyectoId: l.clienteProyectoId ?? '',
+        clienteId: l.clienteId ?? '',
         porcentaje: String(l.porcentaje),
       })),
     );
@@ -125,9 +125,9 @@ export function DistribucionEditor({
             ))}
           </select>
           <select
-            name="linea_clienteProyectoId"
-            value={l.clienteProyectoId}
-            onChange={(e) => actualizar(i, 'clienteProyectoId', e.target.value)}
+            name="linea_clienteId"
+            value={l.clienteId}
+            onChange={(e) => actualizar(i, 'clienteId', e.target.value)}
             className="input !w-44"
           >
             <option value="">Sin cliente/proyecto</option>

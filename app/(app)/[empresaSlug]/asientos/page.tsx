@@ -20,7 +20,7 @@ export default async function AsientosPage({
     ctx.db.categoria.findMany({ where: { activa: true }, orderBy: [{ tipo: 'asc' }, { nombre: 'asc' }] }),
     ctx.db.contraparte.findMany({ where: { activa: true }, orderBy: { razonSocial: 'asc' } }),
     ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
-    ctx.db.clienteProyecto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
+    ctx.db.cliente.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
     esValidador ? ctx.db.plantillaRecurrente.findMany({ orderBy: { nombre: 'asc' } }) : Promise.resolve([]),
   ]);
@@ -41,7 +41,7 @@ export default async function AsientosPage({
       nombre: p.nombre,
       lineas: p.lineas.map((l) => ({
         centroCostoId: l.centroCostoId,
-        clienteProyectoId: l.clienteProyectoId,
+        clienteId: l.clienteId,
         porcentaje: Number(l.porcentaje),
       })),
     })),
