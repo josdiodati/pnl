@@ -22,7 +22,9 @@ import { DomainError } from '@/lib/errors';
 
 const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
   INGRESADO: ['PROCESANDO'],
-  PROCESANDO: ['PENDIENTE_VALIDACION', 'RETENIDO', 'ERROR_PROCESAMIENTO'],
+  // VALIDADO/ASIGNADO directos: autovalidación en el pipeline (QR + aritmética;
+  // ASIGNADO si una regla de preasignación da asignación completa).
+  PROCESANDO: ['PENDIENTE_VALIDACION', 'RETENIDO', 'VALIDADO', 'ASIGNADO', 'ERROR_PROCESAMIENTO'],
   PENDIENTE_VALIDACION: ['VALIDADO', 'OBSERVADO', 'RETENIDO', 'ANULADO', 'ASIGNADO'],
   OBSERVADO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO', 'ASIGNADO'],
   RETENIDO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO', 'ASIGNADO'],
