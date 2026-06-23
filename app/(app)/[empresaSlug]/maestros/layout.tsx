@@ -15,7 +15,7 @@ export default async function MaestrosLayout({
     <div>
       <PageHeader
         titulo="Maestros"
-        descripcion="Plan de cuentas de gestión, centros de costo, clientes/proyectos, contrapartes y plantillas. Nada se borra: se desactiva."
+        descripcion="Plan de cuentas de gestión, centros de costo, contrapartes y plantillas de distribución. Nada se borra: se desactiva."
       />
       <div className="reveal reveal-2">{children}</div>
     </div>

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { ErrorBanner } from '@/components/error-banner';
 import { guardarClienteProyecto, toggleClienteProyecto } from '../actions';
@@ -10,6 +11,10 @@ export default async function ClientesProyectosPage({
   params: { empresaSlug: string };
   searchParams: { error?: string; editar?: string };
 }) {
+  // 2ª dimensión (clientes/proyectos) deshabilitada temporalmente — los clientes se manejan vía Contrapartes.
+  // Para reactivar: quitar este redirect y descomentar el link en app/(app)/[empresaSlug]/layout.tsx.
+  redirect(`/${params.empresaSlug}/maestros/contrapartes`);
+
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const items = await ctx.db.clienteProyecto.findMany({ orderBy: { nombre: 'asc' } });
   const editando = searchParams.editar ? items.find((c) => c.id === searchParams.editar) : null;
