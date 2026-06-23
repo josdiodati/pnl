@@ -57,12 +57,18 @@ export default async function ReglasPage({
               />
             </div>
             <div className="w-28">
-              <label className="label">Prioridad</label>
+              <label
+                className="label cursor-help"
+                title="Si varias reglas matchean el mismo comprobante, gana la de menor número (mayor prioridad). Default 100."
+              >
+                Prioridad <span className="text-slate-400">ⓘ</span>
+              </label>
               <input
                 name="prioridad"
                 type="number"
                 className="input"
                 defaultValue={editando?.prioridad ?? 100}
+                title="Si varias reglas matchean el mismo comprobante, gana la de menor número (mayor prioridad). Default 100."
               />
             </div>
           </div>
