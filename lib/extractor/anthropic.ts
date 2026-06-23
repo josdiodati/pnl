@@ -17,11 +17,13 @@ Reglas estrictas:
 - CUIT: solo los 11 dígitos, sin guiones.
 - Fechas en formato YYYY-MM-DD.
 - Completá "confianza" con un valor 0..1 por cada campo extraído (1 = totalmente legible y sin ambigüedad).
-- "puntoVenta" y "numero" como strings con sus ceros a la izquierda si los tiene.`;
+- "puntoVenta" y "numero" como strings con sus ceros a la izquierda si los tiene.
+- Extraé también el RECEPTOR del comprobante (cuitReceptor, razonSocialReceptor): es a nombre de quién se emite.
+- Marcá "esComprobanteFiscalArg" en true SOLO si es un comprobante fiscal argentino (factura/nota de crédito/débito/ticket con CAE). Para invoices de servicios extranjeros que no emiten comprobante fiscal argentino (AWS, Anthropic/Claude, Google, etc.), poné false.`;
 
 export class AnthropicExtractor implements DocumentExtractor {
   private client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  private model = process.env.EXTRACTOR_MODEL ?? 'claude-sonnet-4-6';
+  private model = process.env.EXTRACTOR_MODEL ?? 'claude-opus-4-8';
 
   async extract(input: ExtractorInput): Promise<Extraccion> {
     const content: Anthropic.ContentBlockParam[] = [];
