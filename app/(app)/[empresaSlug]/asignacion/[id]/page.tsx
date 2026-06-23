@@ -7,6 +7,8 @@ import { DistribucionEditor } from '@/components/distribucion-editor';
 import { ErrorBanner } from '@/components/error-banner';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { totalFirmadoDe } from '@/lib/movimientos/query';
+import { elegirRegla } from '@/lib/reglas/matching';
+import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { asignarAction } from '../actions';
 
 export default async function AsignacionDetallePage({
@@ -25,17 +27,36 @@ export default async function AsignacionDetallePage({
   if (!mov) notFound();
   if (mov.estado !== 'VALIDADO' && mov.estado !== 'ASIGNADO') notFound();
 
-  const [categorias, centros, clientes, proyectos, plantillas, fileUrl] = await Promise.all([
+  const [categorias, centros, clientes, proyectos, plantillas, reglas, fileUrl] = await Promise.all([
     ctx.db.categoria.findMany({ where: { activa: true }, orderBy: [{ tipo: 'asc' }, { nombre: 'asc' }] }),
     ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.cliente.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.proyecto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
+    ctx.db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }] }),
     mov.archivoKey ? getFileStorage().getSignedUrl(mov.archivoKey) : Promise.resolve(null),
   ]);
 
   const tfCents = totalFirmadoDe(mov as never);
   const totalFirmado = tfCents != null ? tfCents / 100 : null;
+
+  // Si el movimiento llega sin líneas, una regla de preasignación puede pre-llenar
+  // la asignación (categoría + líneas). Es sólo un default editable.
+  let reglaAplicada: string | null = null;
+  let sugerida: Awaited<ReturnType<typeof resolverAsignacionDeRegla>> | null = null;
+  if (mov.lineas.length === 0) {
+    const razonSocial = (mov.extraccionRaw as { razonSocialEmisor?: string } | null)?.razonSocialEmisor ?? '';
+    const regla = elegirRegla(reglas, {
+      creadoPorId: mov.creadoPorId,
+      cuitEmisor: mov.cuitEmisor,
+      canalIngreso: mov.canalIngreso,
+      texto: `${razonSocial} ${mov.descripcion ?? ''}`,
+    });
+    if (regla) {
+      sugerida = await resolverAsignacionDeRegla(ctx.db, regla);
+      reglaAplicada = regla.nombre;
+    }
+  }
 
   const inicial =
     mov.lineas.length > 0
@@ -45,7 +66,14 @@ export default async function AsignacionDetallePage({
           proyectoId: l.proyectoId ?? '',
           porcentaje: String(Number(l.porcentaje)),
         }))
-      : undefined;
+      : sugerida && sugerida.lineas.length > 0
+        ? sugerida.lineas.map((l) => ({
+            centroCostoId: l.centroCostoId,
+            clienteId: l.clienteId ?? '',
+            proyectoId: l.proyectoId ?? '',
+            porcentaje: String(l.porcentaje),
+          }))
+        : undefined;
 
   return (
     <div className="space-y-4">
@@ -57,6 +85,12 @@ export default async function AsignacionDetallePage({
       </div>
 
       <ErrorBanner mensaje={searchParams.error} />
+
+      {reglaAplicada && (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          Pre-llenado por la regla «{reglaAplicada}» — revisá antes de asignar.
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-4">
         {/* Doc viewer */}
@@ -98,7 +132,7 @@ export default async function AsignacionDetallePage({
                 id="categoriaId"
                 name="categoriaId"
                 required
-                defaultValue={mov.categoriaId ?? ''}
+                defaultValue={mov.categoriaId ?? sugerida?.categoriaId ?? ''}
                 className="input w-full"
               >
                 <option value="" disabled>Seleccioná una categoría…</option>
