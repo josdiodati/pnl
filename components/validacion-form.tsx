@@ -1,8 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { validarAction } from '@/app/(app)/[empresaSlug]/validacion/actions';
-import { DistribucionEditor, type OpcionId, type PlantillaOpcion } from './distribucion-editor';
 
 // Right-hand form of the side-by-side validation screen. Fields flagged by the
 // deterministic checks come highlighted in yellow with the reason; the happy
@@ -20,17 +19,14 @@ export type CampoMovimiento = {
   numero: string;
   cuitEmisor: string;
   contraparteId: string;
-  categoriaId: string;
   descripcion: string;
   moneda: string;
   cae: string;
   importes: Record<string, number | null>;
   camposRevisar: Record<string, string>;
   duplicados: string[];
-  lineas: { centroCostoId: string; clienteId: string; porcentaje: string }[];
 };
 
-export type CategoriaOpcion = { id: string; nombre: string; tipo: 'INGRESO' | 'EGRESO'; padreId: string | null };
 export type ContraparteOpcion = {
   id: string;
   razonSocial: string;
@@ -81,36 +77,18 @@ function Campo({
 export function ValidacionForm({
   empresaSlug,
   mov,
-  categorias,
   contrapartes,
-  centros,
-  clientes,
-  plantillas,
 }: {
   empresaSlug: string;
   mov: CampoMovimiento;
-  categorias: CategoriaOpcion[];
   contrapartes: ContraparteOpcion[];
-  centros: OpcionId[];
-  clientes: OpcionId[];
-  plantillas: PlantillaOpcion[];
 }) {
   const [contraparteId, setContraparteId] = useState(mov.contraparteId);
-  const [categoriaId, setCategoriaId] = useState(mov.categoriaId);
   const [tipoComprobante, setTipoComprobante] = useState(mov.tipoComprobante);
   const [total, setTotal] = useState<string>(mov.importes.total != null ? String(mov.importes.total) : '');
   const [overrideNoFiscal, setOverrideNoFiscal] = useState(false);
 
   const contraparteSel = contrapartes.find((c) => c.id === contraparteId);
-  const categoriaSel = categorias.find((c) => c.id === categoriaId);
-
-  const totalFirmado = useMemo(() => {
-    const t = Number(total.replace(',', '.'));
-    if (!categoriaSel || Number.isNaN(t)) return null;
-    let signo = categoriaSel.tipo === 'INGRESO' ? 1 : -1;
-    if (tipoComprobante.startsWith('NOTA_CREDITO')) signo *= -1;
-    return signo * t;
-  }, [total, categoriaSel, tipoComprobante]);
 
   const r = mov.camposRevisar;
 
@@ -198,8 +176,6 @@ export function ValidacionForm({
             value={contraparteId}
             onChange={(e) => {
               setContraparteId(e.target.value);
-              const c = contrapartes.find((x) => x.id === e.target.value);
-              if (c?.categoriaDefaultId) setCategoriaId(c.categoriaDefaultId);
             }}
             className="input"
           >
@@ -232,26 +208,14 @@ export function ValidacionForm({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <Campo label="Categoría" revisar={r.categoria}>
-            <select name="categoriaId" value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} required className="input">
-              <option value="">Elegir…</option>
-              {categorias.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.padreId ? '· ' : ''}{c.nombre} ({c.tipo === 'INGRESO' ? 'Ingreso' : 'Egreso'})
-                </option>
-              ))}
-            </select>
-          </Campo>
-          <Campo label="Moneda">
-            <select name="moneda" defaultValue={mov.moneda} className="input">
-              <option value="ARS">ARS</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="OTRA">Otra</option>
-            </select>
-          </Campo>
-        </div>
+        <Campo label="Moneda">
+          <select name="moneda" defaultValue={mov.moneda} className="input">
+            <option value="ARS">ARS</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="OTRA">Otra</option>
+          </select>
+        </Campo>
 
         <Campo label="Descripción">
           <input name="descripcion" defaultValue={mov.descripcion} className="input" />
@@ -284,17 +248,6 @@ export function ValidacionForm({
             />
           </Campo>
         </div>
-      </fieldset>
-
-      <fieldset className="rounded-md border border-slate-200 p-3">
-        <legend className="text-xs font-semibold text-slate-500 px-1">Distribución</legend>
-        <DistribucionEditor
-          centros={centros}
-          clientes={clientes}
-          plantillas={plantillas}
-          inicial={mov.lineas.length ? mov.lineas : undefined}
-          totalFirmado={totalFirmado}
-        />
       </fieldset>
 
       <details className="text-sm">

@@ -32,12 +32,8 @@ export default async function ValidacionDetallePage({
   });
   if (!mov) notFound();
 
-  const [categorias, contrapartes, centros, clientes, plantillas, historial] = await Promise.all([
-    ctx.db.categoria.findMany({ where: { activa: true }, orderBy: [{ tipo: 'asc' }, { nombre: 'asc' }] }),
+  const [contrapartes, historial] = await Promise.all([
     ctx.db.contraparte.findMany({ where: { activa: true }, orderBy: { razonSocial: 'asc' } }),
-    ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
-    ctx.db.cliente.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
-    ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.auditLog.findMany({
       where: { entidad: 'Movimiento', entidadId: mov.id },
       orderBy: { createdAt: 'asc' },
@@ -108,7 +104,6 @@ export default async function ValidacionDetallePage({
                 numero: mov.numero ?? '',
                 cuitEmisor: mov.cuitEmisor ?? '',
                 contraparteId: mov.contraparteId ?? '',
-                categoriaId: mov.categoriaId ?? '',
                 descripcion: mov.descripcion ?? '',
                 moneda: mov.moneda,
                 cae: mov.cae ?? '',
@@ -125,30 +120,13 @@ export default async function ValidacionDetallePage({
                 },
                 camposRevisar: (mov.camposRevisar as Record<string, string> | null) ?? {},
                 duplicados: ((flags.duplicados as string[] | undefined) ?? []),
-                lineas: mov.lineas.map((l) => ({
-                  centroCostoId: l.centroCostoId,
-                  clienteId: l.clienteId ?? '',
-                  porcentaje: String(Number(l.porcentaje)),
-                })),
               }}
-              categorias={categorias.map((c) => ({ id: c.id, nombre: c.nombre, tipo: c.tipo, padreId: c.padreId }))}
               contrapartes={contrapartes.map((c) => ({
                 id: c.id,
                 razonSocial: c.razonSocial,
                 cuit: c.cuit,
                 categoriaDefaultId: c.categoriaDefaultId,
                 instruccionesExtraccion: c.instruccionesExtraccion,
-              }))}
-              centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
-              clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre }))}
-              plantillas={plantillas.map((p) => ({
-                id: p.id,
-                nombre: p.nombre,
-                lineas: p.lineas.map((l) => ({
-                  centroCostoId: l.centroCostoId,
-                  clienteId: l.clienteId,
-                  porcentaje: Number(l.porcentaje),
-                })),
               }))}
             />
           ) : (
