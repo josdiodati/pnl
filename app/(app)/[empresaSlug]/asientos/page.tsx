@@ -16,11 +16,12 @@ export default async function AsientosPage({
   const ctx = await requireEmpresaPage(params.empresaSlug, 'CARGADOR');
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
 
-  const [categorias, contrapartes, centros, clientes, plantillasDist, recurrentes] = await Promise.all([
+  const [categorias, contrapartes, centros, clientes, proyectos, plantillasDist, recurrentes] = await Promise.all([
     ctx.db.categoria.findMany({ where: { activa: true }, orderBy: [{ tipo: 'asc' }, { nombre: 'asc' }] }),
     ctx.db.contraparte.findMany({ where: { activa: true }, orderBy: { razonSocial: 'asc' } }),
     ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.cliente.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
+    ctx.db.proyecto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
     esValidador ? ctx.db.plantillaRecurrente.findMany({ orderBy: { nombre: 'asc' } }) : Promise.resolve([]),
   ]);
@@ -36,12 +37,14 @@ export default async function AsientosPage({
     contrapartes: contrapartes.map((c) => ({ id: c.id, razonSocial: c.razonSocial, tipo: c.tipo })),
     centros: centros.map((c) => ({ id: c.id, nombre: c.nombre })),
     clientes: clientes.map((c) => ({ id: c.id, nombre: c.nombre })),
+    proyectos: proyectos.map((c) => ({ id: c.id, nombre: c.nombre })),
     plantillas: plantillasDist.map((p) => ({
       id: p.id,
       nombre: p.nombre,
       lineas: p.lineas.map((l) => ({
         centroCostoId: l.centroCostoId,
         clienteId: l.clienteId,
+        proyectoId: l.proyectoId,
         porcentaje: Number(l.porcentaje),
       })),
     })),

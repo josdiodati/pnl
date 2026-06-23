@@ -262,9 +262,10 @@ export async function guardarPlantillaDistribucion(formData: FormData): Promise<
     // Parallel arrays from the dynamic rows
     const ccIds = formData.getAll('linea_centroCostoId').map(String);
     const cpIds = formData.getAll('linea_clienteId').map(String);
+    const prIds = formData.getAll('linea_proyectoId').map(String);
     const pcts = formData.getAll('linea_porcentaje').map((v) => Number(String(v).replace(',', '.')));
     const lineas = ccIds
-      .map((cc, i) => ({ centroCostoId: cc, clienteId: cpIds[i] || null, porcentaje: pcts[i] }))
+      .map((cc, i) => ({ centroCostoId: cc, clienteId: cpIds[i] || null, proyectoId: prIds[i] || null, porcentaje: pcts[i] }))
       .filter((l) => l.centroCostoId && l.porcentaje > 0);
     validarDistribucion(lineas);
     for (const l of lineas) {
@@ -272,7 +273,10 @@ export async function guardarPlantillaDistribucion(formData: FormData): Promise<
         throw new DomainError('Centro de costo inexistente en una línea.');
       }
       if (l.clienteId && !(await ctx.db.cliente.findFirst({ where: { id: l.clienteId } }))) {
-        throw new DomainError('Cliente/proyecto inexistente en una línea.');
+        throw new DomainError('Cliente inexistente en una línea.');
+      }
+      if (l.proyectoId && !(await ctx.db.proyecto.findFirst({ where: { id: l.proyectoId } }))) {
+        throw new DomainError('Proyecto inexistente en una línea.');
       }
     }
 

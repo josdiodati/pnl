@@ -16,6 +16,7 @@ export function AsientoManualForm({
   contrapartes,
   centros,
   clientes,
+  proyectos,
   plantillas,
   puedeValidar,
 }: {
@@ -24,6 +25,7 @@ export function AsientoManualForm({
   contrapartes: ContraparteOpcion[];
   centros: OpcionId[];
   clientes: OpcionId[];
+  proyectos: OpcionId[];
   plantillas: PlantillaOpcion[];
   puedeValidar: boolean;
 }) {
@@ -83,7 +85,7 @@ export function AsientoManualForm({
           </select>
         </div>
       </div>
-      <DistribucionEditor centros={centros} clientes={clientes} plantillas={plantillas} totalFirmado={totalFirmado} />
+      <DistribucionEditor centros={centros} clientes={clientes} proyectos={proyectos} plantillas={plantillas} totalFirmado={totalFirmado} />
       <div>
         <label className="label">Adjunto (opcional)</label>
         <input type="file" name="adjunto" className="text-sm" accept="application/pdf,image/jpeg,image/png,image/webp" />
@@ -108,6 +110,7 @@ export function VentaManualForm({
   contrapartes,
   centros,
   clientes,
+  proyectos,
   plantillas,
   puedeValidar,
 }: {
@@ -116,6 +119,7 @@ export function VentaManualForm({
   contrapartes: ContraparteOpcion[];
   centros: OpcionId[];
   clientes: OpcionId[];
+  proyectos: OpcionId[];
   plantillas: PlantillaOpcion[];
   puedeValidar: boolean;
 }) {
@@ -205,7 +209,7 @@ export function VentaManualForm({
         <label className="label">Descripción</label>
         <input name="descripcion" className="input" placeholder="Servicio BPO cuenta Telecom, junio" />
       </div>
-      <DistribucionEditor centros={centros} clientes={clientes} plantillas={plantillas} totalFirmado={totalFirmado} />
+      <DistribucionEditor centros={centros} clientes={clientes} proyectos={proyectos} plantillas={plantillas} totalFirmado={totalFirmado} />
       <div>
         <label className="label">Adjunto del PDF emitido (opcional)</label>
         <input type="file" name="adjunto" className="text-sm" accept="application/pdf,image/jpeg,image/png,image/webp" />

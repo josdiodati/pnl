@@ -17,10 +17,11 @@ function aNumero(v: FormDataEntryValue | null): number | null {
 
 function leerLineas(formData: FormData) {
   const ccIds = formData.getAll('linea_centroCostoId').map(String);
-  const cpIds = formData.getAll('linea_clienteId').map(String);
+  const cliIds = formData.getAll('linea_clienteId').map(String);
+  const prIds = formData.getAll('linea_proyectoId').map(String);
   const pcts = formData.getAll('linea_porcentaje').map((v) => Number(String(v).replace(',', '.')));
   return ccIds
-    .map((cc, i) => ({ centroCostoId: cc, clienteId: cpIds[i] || null, porcentaje: pcts[i] }))
+    .map((cc, i) => ({ centroCostoId: cc, clienteId: cliIds[i] || null, proyectoId: prIds[i] || null, porcentaje: pcts[i] }))
     .filter((l) => l.centroCostoId);
 }
 

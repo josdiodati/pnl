@@ -12,10 +12,11 @@ export default async function DistribucionesPage({
   searchParams: { error?: string; editar?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
-  const [plantillas, centros, clientes] = await Promise.all([
+  const [plantillas, centros, clientes, proyectos] = await Promise.all([
     ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.cliente.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
+    ctx.db.proyecto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
   ]);
   const editando = searchParams.editar ? plantillas.find((p) => p.id === searchParams.editar) : null;
 
@@ -40,9 +41,11 @@ export default async function DistribucionesPage({
             key={editando?.id ?? 'nueva'}
             centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
             clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre }))}
+            proyectos={proyectos.map((c) => ({ id: c.id, nombre: c.nombre }))}
             inicial={editando?.lineas.map((l) => ({
               centroCostoId: l.centroCostoId,
               clienteId: l.clienteId ?? '',
+              proyectoId: l.proyectoId ?? '',
               porcentaje: String(Number(l.porcentaje)),
             }))}
           />
@@ -69,7 +72,8 @@ export default async function DistribucionesPage({
                     <span key={l.id} className="text-sm text-slate-600">
                       {i > 0 && ' · '}
                       {centros.find((c) => c.id === l.centroCostoId)?.nombre ?? '?'}
-                      {l.clienteId ? ` / ${clientes.find((c) => c.id === l.clienteId)?.nombre ?? '?'}` : ''}{' '}
+                      {l.clienteId ? ` / ${clientes.find((c) => c.id === l.clienteId)?.nombre ?? '?'}` : ''}
+                      {l.proyectoId ? ` / ${proyectos.find((c) => c.id === l.proyectoId)?.nombre ?? '?'}` : ''}{' '}
                       {Number(l.porcentaje).toLocaleString('es-AR')}%
                     </span>
                   ))}
