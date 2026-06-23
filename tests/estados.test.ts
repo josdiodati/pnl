@@ -54,6 +54,14 @@ describe('máquina de estados de movimientos (doc 07)', () => {
     }
   });
 
+  describe('salto directo a ASIGNADO al validar pre-asignados', () => {
+    it('PENDIENTE_VALIDACION / OBSERVADO / RETENIDO pueden ir directo a ASIGNADO', () => {
+      expect(puedeTransicionar('PENDIENTE_VALIDACION', 'ASIGNADO')).toBe(true);
+      expect(puedeTransicionar('OBSERVADO', 'ASIGNADO')).toBe(true);
+      expect(puedeTransicionar('RETENIDO', 'ASIGNADO')).toBe(true);
+    });
+  });
+
   describe('estado ASIGNADO', () => {
     it('VALIDADO puede pasar a ASIGNADO y a ANULADO', () => {
       expect(puedeTransicionar('VALIDADO', 'ASIGNADO')).toBe(true);

@@ -13,13 +13,19 @@ import { DomainError } from '@/lib/errors';
 //
 // Pending/observed/retained movements can also be voided (closing a month
 // requires resolving them by validating OR voiding). Nothing is ever deleted.
+//
+// Special case: a movement whose category + distribution lines are already
+// fully filled in (pre-assigned, e.g. captured from a contraparte with
+// defaults) can jump directly to ASIGNADO during validation, skipping the
+// intermediate VALIDADO step. PENDIENTE_VALIDACION, OBSERVADO and RETENIDO
+// therefore include ASIGNADO in their allowed target states.
 
 const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
   INGRESADO: ['PROCESANDO'],
   PROCESANDO: ['PENDIENTE_VALIDACION', 'RETENIDO', 'ERROR_PROCESAMIENTO'],
-  PENDIENTE_VALIDACION: ['VALIDADO', 'OBSERVADO', 'RETENIDO', 'ANULADO'],
-  OBSERVADO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO'],
-  RETENIDO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO'],
+  PENDIENTE_VALIDACION: ['VALIDADO', 'OBSERVADO', 'RETENIDO', 'ANULADO', 'ASIGNADO'],
+  OBSERVADO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO', 'ASIGNADO'],
+  RETENIDO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO', 'ASIGNADO'],
   VALIDADO: ['ASIGNADO', 'ANULADO'],
   ASIGNADO: ['VALIDADO', 'ANULADO'],
   ANULADO: [],

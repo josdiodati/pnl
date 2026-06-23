@@ -245,9 +245,11 @@ export async function asignarMovimiento(ctx: EmpresaContext, id: string, datos: 
   if (!categoria) throw new DomainError('Elegí una categoría válida.');
   if (mov.fechaDevengamiento) await assertPeriodoAbierto(ctx, mov.fechaDevengamiento, 'asignar');
   const antes = snapshot(mov);
-  await reemplazarLineas(ctx, mov.id, datos.lineas);
+  // Validate the transition BEFORE mutating the DB: if the state is illegal
+  // we must not leave orphaned distribution lines behind.
   // Allow re-assign from ASIGNADO without assertTransicion (reflexive transition not in state machine).
   if (mov.estado !== 'ASIGNADO') assertTransicion(mov.estado, 'ASIGNADO');
+  await reemplazarLineas(ctx, mov.id, datos.lineas);
   const actualizado = await ctx.db.movimiento.update({
     where: { id: mov.id },
     data: { estado: 'ASIGNADO', categoriaId: datos.categoriaId, validadoPorId: ctx.usuario.id },
