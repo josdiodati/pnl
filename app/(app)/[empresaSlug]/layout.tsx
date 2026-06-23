@@ -14,13 +14,14 @@ export default async function EmpresaLayout({
   params: { empresaSlug: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug);
-  const [membresias, pendientes] = await Promise.all([
+  const [membresias, pendientes, porAsignar] = await Promise.all([
     prisma.usuarioEmpresa.findMany({
       where: { usuarioId: ctx.usuario.id },
       include: { empresa: true },
       orderBy: { empresa: { razonSocial: 'asc' } },
     }),
     ctx.db.movimiento.count({ where: { estado: 'PENDIENTE_VALIDACION' } }),
+    ctx.db.movimiento.count({ where: { estado: 'VALIDADO' } }),
   ]);
 
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
@@ -35,7 +36,7 @@ export default async function EmpresaLayout({
         ...(esValidador
           ? [
               { href: `${base}/validacion`, label: 'Validación', icono: 'validacion', badge: pendientes },
-              { href: `${base}/asignacion`, label: 'Asignación', icono: 'validacion' },
+              { href: `${base}/asignacion`, label: 'Asignación', icono: 'validacion', badge: porAsignar },
             ]
           : []),
         { href: `${base}/movimientos`, label: 'Movimientos', icono: 'movimientos' },
