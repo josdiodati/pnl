@@ -161,7 +161,7 @@ export async function volverAPendienteAction(formData: FormData): Promise<void> 
   const movimientoId = String(formData.get('movimientoId'));
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
-    await volverAPendiente(ctx, movimientoId);
+    await volverAPendiente(ctx, movimientoId, String(formData.get('nota') ?? ''));
   } catch (err) {
     volverConError(slug, movimientoId, err);
   }

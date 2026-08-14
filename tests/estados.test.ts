@@ -32,9 +32,17 @@ describe('máquina de estados de movimientos (doc 07)', () => {
     expect(puedeTransicionar('ERROR_PROCESAMIENTO', 'PENDIENTE_VALIDACION')).toBe(true);
   });
 
+  it('devolver a revisión: lo ya validado o asignado puede volver a la cola', () => {
+    expect(puedeTransicionar('VALIDADO', 'PENDIENTE_VALIDACION')).toBe(true);
+    expect(puedeTransicionar('ASIGNADO', 'PENDIENTE_VALIDACION')).toBe(true);
+  });
+
+  it('lo anulado no vuelve: sigue siendo terminal', () => {
+    expect(puedeTransicionar('ANULADO', 'PENDIENTE_VALIDACION')).toBe(false);
+  });
+
   it('rechaza transiciones ilegales', () => {
     expect(puedeTransicionar('INGRESADO', 'VALIDADO')).toBe(false);
-    expect(puedeTransicionar('VALIDADO', 'PENDIENTE_VALIDACION')).toBe(false);
     // PROCESANDO→VALIDADO/ASIGNADO ahora SÍ es válido (autovalidación); usamos
     // una transición que sigue siendo ilegal para cubrir el rechazo.
     expect(puedeTransicionar('INGRESADO', 'ASIGNADO')).toBe(false);

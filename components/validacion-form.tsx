@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { validarAction } from '@/app/(app)/[empresaSlug]/validacion/actions';
 import { mensajeAritmetica, parseImporte } from '@/lib/checks/aritmetica';
+import { IMPORTES } from '@/lib/movimientos/importes';
 import { DistribucionEditor, type OpcionId, type PlantillaOpcion } from './distribucion-editor';
 import { ReglaDesdeAsignacion, type ReglaExistente } from './regla-desde-asignacion';
 
@@ -49,17 +50,6 @@ const TIPOS = [
   'NOTA_CREDITO_A', 'NOTA_CREDITO_B', 'NOTA_CREDITO_C',
   'NOTA_DEBITO_A', 'NOTA_DEBITO_B', 'NOTA_DEBITO_C',
   'TICKET', 'RECIBO', 'OTRO',
-];
-
-const IMPORTES: { campo: string; label: string }[] = [
-  { campo: 'netoGravado', label: 'Neto gravado' },
-  { campo: 'iva21', label: 'IVA 21%' },
-  { campo: 'iva105', label: 'IVA 10,5%' },
-  { campo: 'iva27', label: 'IVA 27%' },
-  { campo: 'percepcionesIva', label: 'Percep. IVA' },
-  { campo: 'percepcionesIibb', label: 'Percep. IIBB' },
-  { campo: 'otrosTributos', label: 'Otros tributos' },
-  { campo: 'noGravadoExento', label: 'No gravado / exento' },
 ];
 
 function Campo({

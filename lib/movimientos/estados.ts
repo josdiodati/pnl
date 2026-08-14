@@ -7,8 +7,8 @@ import { DomainError } from '@/lib/errors';
 //                               ↘ RETENIDO (closed period)
 //                               ↘ OBSERVADO (set aside)
 // PENDIENTE_VALIDACION / OBSERVADO / RETENIDO → VALIDADO
-// VALIDADO → ASIGNADO / ANULADO (reason required)
-// ASIGNADO → VALIDADO / ANULADO
+// VALIDADO → ASIGNADO / ANULADO (reason required) / PENDIENTE_VALIDACION
+// ASIGNADO → VALIDADO / ANULADO / PENDIENTE_VALIDACION
 // PROCESANDO → ERROR_PROCESAMIENTO (OCR failed; retry or manual entry)
 //
 // Pending/observed/retained movements can also be voided (closing a month
@@ -29,8 +29,11 @@ const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
   PENDIENTE_VALIDACION: ['VALIDADO', 'OBSERVADO', 'RETENIDO', 'ANULADO', 'ASIGNADO', 'DUPLICADO'],
   OBSERVADO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO', 'ASIGNADO'],
   RETENIDO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO', 'ASIGNADO'],
-  VALIDADO: ['ASIGNADO', 'ANULADO'],
-  ASIGNADO: ['VALIDADO', 'ANULADO'],
+  // PENDIENTE_VALIDACION: "devolver a revisión". Lo ya validado (o asignado)
+  // puede volver a la cola para corregirlo; exige período abierto, porque un
+  // pendiente bloquea el cierre del mes.
+  VALIDADO: ['ASIGNADO', 'ANULADO', 'PENDIENTE_VALIDACION'],
+  ASIGNADO: ['VALIDADO', 'ANULADO', 'PENDIENTE_VALIDACION'],
   ANULADO: [],
   ERROR_PROCESAMIENTO: ['PROCESANDO', 'PENDIENTE_VALIDACION'],
   DUPLICADO: ['PENDIENTE_VALIDACION', 'ANULADO'],

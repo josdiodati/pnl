@@ -13,6 +13,7 @@ import { totalFirmadoDe } from '@/lib/movimientos/query';
 import { elegirRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { asignarAction } from '../actions';
+import { volverAPendienteAction } from '../../validacion/actions';
 
 export default async function AsignacionDetallePage({
   params,
@@ -194,6 +195,18 @@ export default async function AsignacionDetallePage({
                 Asignar
               </button>
             </div>
+          </form>
+
+          {/* Fuera del form de asignación: devuelve el comprobante a la cola de
+              Validación para corregirlo (exige período abierto). */}
+          <form action={volverAPendienteAction} className="border-t border-slate-100 pt-3 flex items-end gap-2">
+            <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+            <input type="hidden" name="movimientoId" value={mov.id} />
+            <div>
+              <label className="label">Nota (opcional)</label>
+              <input name="nota" className="input !w-48" placeholder="Por qué se reabre" />
+            </div>
+            <button className="btn-secondary">Devolver a revisión</button>
           </form>
         </div>
       </div>

@@ -305,17 +305,29 @@ export async function observarMovimiento(ctx: EmpresaContext, id: string, nota?:
   });
 }
 
-export async function volverAPendiente(ctx: EmpresaContext, id: string): Promise<void> {
+export async function volverAPendiente(ctx: EmpresaContext, id: string, nota?: string): Promise<void> {
   const mov = await getMovimientoOrThrow(ctx, id);
   assertTransicion(mov.estado, 'PENDIENTE_VALIDACION');
-  await ctx.db.movimiento.update({ where: { id }, data: { estado: 'PENDIENTE_VALIDACION' } });
+
+  // Un pendiente bloquea el cierre del mes: devolver a revisión algo cuyo período
+  // ya se cerró dejaría el cierre inconsistente.
+  const yaValidado = mov.estado === 'VALIDADO' || mov.estado === 'ASIGNADO';
+  if (yaValidado && mov.fechaDevengamiento) {
+    await assertPeriodoAbierto(ctx, mov.fechaDevengamiento, 'devolver a revisión');
+  }
+
+  await ctx.db.movimiento.update({
+    where: { id },
+    // Deja de estar validado por alguien; la imputación se conserva por si sirve.
+    data: { estado: 'PENDIENTE_VALIDACION', ...(yaValidado ? { validadoPorId: null } : {}) },
+  });
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,
     entidad: 'Movimiento',
     entidadId: id,
     accion: 'VOLVER_A_PENDIENTE',
-    antes: { estado: mov.estado },
-    despues: { estado: 'PENDIENTE_VALIDACION' },
+    antes: { estado: mov.estado, validadoPorId: mov.validadoPorId },
+    despues: { estado: 'PENDIENTE_VALIDACION', nota: nota?.trim() || null },
   });
 }
 

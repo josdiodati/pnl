@@ -4,9 +4,10 @@ import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { getFileStorage } from '@/lib/storage';
 import { DocViewer } from '@/components/doc-viewer';
 import { ValidacionForm } from '@/components/validacion-form';
+import { ComprobanteDetalle } from '@/components/comprobante-detalle';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
-import { formatFechaHora, formatMoney, fechaInputValue } from '@/lib/format';
+import { formatFechaHora, fechaInputValue } from '@/lib/format';
 import { elegirRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { reglaVigenteParaCuit } from '@/lib/reglas/desde-asignacion';
@@ -21,6 +22,9 @@ import {
 } from '../actions';
 
 const EDITABLES = new Set(['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO']);
+// Estados desde los que se puede devolver el comprobante a la cola de Validación.
+// RETENIDO tenía la transición permitida desde siempre pero se había quedado sin botón.
+const VUELVEN_A_PENDIENTE = new Set(['OBSERVADO', 'DUPLICADO', 'RETENIDO', 'VALIDADO', 'ASIGNADO']);
 
 export default async function ValidacionDetallePage({
   params,
@@ -228,35 +232,19 @@ export default async function ValidacionDetallePage({
               }
             />
           ) : (
-            <div className="space-y-2 text-sm">
-              <h2 className="font-medium">Resumen</h2>
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
-                <dt className="text-slate-500">Contraparte</dt>
-                <dd>{mov.contraparte?.razonSocial ?? '—'}</dd>
-                <dt className="text-slate-500">Categoría</dt>
-                <dd>{mov.categoria?.nombre ?? '—'}</dd>
-                <dt className="text-slate-500">Comprobante</dt>
-                <dd>{mov.tipoComprobante?.replace(/_/g, ' ') ?? '—'} {mov.puntoVenta ? `${mov.puntoVenta}-` : ''}{mov.numero ?? ''}</dd>
-                <dt className="text-slate-500">Total</dt>
-                <dd className="tabular-nums">{formatMoney(n(mov.total))}</dd>
-                {(mov.estado === 'VALIDADO' || mov.estado === 'ASIGNADO') && (
-                  <>
-                    <dt className="text-slate-500">Validado por</dt>
-                    <dd>{mov.validadoPor?.nombre ?? 'Automático (sistema)'}</dd>
-                  </>
-                )}
-                {mov.motivoAnulacion && (
-                  <>
-                    <dt className="text-slate-500">Motivo de anulación</dt>
-                    <dd className="text-red-700">{mov.motivoAnulacion}</dd>
-                  </>
-                )}
-              </dl>
+            <div className="space-y-3">
               {mov.estado === 'PROCESANDO' || mov.estado === 'INGRESADO' ? (
-                <p className="text-slate-500">
+                <p className="text-sm text-slate-500">
                   Este movimiento está en el pipeline; cuando termine el OCR va a aparecer en la cola.
                 </p>
-              ) : null}
+              ) : (
+                <ComprobanteDetalle
+                  mov={mov as never}
+                  centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
+                  clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre }))}
+                  proyectos={proyectos.map((p) => ({ id: p.id, nombre: p.nombre }))}
+                />
+              )}
             </div>
           )}
 
@@ -273,12 +261,22 @@ export default async function ValidacionDetallePage({
                 <button className="btn-secondary">Observar</button>
               </form>
             )}
-            {(mov.estado === 'OBSERVADO' || mov.estado === 'DUPLICADO') && (
-              <form action={volverAPendienteAction}>
+            {VUELVEN_A_PENDIENTE.has(mov.estado) && (
+              <form action={volverAPendienteAction} className="flex items-end gap-2">
                 <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                 <input type="hidden" name="movimientoId" value={mov.id} />
+                {(mov.estado === 'VALIDADO' || mov.estado === 'ASIGNADO') && (
+                  <div>
+                    <label className="label">Nota (opcional)</label>
+                    <input name="nota" className="input !w-48" placeholder="Por qué se reabre" />
+                  </div>
+                )}
                 <button className="btn-secondary">
-                  {mov.estado === 'DUPLICADO' ? 'No es duplicado: volver a pendiente' : 'Volver a pendiente'}
+                  {mov.estado === 'DUPLICADO'
+                    ? 'No es duplicado: volver a pendiente'
+                    : mov.estado === 'VALIDADO' || mov.estado === 'ASIGNADO'
+                      ? 'Devolver a revisión'
+                      : 'Volver a pendiente'}
                 </button>
               </form>
             )}
