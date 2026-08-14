@@ -1,10 +1,10 @@
 import type { Extraccion } from '@/lib/extractor/schema';
-import { checkAritmetica } from './aritmetica';
+import { mensajeAritmetica } from './aritmetica';
 import { cuitEsValido } from './cuit';
 import { checkFecha } from './fecha';
 
 export { cuitEsValido, normalizarCuit, formatearCuit } from './cuit';
-export { checkAritmetica, TOLERANCIA_CENTAVOS, aCentavos } from './aritmetica';
+export { checkAritmetica, mensajeAritmetica, parseImporte, TOLERANCIA_CENTAVOS, aCentavos } from './aritmetica';
 export { checkFecha } from './fecha';
 export { buscarDuplicados, esMismaClave } from './duplicados';
 
@@ -29,10 +29,8 @@ export function evaluarCampos(extraccion: Extraccion): Record<string, string> {
   }
 
   // Arithmetic: components must sum the total (±$1)
-  const arit = checkAritmetica(extraccion);
-  if (extraccion.total != null && !arit.ok) {
-    revisar.total = `La suma de componentes ($${arit.sumaComponentes.toFixed(2)}) difiere del total en $${arit.diferencia.toFixed(2)}`;
-  }
+  const desvio = mensajeAritmetica(extraccion);
+  if (desvio) revisar.total = desvio;
 
   // Date sanity
   if (extraccion.fechaEmision) {

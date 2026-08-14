@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { validarAction } from '@/app/(app)/[empresaSlug]/validacion/actions';
+import { mensajeAritmetica, parseImporte } from '@/lib/checks/aritmetica';
 import { DistribucionEditor, type OpcionId, type PlantillaOpcion } from './distribucion-editor';
 import { ReglaDesdeAsignacion, type ReglaExistente } from './regla-desde-asignacion';
 
@@ -111,6 +112,12 @@ export function ValidacionForm({
   const [categoriaId, setCategoriaId] = useState(mov.categoriaId);
   const [tipoComprobante, setTipoComprobante] = useState(mov.tipoComprobante);
   const [total, setTotal] = useState<string>(mov.importes.total != null ? String(mov.importes.total) : '');
+  // Los componentes del importe son estado (no defaultValue) para poder
+  // recalcular el desvío aritmético mientras se tipea: el mensaje que viene
+  // guardado en camposRevisar es una foto del momento de la extracción.
+  const [componentes, setComponentes] = useState<Record<string, string>>(() =>
+    Object.fromEntries(IMPORTES.map(({ campo }) => [campo, mov.importes[campo] != null ? String(mov.importes[campo]) : ''])),
+  );
   const [overrideNoFiscal, setOverrideNoFiscal] = useState(false);
 
   const contraparteSel = contrapartes.find((c) => c.id === contraparteId);
@@ -126,6 +133,16 @@ export function ValidacionForm({
   }, [total, categoriaSel, tipoComprobante]);
 
   const r = mov.camposRevisar;
+
+  // Desvío recalculado en vivo sobre lo que hay en pantalla.
+  const desvioAritmetico = useMemo(
+    () =>
+      mensajeAritmetica({
+        ...Object.fromEntries(IMPORTES.map(({ campo }) => [campo, parseImporte(componentes[campo] ?? '')])),
+        total: parseImporte(total),
+      }),
+    [componentes, total],
+  );
 
   return (
     <form action={validarAction} className="space-y-4">
@@ -283,7 +300,8 @@ export function ValidacionForm({
             <Campo key={campo} label={label} revisar={r[campo]}>
               <input
                 name={campo}
-                defaultValue={mov.importes[campo] ?? ''}
+                value={componentes[campo] ?? ''}
+                onChange={(e) => setComponentes((prev) => ({ ...prev, [campo]: e.target.value }))}
                 inputMode="decimal"
                 className="input text-right tabular-nums"
               />
@@ -291,7 +309,7 @@ export function ValidacionForm({
           ))}
         </div>
         <div className="mt-2 w-48">
-          <Campo label="TOTAL" revisar={r.total}>
+          <Campo label="TOTAL" revisar={desvioAritmetico ?? (total.trim() ? undefined : r.total)}>
             <input
               name="total"
               value={total}

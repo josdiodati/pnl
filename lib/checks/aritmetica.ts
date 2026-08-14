@@ -22,6 +22,24 @@ export function aCentavos(valor: number | null | undefined): number {
   return Math.round(valor * 100);
 }
 
+/** Lee un importe tipeado por el usuario: coma o punto decimal; vacío = ausente. */
+export function parseImporte(valor: string): number | null {
+  const s = valor.trim().replace(',', '.');
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isNaN(n) ? null : n;
+}
+
+/** Texto del desvío aritmético, o null si cierra (o si todavía no hay total).
+ *  Lo comparten el chequeo del servidor y la pantalla de validación, que lo
+ *  recalcula en vivo: un solo lugar para que los textos no se separen. */
+export function mensajeAritmetica(importes: ImportesComprobante): string | null {
+  if (importes.total == null) return null;
+  const arit = checkAritmetica(importes);
+  if (arit.ok) return null;
+  return `La suma de componentes ($${arit.sumaComponentes.toFixed(2)}) difiere del total en $${arit.diferencia.toFixed(2)}`;
+}
+
 export function checkAritmetica(importes: ImportesComprobante): {
   ok: boolean;
   sumaComponentes: number; // in pesos

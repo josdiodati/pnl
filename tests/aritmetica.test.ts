@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkAritmetica } from '@/lib/checks/aritmetica';
+import { checkAritmetica, mensajeAritmetica, parseImporte } from '@/lib/checks/aritmetica';
 import { evaluarCampos } from '@/lib/checks';
 import type { Extraccion } from '@/lib/extractor/schema';
 
@@ -100,5 +100,40 @@ describe('evaluarCampos: marca campos a revisar', () => {
 
   it('confianza baja → revisar ese campo', () => {
     expect(evaluarCampos({ ...base, confianza: { numero: 0.4 } })).toHaveProperty('numero');
+  });
+});
+
+// El mensaje del desvío lo comparten el chequeo del servidor (evaluarCampos, que
+// lo persiste en camposRevisar) y la pantalla de validación, que lo recalcula en
+// vivo mientras se editan los importes. Vive en un solo lugar para que los dos
+// textos no se separen.
+describe('mensajeAritmetica', () => {
+  it('no dice nada cuando los importes cierran', () => {
+    expect(mensajeAritmetica({ netoGravado: 1000, iva21: 210, total: 1210 })).toBeNull();
+  });
+
+  it('no dice nada si todavía no hay total que comparar', () => {
+    expect(mensajeAritmetica({ netoGravado: 1000, total: null })).toBeNull();
+  });
+
+  it('informa suma y diferencia cuando no cierran', () => {
+    const m = mensajeAritmetica({ netoGravado: 220000, iva21: 46200, otrosTributos: 1075.42, total: 266473.4 });
+    expect(m).toBe('La suma de componentes ($267275.42) difiere del total en $802.02');
+  });
+});
+
+describe('parseImporte', () => {
+  it('lee decimales con coma o con punto', () => {
+    expect(parseImporte('1234,56')).toBe(1234.56);
+    expect(parseImporte('1234.56')).toBe(1234.56);
+  });
+
+  it('un campo vacío es ausencia de importe, no cero', () => {
+    expect(parseImporte('')).toBeNull();
+    expect(parseImporte('   ')).toBeNull();
+  });
+
+  it('lo que no es número es null', () => {
+    expect(parseImporte('abc')).toBeNull();
   });
 });
