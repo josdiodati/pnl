@@ -16,10 +16,15 @@ export type FiltrosMovimientos = {
   canal?: string;
 };
 
-// Movimientos is the ledger: it ONLY shows validated and assigned movements.
-// In-flight states (ingresado/procesando/pendiente/observado/retenido), errors
-// and voided entries live in the Validación / Asignación queues, not here.
-export const ESTADOS_LIBRO = ['VALIDADO', 'ASIGNADO'] as const;
+// Movimientos es el libro: muestra SÓLO los movimientos asignados, que son
+// exactamente los que impactan el resultado (impactaResultado) y los únicos que
+// suman sus propios totales — resumirMovimientos ya contaba sólo asignados, así
+// que incluir validados-sin-imputar hacía que la tabla mostrara filas que su
+// propio pie no sumaba.
+//
+// Todo lo demás vive en su cola: un validado sin imputar está en Asignación, lo
+// pendiente/observado/retenido en Validación, y la vista de "todo" es Comprobantes.
+export const ESTADOS_LIBRO = ['ASIGNADO'] as const;
 
 export function buildWhereMovimientos(
   f: FiltrosMovimientos,
@@ -37,11 +42,9 @@ export function buildWhereMovimientos(
   if (f.categoriaId) where.categoriaId = f.categoriaId;
   if (f.contraparteId) where.contraparteId = f.contraparteId;
   if (f.origen) where.origen = f.origen as never;
-  // Hard-constrain to the ledger states; an explicit filter can only narrow
-  // within them, never widen to in-flight/voided states.
-  where.estado = (f.estado && (ESTADOS_LIBRO as readonly string[]).includes(f.estado)
-    ? f.estado
-    : { in: ESTADOS_LIBRO }) as never;
+  // El estado no es filtrable: el libro ES los asignados. Un `estado` que llegue
+  // por querystring se ignora, nunca puede ampliar el rango.
+  where.estado = { in: ESTADOS_LIBRO } as never;
   if (f.canal) where.canalIngreso = f.canal;
   if (f.centroCostoId || f.clienteId) {
     where.lineas = {

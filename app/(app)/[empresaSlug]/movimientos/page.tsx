@@ -3,7 +3,7 @@ import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { rolAlcanza } from '@/lib/roles';
 import { buildWhereMovimientos, resumirMovimientos, totalFirmadoDe, tonoImporte, type FiltrosMovimientos } from '@/lib/movimientos/query';
 import { formatMoney, formatMoneyFirmado, formatFecha } from '@/lib/format';
-import { EstadoBadge, CanalBadge } from '@/components/badges';
+import { CanalBadge } from '@/components/badges';
 import { OkBanner } from '@/components/error-banner';
 
 // Minimal reporting view (doc 09): filterable table + selection totals +
@@ -49,7 +49,7 @@ export default async function MovimientosPage({
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-lg font-semibold">Movimientos</h1>
-          <p className="text-xs text-slate-500">Libro de movimientos validados y asignados. Lo pendiente vive en las colas de Validación y Asignación.</p>
+          <p className="text-xs text-slate-500">Libro de movimientos asignados: lo que impacta el resultado. Lo validado sin imputar está en la cola de Asignación.</p>
         </div>
         <a href={`/${params.empresaSlug}/movimientos/export${qs ? `?${qs}` : ''}`} className="btn-secondary text-sm">
           Exportar CSV
@@ -111,14 +111,6 @@ export default async function MovimientosPage({
             <option value="VENTA_MANUAL">Venta manual</option>
           </select>
         </div>
-        <div>
-          <label className="label">Estado</label>
-          <select name="estado" defaultValue={searchParams.estado ?? ''} className="input text-xs">
-            <option value="">Validados y asignados</option>
-            <option value="VALIDADO">Solo validados</option>
-            <option value="ASIGNADO">Solo asignados</option>
-          </select>
-        </div>
         <div className="flex gap-1">
           <button className="btn-primary text-xs">Filtrar</button>
           <Link href={`/${params.empresaSlug}/movimientos`} className="btn-secondary text-xs">Limpiar</Link>
@@ -134,7 +126,6 @@ export default async function MovimientosPage({
               <th>Categoría</th>
               <th>Asignación</th>
               <th>Origen</th>
-              <th>Estado</th>
               <th>Canal</th>
               <th className="text-right">Importe</th>
             </tr>
@@ -143,7 +134,7 @@ export default async function MovimientosPage({
             {movimientos.map((m) => {
               const firmado = totalFirmadoDe(m as never);
               return (
-                <tr key={m.id} className={`hover:bg-slate-50 ${m.estado === 'ANULADO' ? 'opacity-50' : ''}`}>
+                <tr key={m.id} className="hover:bg-slate-50">
                   <td className="whitespace-nowrap">{formatFecha(m.fechaDevengamiento)}</td>
                   <td>
                     <Link href={`/${params.empresaSlug}/validacion/${m.id}`} className="hover:underline">
@@ -170,7 +161,6 @@ export default async function MovimientosPage({
                   <td className="text-xs text-slate-500 whitespace-nowrap">
                     {m.origen === 'COMPROBANTE' ? 'Comprobante' : m.origen === 'ASIENTO_MANUAL' ? 'Asiento' : 'Venta'}
                   </td>
-                  <td><EstadoBadge estado={m.estado} /></td>
                   <td><CanalBadge canal={m.canalIngreso} /></td>
                   <td
                     className={`num font-medium ${
@@ -187,13 +177,13 @@ export default async function MovimientosPage({
               );
             })}
             {movimientos.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-8">Sin movimientos para los filtros elegidos</td></tr>
+              <tr><td colSpan={7} className="text-center text-slate-400 py-8">Sin movimientos para los filtros elegidos</td></tr>
             )}
           </tbody>
           <tfoot>
             <tr className="bg-slate-50 font-medium">
-              <td colSpan={7} className="text-right text-sm text-slate-500">
-                Totales de la selección ({movimientos.length} mov.) — solo asignados:
+              <td colSpan={6} className="text-right text-sm text-slate-500">
+                Total de la selección ({movimientos.length} mov.):
               </td>
               <td className={`num ${resumen.resultado < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
                 {formatMoneyFirmado(resumen.resultado)}

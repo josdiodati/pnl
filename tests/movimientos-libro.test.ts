@@ -3,19 +3,17 @@ import { buildWhereMovimientos, ESTADOS_LIBRO, tonoImporte } from '@/lib/movimie
 
 const opts = { esValidador: true, usuarioId: 'u1' };
 
-describe('buildWhereMovimientos — Movimientos es el libro (solo validado + asignado)', () => {
-  it('sin filtro de estado, restringe a VALIDADO + ASIGNADO', () => {
-    const where = buildWhereMovimientos({}, opts);
-    expect(where.estado).toEqual({ in: ESTADOS_LIBRO });
+// El libro muestra sólo ASIGNADO: es exactamente lo que impacta el resultado, y
+// lo que sus propios totales suman (resumirMovimientos ya contaba sólo asignados).
+// Un validado-sin-imputar vive en la cola de Asignación, no acá.
+describe('buildWhereMovimientos — Movimientos es el libro (sólo asignados)', () => {
+  it('restringe a ASIGNADO', () => {
+    expect(buildWhereMovimientos({}, opts).estado).toEqual({ in: ESTADOS_LIBRO });
+    expect([...ESTADOS_LIBRO]).toEqual(['ASIGNADO']);
   });
 
-  it('un estado dentro del libro lo angosta a ese estado', () => {
-    expect(buildWhereMovimientos({ estado: 'VALIDADO' }, opts).estado).toBe('VALIDADO');
-    expect(buildWhereMovimientos({ estado: 'ASIGNADO' }, opts).estado).toBe('ASIGNADO');
-  });
-
-  it('un estado fuera del libro NO se respeta: cae al rango del libro', () => {
-    for (const e of ['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO', 'INGRESADO', 'ANULADO', 'ERROR_PROCESAMIENTO']) {
+  it('ningún filtro de estado puede ampliar el rango del libro', () => {
+    for (const e of ['VALIDADO', 'PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO', 'INGRESADO', 'ANULADO', 'ERROR_PROCESAMIENTO']) {
       expect(buildWhereMovimientos({ estado: e }, opts).estado).toEqual({ in: ESTADOS_LIBRO });
     }
   });
