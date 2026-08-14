@@ -4,7 +4,10 @@ import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { getFileStorage } from '@/lib/storage';
 import { DocViewer } from '@/components/doc-viewer';
 import { DistribucionEditor } from '@/components/distribucion-editor';
-import { ErrorBanner } from '@/components/error-banner';
+import { ErrorBanner, OkBanner } from '@/components/error-banner';
+import { ReglaDesdeAsignacion } from '@/components/regla-desde-asignacion';
+import { buscarReglaPorCuit } from '@/lib/reglas/guardar-desde-asignacion';
+import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { totalFirmadoDe } from '@/lib/movimientos/query';
 import { elegirRegla } from '@/lib/reglas/matching';
@@ -16,7 +19,7 @@ export default async function AsignacionDetallePage({
   searchParams,
 }: {
   params: { empresaSlug: string; id: string };
-  searchParams: { error?: string };
+  searchParams: { error?: string; ok?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
 
@@ -58,6 +61,19 @@ export default async function AsignacionDetallePage({
     }
   }
 
+  // Regla ya vigente para este CUIT: se resuelve al renderizar (depende sólo del
+  // CUIT), así el conflicto se decide en el mismo submit que la asignación.
+  const reglaVigente = await buscarReglaPorCuit(ctx, mov.cuitEmisor);
+  const imputacionDe = (r: NonNullable<typeof reglaVigente>) => {
+    const cat = categorias.find((c) => c.id === r.categoriaId)?.nombre ?? 'sin categoría';
+    const dist = r.distribucionId
+      ? (plantillas.find((p) => p.id === r.distribucionId)?.nombre ?? 'plantilla')
+      : r.centroCostoId
+        ? (centros.find((c) => c.id === r.centroCostoId)?.nombre ?? '?')
+        : 'sin distribución';
+    return `${cat} / ${dist}`;
+  };
+
   const inicial =
     mov.lineas.length > 0
       ? mov.lineas.map((l) => ({
@@ -85,6 +101,7 @@ export default async function AsignacionDetallePage({
       </div>
 
       <ErrorBanner mensaje={searchParams.error} />
+      <OkBanner mensaje={searchParams.ok} />
 
       {reglaAplicada && (
         <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
@@ -161,6 +178,12 @@ export default async function AsignacionDetallePage({
               }))}
               inicial={inicial}
               totalFirmado={totalFirmado}
+            />
+
+            <ReglaDesdeAsignacion
+              cuit={mov.cuitEmisor}
+              razonSocial={nombreContraparte(mov).nombre}
+              existente={reglaVigente ? { nombre: reglaVigente.nombre, imputacion: imputacionDe(reglaVigente) } : null}
             />
 
             <div className="flex gap-2 pt-2">

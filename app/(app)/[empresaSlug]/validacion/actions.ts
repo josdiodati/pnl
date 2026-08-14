@@ -13,6 +13,8 @@ import {
   cargarAManoDesdeError,
 } from '@/lib/movimientos/service';
 import { procesarArca } from '@/lib/pipeline';
+import { guardarReglaDesdeAsignacion } from '@/lib/reglas/guardar-desde-asignacion';
+import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 import { cuitEsValido, normalizarCuit } from '@/lib/checks';
 import { writeAudit } from '@/lib/audit';
 import type { Moneda } from '@prisma/client';
@@ -47,6 +49,7 @@ export async function validarAction(formData: FormData): Promise<void> {
   const movimientoId = String(formData.get('movimientoId'));
   const irAlSiguiente = formData.get('siguiente') === '1';
   let siguienteId: string | null = null;
+  let mensajeRegla = '';
 
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
@@ -105,6 +108,26 @@ export async function validarAction(formData: FormData): Promise<void> {
       lineas: leerLineas(formData),
     });
 
+    // Sólo hay regla que guardar si la validación terminó imputando: sin
+    // categoría el movimiento queda VALIDADO y no hay asignación que replicar.
+    const categoriaRegla = String(formData.get('categoriaId') ?? '');
+    const lineasRegla = leerLineas(formData);
+    if (formData.get('crearRegla') === '1' && categoriaRegla && lineasRegla.length > 0) {
+      const mov = await ctx.db.movimiento.findFirst({
+        where: { id: movimientoId },
+        include: { contraparte: true },
+      });
+      const resultado = await guardarReglaDesdeAsignacion(ctx, {
+        cuit: mov?.cuitEmisor ?? null,
+        razonSocial: mov ? nombreContraparte(mov).nombre : null,
+        categoriaId: categoriaRegla,
+        lineas: lineasRegla,
+        palabraClave: String(formData.get('reglaPalabraClave') ?? '').trim() || null,
+        nombre: String(formData.get('reglaNombre') ?? '').trim() || null,
+      });
+      mensajeRegla = ` — ${resultado}`;
+    }
+
     if (irAlSiguiente) {
       const siguiente = await ctx.db.movimiento.findFirst({
         where: { estado: 'PENDIENTE_VALIDACION', id: { not: movimientoId } },
@@ -117,7 +140,8 @@ export async function validarAction(formData: FormData): Promise<void> {
     volverConError(slug, movimientoId, err);
   }
   revalidatePath(`/${slug}/validacion`);
-  redirect(siguienteId ? `/${slug}/validacion/${siguienteId}` : `/${slug}/validacion?ok=Movimiento+validado`);
+  const ok = encodeURIComponent(`Movimiento validado${mensajeRegla}`);
+  redirect(siguienteId ? `/${slug}/validacion/${siguienteId}?ok=${ok}` : `/${slug}/validacion?ok=${ok}`);
 }
 
 export async function observarAction(formData: FormData): Promise<void> {

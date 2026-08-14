@@ -5,6 +5,8 @@ import { revalidatePath } from 'next/cache';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isDomainError, isForbidden } from '@/lib/errors';
 import { asignarMovimiento } from '@/lib/movimientos/service';
+import { guardarReglaDesdeAsignacion } from '@/lib/reglas/guardar-desde-asignacion';
+import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 
 function leerLineas(formData: FormData) {
   const ccIds = formData.getAll('linea_centroCostoId').map(String);
@@ -30,10 +32,29 @@ export async function asignarAction(formData: FormData): Promise<void> {
   const irAlSiguiente = formData.get('siguiente') === '1';
   const lineas = leerLineas(formData);
   let siguienteId: string | null = null;
+  let mensajeRegla = '';
 
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
     await asignarMovimiento(ctx, movimientoId, { categoriaId, lineas });
+
+    // La regla es un extra opt-in: se guarda DESPUÉS de asignar y nunca deshace
+    // la asignación si falla.
+    if (formData.get('crearRegla') === '1') {
+      const mov = await ctx.db.movimiento.findFirst({
+        where: { id: movimientoId },
+        include: { contraparte: true },
+      });
+      const resultado = await guardarReglaDesdeAsignacion(ctx, {
+        cuit: mov?.cuitEmisor ?? null,
+        razonSocial: mov ? nombreContraparte(mov).nombre : null,
+        categoriaId,
+        lineas,
+        palabraClave: String(formData.get('reglaPalabraClave') ?? '').trim() || null,
+        nombre: String(formData.get('reglaNombre') ?? '').trim() || null,
+      });
+      mensajeRegla = ` — ${resultado}`;
+    }
 
     if (irAlSiguiente) {
       const siguiente = await ctx.db.movimiento.findFirst({
@@ -47,5 +68,6 @@ export async function asignarAction(formData: FormData): Promise<void> {
     volverConError(slug, movimientoId, err);
   }
   revalidatePath(`/${slug}/asignacion`);
-  redirect(siguienteId ? `/${slug}/asignacion/${siguienteId}` : `/${slug}/asignacion?ok=Movimiento+asignado`);
+  const ok = encodeURIComponent(`Movimiento asignado${mensajeRegla}`);
+  redirect(siguienteId ? `/${slug}/asignacion/${siguienteId}?ok=${ok}` : `/${slug}/asignacion?ok=${ok}`);
 }

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { validarAction } from '@/app/(app)/[empresaSlug]/validacion/actions';
 import { DistribucionEditor, type OpcionId, type PlantillaOpcion } from './distribucion-editor';
+import { ReglaDesdeAsignacion, type ReglaExistente } from './regla-desde-asignacion';
 
 // Right-hand form of the side-by-side validation screen. Fields flagged by the
 // deterministic checks come highlighted in yellow with the reason; the happy
@@ -91,6 +92,8 @@ export function ValidacionForm({
   proyectos,
   plantillas,
   reglaSugerida,
+  razonSocialContraparte,
+  reglaVigente,
 }: {
   empresaSlug: string;
   mov: CampoMovimiento;
@@ -101,6 +104,8 @@ export function ValidacionForm({
   proyectos: OpcionId[];
   plantillas: PlantillaOpcion[];
   reglaSugerida?: string | null;
+  razonSocialContraparte?: string | null;
+  reglaVigente?: ReglaExistente | null;
 }) {
   const [contraparteId, setContraparteId] = useState(mov.contraparteId);
   const [categoriaId, setCategoriaId] = useState(mov.categoriaId);
@@ -316,6 +321,17 @@ export function ValidacionForm({
           inicial={mov.lineas.length ? mov.lineas : undefined}
           totalFirmado={totalFirmado}
         />
+        {/* Sólo tiene sentido si se está imputando: sin categoría queda VALIDADO
+            y no hay asignación que convertir en regla. */}
+        {categoriaId && (
+          <div className="mt-3">
+            <ReglaDesdeAsignacion
+              cuit={mov.cuitEmisor || null}
+              razonSocial={razonSocialContraparte ?? null}
+              existente={reglaVigente ?? null}
+            />
+          </div>
+        )}
       </fieldset>
 
       <details className="text-sm">

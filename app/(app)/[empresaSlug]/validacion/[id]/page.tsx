@@ -5,10 +5,12 @@ import { getFileStorage } from '@/lib/storage';
 import { DocViewer } from '@/components/doc-viewer';
 import { ValidacionForm } from '@/components/validacion-form';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
-import { ErrorBanner } from '@/components/error-banner';
+import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { formatFechaHora, formatMoney, fechaInputValue } from '@/lib/format';
 import { elegirRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
+import { reglaVigenteParaCuit } from '@/lib/reglas/desde-asignacion';
+import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 import {
   observarAction,
   anularAction,
@@ -25,7 +27,7 @@ export default async function ValidacionDetallePage({
   searchParams,
 }: {
   params: { empresaSlug: string; id: string };
-  searchParams: { error?: string };
+  searchParams: { error?: string; ok?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const mov = await ctx.db.movimiento.findFirst({
@@ -51,6 +53,19 @@ export default async function ValidacionDetallePage({
   const editable = EDITABLES.has(mov.estado);
   const flags = (mov.flags as Record<string, unknown> | null) ?? {};
   const n = (v: unknown) => (v == null ? null : Number(v));
+
+  // Regla ya vigente para este CUIT: si el validador marca "crear regla", esta es
+  // la que se pisa. Sale de las reglas ya cargadas, sin consulta extra.
+  const reglaVigente = reglaVigenteParaCuit(reglas, mov.cuitEmisor);
+  const imputacionDeRegla = (r: NonNullable<typeof reglaVigente>) => {
+    const cat = categorias.find((c) => c.id === r.categoriaId)?.nombre ?? 'sin categoría';
+    const dist = r.distribucionId
+      ? (plantillas.find((p) => p.id === r.distribucionId)?.nombre ?? 'plantilla')
+      : r.centroCostoId
+        ? (centros.find((c) => c.id === r.centroCostoId)?.nombre ?? '?')
+        : 'sin distribución';
+    return `${cat} / ${dist}`;
+  };
 
   // Pre-imputación: si el comprobante no tiene líneas, una regla puede pre-llenar
   // la asignación para que el validador la confirme en la misma pantalla.
@@ -114,6 +129,7 @@ export default async function ValidacionDetallePage({
       </div>
 
       <ErrorBanner mensaje={searchParams.error} />
+      <OkBanner mensaje={searchParams.ok} />
 
       {Boolean(flags.errorProcesamiento) && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -204,6 +220,12 @@ export default async function ValidacionDetallePage({
                 categoriaDefaultId: c.categoriaDefaultId,
                 instruccionesExtraccion: c.instruccionesExtraccion,
               }))}
+              razonSocialContraparte={nombreContraparte(mov).nombre}
+              reglaVigente={
+                reglaVigente
+                  ? { nombre: reglaVigente.nombre, imputacion: imputacionDeRegla(reglaVigente) }
+                  : null
+              }
             />
           ) : (
             <div className="space-y-2 text-sm">
