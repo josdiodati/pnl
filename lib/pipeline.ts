@@ -165,6 +165,8 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     razonSocialEmisor: extraccion.razonSocialEmisor,
     razonSocialReceptor: extraccion.razonSocialReceptor,
     yaExiste: contraparte != null || ocupadoPorInactiva,
+    razonSocialEmpresa: empresa?.razonSocial ?? null,
+    cuitEmpresa,
   });
 
   if (cuitContraparte && !contraparte) {

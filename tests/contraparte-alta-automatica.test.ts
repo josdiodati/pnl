@@ -57,3 +57,55 @@ describe('decidirAltaContraparte', () => {
     expect(d.motivo).toMatch(/QR/i);
   });
 });
+
+// El LLM a veces invierte emisor y receptor: lee a la propia empresa como si
+// hubiera emitido la factura. El QR corrige el CUIT (identidad) pero NO el
+// nombre, porque no lo trae. Sin este chequeo se da de alta un proveedor con el
+// CUIT correcto y el nombre del comprador.
+//
+// La señal que discrimina es el NOMBRE, no el CUIT: cuando el LLM sólo lee mal
+// unos dígitos del CUIT igual acierta el nombre, y ese caso debe seguir dándose
+// de alta. Cuando invierte los roles, el nombre que ofrece es el nuestro.
+describe('decidirAltaContraparte: inversión de roles del LLM', () => {
+  const empresa = { razonSocialEmpresa: 'Ewwo Consulting S.R.L.', cuitEmpresa: '30712093486' };
+
+  it('NO da de alta una contraparte con el nombre de la propia empresa', () => {
+    const d = decidirAltaContraparte({
+      ...compra,
+      ...empresa,
+      cuitContraparte: '30714981265',
+      razonSocialEmisor: 'EWWO CONSULTING S.R.L.',
+    });
+    expect(d.crear).toBe(false);
+    if (d.crear) throw new Error('no debería crear');
+    expect(d.motivo).toMatch(/propia empresa/i);
+  });
+
+  it('compara los nombres sin depender de mayúsculas, puntos ni espacios', () => {
+    const d = decidirAltaContraparte({
+      ...compra,
+      ...empresa,
+      cuitContraparte: '30714981265',
+      razonSocialEmisor: 'ewwo  consulting srl',
+    });
+    expect(d.crear).toBe(false);
+  });
+
+  it('un CUIT mal leído con el nombre correcto SÍ se da de alta', () => {
+    const d = decidirAltaContraparte({ ...compra, ...empresa, cuitContraparte: '30702652975', razonSocialEmisor: 'NSS SA' });
+    expect(d.crear).toBe(true);
+  });
+
+  it('tampoco se da de alta si el CUIT de la contraparte es el nuestro', () => {
+    const d = decidirAltaContraparte({ ...compra, ...empresa, cuitContraparte: '30712093486' });
+    expect(d.crear).toBe(false);
+  });
+
+  it('el caso normal no se ve afectado', () => {
+    expect(decidirAltaContraparte({ ...compra, ...empresa }).crear).toBe(true);
+  });
+
+  it('sin datos de la empresa no rompe: se comporta como antes', () => {
+    expect(decidirAltaContraparte(compra).crear).toBe(true);
+  });
+});

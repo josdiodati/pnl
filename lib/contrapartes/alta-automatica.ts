@@ -20,15 +20,25 @@ export type EntradaAltaContraparte = {
   razonSocialEmisor: string | null;
   razonSocialReceptor: string | null;
   yaExiste: boolean;
+  /** Datos de la propia empresa, para detectar la inversión de roles del LLM. */
+  razonSocialEmpresa?: string | null;
+  cuitEmpresa?: string | null;
 };
 
 export type DecisionAltaContraparte =
   | { crear: false; motivo: string }
   | { crear: true; cuit: string; razonSocial: string; tipo: 'PROVEEDOR' | 'CLIENTE' };
 
-function limpiar(v: string | null): string | null {
+function limpiar(v: string | null | undefined): string | null {
   const t = v?.trim();
   return t ? t : null;
+}
+
+/** Nombre comparable: sin mayúsculas, puntos, comas ni espacios de más.
+ *  "EWWO CONSULTING S.R.L." y "Ewwo Consulting SRL" son el mismo. */
+function claveNombre(v: string | null | undefined): string | null {
+  const t = limpiar(v);
+  return t ? t.toUpperCase().replace(/[^A-Z0-9]/g, '') : null;
 }
 
 export function decidirAltaContraparte(e: EntradaAltaContraparte): DecisionAltaContraparte {
@@ -36,9 +46,22 @@ export function decidirAltaContraparte(e: EntradaAltaContraparte): DecisionAltaC
   if (!e.cuitContraparte) return { crear: false, motivo: 'sin CUIT de contraparte' };
   if (!e.cuitDesdeQr) return { crear: false, motivo: 'el CUIT no vino del QR' };
 
+  // La contraparte nunca puede ser la propia empresa.
+  if (limpiar(e.cuitEmpresa) && e.cuitContraparte === limpiar(e.cuitEmpresa)) {
+    return { crear: false, motivo: 'el CUIT es el de la propia empresa' };
+  }
+
   const esVenta = e.direccion === 'VENTA';
   const razonSocial = limpiar(esVenta ? e.razonSocialReceptor : e.razonSocialEmisor);
   if (!razonSocial) return { crear: false, motivo: 'sin razón social extraída' };
+
+  // El LLM invirtió emisor y receptor: el nombre que ofrece es el nuestro, no el
+  // de la contraparte. El QR ya corrigió el CUIT, pero no puede corregir el
+  // nombre porque no lo trae — así que no hay etiqueta confiable que poner.
+  const claveEmpresa = claveNombre(e.razonSocialEmpresa);
+  if (claveEmpresa && claveNombre(razonSocial) === claveEmpresa) {
+    return { crear: false, motivo: 'el nombre extraído es el de la propia empresa (el LLM invirtió emisor y receptor)' };
+  }
 
   return { crear: true, cuit: e.cuitContraparte, razonSocial, tipo: esVenta ? 'CLIENTE' : 'PROVEEDOR' };
 }
