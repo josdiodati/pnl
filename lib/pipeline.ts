@@ -428,6 +428,35 @@ export async function procesarArca(payload: { movimientoId: string; empresaId: s
     despues: { estado: resultado.estado, detalle: resultado.detalle },
   });
 
+  // ARCA responde INVALIDO sobre algo que ya se había validado (o asignado)
+  // mientras la constatación estaba pendiente: se aparta a OBSERVADO. Deja de
+  // impactar el P&L hasta que alguien lo resuelva — ningún comprobante inválido
+  // queda callado en el libro.
+  if (
+    resultado.estado === 'INVALIDO' &&
+    (mov.estado === 'VALIDADO' || mov.estado === 'ASIGNADO')
+  ) {
+    assertTransicion(mov.estado, 'OBSERVADO');
+    await db.movimiento.update({
+      where: { id: mov.id },
+      data: {
+        estado: 'OBSERVADO',
+        flags: {
+          ...((mov.flags as object | null) ?? {}),
+          notaObservacion: `ARCA constató el comprobante como INVÁLIDO: ${resultado.detalle ?? 'sin detalle'}`,
+        } as never,
+      },
+    });
+    await writeAudit(db, {
+      entidad: 'Movimiento',
+      entidadId: mov.id,
+      accion: 'AUTO_OBSERVAR',
+      antes: { estado: mov.estado },
+      despues: { estado: 'OBSERVADO', motivo: 'ARCA INVALIDO post-validación', detalle: resultado.detalle },
+    });
+    return;
+  }
+
   // Si ARCA confirma el comprobante (VALIDO) y había duplicado detectado (cuando
   // no hubo QR para confirmarlo en la extracción), apartarlo a DUPLICADO.
   const dupIds = (mov.flags as { duplicados?: string[] } | null)?.duplicados ?? [];

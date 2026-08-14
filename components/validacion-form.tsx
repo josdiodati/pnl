@@ -109,6 +109,9 @@ export function ValidacionForm({
     Object.fromEntries(IMPORTES.map(({ campo }) => [campo, mov.importes[campo] != null ? String(mov.importes[campo]) : ''])),
   );
   const [overrideNoFiscal, setOverrideNoFiscal] = useState(false);
+  // El CAE es estado porque decide en vivo si el comprobante es constatable:
+  // con CAE, ARCA sólo está pendiente y no hace falta override.
+  const [cae, setCae] = useState(mov.cae);
 
   const contraparteSel = contrapartes.find((c) => c.id === contraparteId);
   const categoriaSel = categorias.find((c) => c.id === categoriaId);
@@ -158,11 +161,18 @@ export function ValidacionForm({
         </div>
       )}
 
-      {(mov.arcaEstado === 'NO_VERIFICADO' || mov.arcaEstado === 'ERROR_CONSULTA') && (
+      {(mov.arcaEstado === 'NO_VERIFICADO' || mov.arcaEstado === 'ERROR_CONSULTA') && cae.trim() && (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          <strong>ARCA: pendiente de constatación.</strong> El comprobante tiene CAE, así que se
+          constata en segundo plano. Podés validarlo: si ARCA lo rechaza, se aparta solo a Observado.
+        </div>
+      )}
+
+      {(mov.arcaEstado === 'NO_VERIFICADO' || mov.arcaEstado === 'ERROR_CONSULTA') && !cae.trim() && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 space-y-2">
           <p>
-            ⚠ <strong>ARCA: no constatado.</strong> Este comprobante no figura como válido en ARCA
-            (sin CAE, no fiscal o servicio extranjero como AWS / Claude / Google).
+            ⚠ <strong>ARCA: no constatable.</strong> Sin CAE, ARCA no puede verificar este comprobante
+            (no fiscal o servicio extranjero como AWS / Claude / Google). Si tenés el CAE, cargalo arriba.
           </p>
           <label className="flex items-start gap-2 font-medium">
             <input
@@ -212,7 +222,7 @@ export function ValidacionForm({
           </Campo>
         )}
         <Campo label="CAE" revisar={r.cae}>
-          <input name="cae" defaultValue={mov.cae} className="input" />
+          <input name="cae" value={cae} onChange={(e) => setCae(e.target.value)} className="input" />
         </Campo>
       </div>
 

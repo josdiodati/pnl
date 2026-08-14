@@ -37,6 +37,11 @@ describe('máquina de estados de movimientos (doc 07)', () => {
     expect(puedeTransicionar('ASIGNADO', 'PENDIENTE_VALIDACION')).toBe(true);
   });
 
+  it('ARCA puede apartar a Observado algo ya validado o asignado', () => {
+    expect(puedeTransicionar('VALIDADO', 'OBSERVADO')).toBe(true);
+    expect(puedeTransicionar('ASIGNADO', 'OBSERVADO')).toBe(true);
+  });
+
   it('lo anulado no vuelve: sigue siendo terminal', () => {
     expect(puedeTransicionar('ANULADO', 'PENDIENTE_VALIDACION')).toBe(false);
   });

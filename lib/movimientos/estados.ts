@@ -32,8 +32,10 @@ const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
   // PENDIENTE_VALIDACION: "devolver a revisión". Lo ya validado (o asignado)
   // puede volver a la cola para corregirlo; exige período abierto, porque un
   // pendiente bloquea el cierre del mes.
-  VALIDADO: ['ASIGNADO', 'ANULADO', 'PENDIENTE_VALIDACION'],
-  ASIGNADO: ['VALIDADO', 'ANULADO', 'PENDIENTE_VALIDACION'],
+  // OBSERVADO: apartado automático cuando ARCA constata INVALIDO un comprobante
+  // que se había validado mientras la constatación estaba pendiente.
+  VALIDADO: ['ASIGNADO', 'ANULADO', 'PENDIENTE_VALIDACION', 'OBSERVADO'],
+  ASIGNADO: ['VALIDADO', 'ANULADO', 'PENDIENTE_VALIDACION', 'OBSERVADO'],
   ANULADO: [],
   ERROR_PROCESAMIENTO: ['PROCESANDO', 'PENDIENTE_VALIDACION'],
   DUPLICADO: ['PENDIENTE_VALIDACION', 'ANULADO'],

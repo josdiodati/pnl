@@ -31,3 +31,24 @@ describe('puedeValidarArca: gate de ARCA con override', () => {
     expect(puedeValidarArca('ERROR_CONSULTA', { overrideNoFiscal: true, overrideNoFiscalMotivo: 'x' }).ok).toBe(true);
   });
 });
+
+// El destiempo de ARCA: un comprobante fiscal con CAE puede estar todavía sin
+// constatar (el job no corrió, el WS demoró, o el validador acaba de tipear el
+// CAE a mano). Eso NO es lo mismo que un comprobante no constatable, que es para
+// lo que existe el override.
+describe('puedeValidarArca: pendiente de constatación vs no constatable', () => {
+  it('con CAE sin constatar deja validar sin override', () => {
+    expect(puedeValidarArca('NO_VERIFICADO', { cae: '86316649232909' }).ok).toBe(true);
+    expect(puedeValidarArca('ERROR_CONSULTA', { cae: '86316649232909' }).ok).toBe(true);
+  });
+
+  it('sin CAE sigue exigiendo el override con motivo', () => {
+    expect(puedeValidarArca('NO_VERIFICADO', { cae: null }).ok).toBe(false);
+    expect(puedeValidarArca('NO_VERIFICADO', { cae: '   ' }).ok).toBe(false);
+    expect(puedeValidarArca('NO_VERIFICADO', { cae: null, overrideNoFiscal: true, overrideNoFiscalMotivo: 'AWS' }).ok).toBe(true);
+  });
+
+  it('un CAE no habilita nada si ARCA ya dijo que es inválido', () => {
+    expect(puedeValidarArca('INVALIDO', { cae: '86316649232909' }).ok).toBe(false);
+  });
+});

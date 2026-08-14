@@ -38,10 +38,22 @@ export type ImportesInput = {
   total?: number | null;
 };
 
-/** Gate de ARCA: un comprobante solo se valida si ARCA dice VALIDO, salvo override. */
+/** Un comprobante es constatable si tiene CAE: el CAE ES el código de
+ *  autorización de ARCA, así que su presencia es lo que habilita preguntar. */
+export function esConstatable(cae: string | null | undefined): boolean {
+  return Boolean(cae && cae.trim());
+}
+
+/** Gate de ARCA: un comprobante solo se valida si ARCA dice VALIDO, salvo override.
+ *
+ *  Excepción: un comprobante CON CAE que todavía no se constató está *pendiente*,
+ *  no es *no constatable*. Puede haber destiempo (el job no corrió, el webservice
+ *  demoró, o el validador acaba de cargar el CAE a mano), y exigirle un override
+ *  al validador por una demora del sistema no tiene sentido. Se valida y la
+ *  constatación sigue por atrás; si vuelve INVALIDO, procesarArca lo aparta. */
 export function puedeValidarArca(
   arcaEstado: string,
-  opts: { confirmarArcaInvalido?: boolean; overrideNoFiscal?: boolean; overrideNoFiscalMotivo?: string | null },
+  opts: { cae?: string | null; confirmarArcaInvalido?: boolean; overrideNoFiscal?: boolean; overrideNoFiscalMotivo?: string | null },
 ): { ok: boolean; motivo?: string } {
   if (arcaEstado === 'VALIDO') return { ok: true };
   if (arcaEstado === 'INVALIDO') {
@@ -49,13 +61,14 @@ export function puedeValidarArca(
       ? { ok: true }
       : { ok: false, motivo: 'Este comprobante figura como INVÁLIDO en ARCA. Para validarlo igual tenés que marcar la confirmación explícita.' };
   }
-  // NO_VERIFICADO | ERROR_CONSULTA (sin CAE / no fiscal / extranjero)
+  // NO_VERIFICADO | ERROR_CONSULTA
+  if (esConstatable(opts.cae)) return { ok: true }; // pendiente de constatación
   if (opts.overrideNoFiscal) {
     return opts.overrideNoFiscalMotivo && opts.overrideNoFiscalMotivo.trim()
       ? { ok: true }
       : { ok: false, motivo: 'El override de un comprobante no constatable por ARCA requiere un motivo.' };
   }
-  return { ok: false, motivo: 'Este comprobante no está constatado como válido por ARCA. Marcá el override (no fiscal / extranjero) con un motivo para validarlo igual.' };
+  return { ok: false, motivo: 'Este comprobante no tiene CAE, así que ARCA no puede constatarlo. Marcá el override (no fiscal / extranjero) con un motivo para validarlo igual.' };
 }
 
 function snapshot(mov: Movimiento): Record<string, unknown> {
@@ -154,6 +167,9 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
   // Gate de ARCA: solo aplica a comprobantes (no a asientos/ventas manuales sin archivo).
   if (mov.origen === 'COMPROBANTE' || mov.origen === 'VENTA_COMPROBANTE') {
     const gate = puedeValidarArca(mov.arcaEstado, {
+      // El CAE que se está enviando, no el guardado: el validador puede estar
+      // cargándolo ahora mismo porque el OCR no lo leyó.
+      cae: datos.cae !== undefined ? datos.cae : mov.cae,
       confirmarArcaInvalido: datos.confirmarArcaInvalido,
       overrideNoFiscal: datos.overrideNoFiscal,
       overrideNoFiscalMotivo: datos.overrideNoFiscalMotivo,
@@ -234,6 +250,17 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
       ...(datos.overrideNoFiscal ? { overrideNoFiscal: true, overrideNoFiscalMotivo: datos.overrideNoFiscalMotivo ?? null } : {}),
     },
   });
+
+  // Reencolar la constatación si quedó pendiente. El job de ARCA se encola una
+  // sola vez, en la extracción, y sólo si el OCR sacó el CAE: sin esto, un CAE
+  // cargado a mano no se constata NUNCA.
+  if (
+    (actualizado.origen === 'COMPROBANTE' || actualizado.origen === 'VENTA_COMPROBANTE') &&
+    esConstatable(actualizado.cae) &&
+    actualizado.arcaEstado !== 'VALIDO'
+  ) {
+    await enqueueJob('ARCA', { movimientoId: mov.id, empresaId: ctx.empresa.id }, ctx.empresa.id);
+  }
 
   // Persist the recurring-correction note on the supplier (auditable learning)
   if (datos.instruccionesExtraccion !== undefined && datos.instruccionesExtraccion !== null && datos.contraparteId) {
