@@ -4,6 +4,7 @@ import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { formatMoney, formatFecha } from '@/lib/format';
+import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 
 // Validation queue: filterable list with counters, ordered "most doubtful
 // first" (lowest extraction confidence, then oldest).
@@ -114,13 +115,13 @@ export default async function ValidacionPage({
               const revisar = Object.keys((m.camposRevisar as object | null) ?? {}).length;
               const duplicados = ((m.flags as { duplicados?: string[] } | null)?.duplicados ?? []).length;
               const reglaPre = (m.flags as { reglaPreasignacion?: string } | null)?.reglaPreasignacion;
-              const extr = m.extraccionRaw as { razonSocialEmisor?: string } | null;
+              const cp = nombreContraparte(m);
               return (
                 <tr key={m.id} className="hover:bg-slate-50">
                   <td className="whitespace-nowrap text-slate-500">{formatFecha(m.createdAt)}</td>
                   <td className="font-medium">
-                    {m.contraparte?.razonSocial ?? extr?.razonSocialEmisor ?? <span className="text-slate-400">Sin identificar</span>}
-                    {!m.contraparte && m.cuitEmisor && (
+                    {cp.nombre ?? <span className="text-slate-400">Sin identificar</span>}
+                    {cp.esNueva && (
                       <span className="ml-1 text-xs rounded bg-blue-50 text-blue-700 px-1">nueva</span>
                     )}
                   </td>

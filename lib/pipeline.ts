@@ -10,6 +10,7 @@ import { writeAudit } from '@/lib/audit';
 import { enqueueJob } from '@/lib/jobs';
 import { leerQrAfip } from '@/lib/extractor/qr';
 import { evaluarAutovalidacion, decidirAutovalidacion } from '@/lib/autovalidacion';
+import { decidirAltaContraparte } from '@/lib/contrapartes/alta-automatica';
 import { elegirRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { tieneAsignacionCompleta } from '@/lib/movimientos/service';
@@ -138,11 +139,55 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
 
   // En ventas, la contraparte es el RECEPTOR (cliente); en compras, el EMISOR (proveedor).
   const cuitContraparte = direccion === 'VENTA' ? cuitReceptor : cuit;
-  const contraparte = cuitContraparte
+  // ¿Ese CUIT lo aportó el QR? Es la condición para dar de alta la contraparte
+  // sola: el QR es la única fuente autoritativa de identidad hasta que entre ARCA.
+  const cuitContraparteDesdeQr =
+    direccion === 'VENTA'
+      ? Boolean(qrAfip && qrAfip.tipoDocRec === 80 && qrAfip.nroDocRec)
+      : Boolean(qrAfip);
+
+  let contraparte = cuitContraparte
     ? await db.contraparte.findFirst({ where: { cuit: cuitContraparte, activa: true } })
     : null;
-  if (!contraparte && cuitContraparte) {
-    camposRevisar.contraparte = 'Contraparte nueva: no está en el maestro';
+
+  // El CUIT es único por empresa, así que una contraparte DESACTIVADA igual ocupa
+  // el lugar: no se da de alta de nuevo (chocaría contra la unicidad) ni se
+  // vincula sola — alguien la desactivó a propósito. Queda para la validación.
+  const ocupadoPorInactiva =
+    !contraparte && cuitContraparte
+      ? (await db.contraparte.count({ where: { cuit: cuitContraparte } })) > 0
+      : false;
+
+  const alta = decidirAltaContraparte({
+    direccion,
+    cuitContraparte,
+    cuitDesdeQr: cuitContraparteDesdeQr,
+    razonSocialEmisor: extraccion.razonSocialEmisor,
+    razonSocialReceptor: extraccion.razonSocialReceptor,
+    yaExiste: contraparte != null || ocupadoPorInactiva,
+  });
+
+  if (cuitContraparte && !contraparte) {
+    if (alta.crear) {
+      try {
+        contraparte = await db.contraparte.create({
+          data: { cuit: alta.cuit, razonSocial: alta.razonSocial, tipo: alta.tipo } as never,
+        });
+        await writeAudit(db, {
+          entidad: 'Contraparte',
+          entidadId: contraparte.id,
+          accion: 'CREAR',
+          despues: { cuit: alta.cuit, razonSocial: alta.razonSocial, tipo: alta.tipo, desdeQr: true },
+        });
+      } catch {
+        // Unicidad (empresaId, cuit): otro comprobante del mismo emisor la creó
+        // primero en paralelo. Reusamos la que ganó.
+        contraparte = await db.contraparte.findFirst({ where: { cuit: cuitContraparte, activa: true } });
+      }
+    }
+    camposRevisar.contraparte = contraparte
+      ? 'Contraparte dada de alta desde el QR: revisá la razón social'
+      : 'Contraparte nueva: no está en el maestro';
   }
 
   // Re-check instructions now that we know the issuer (first attempt case)

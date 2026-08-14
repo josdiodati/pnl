@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { formatMoney, formatFecha } from '@/lib/format';
+import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 
 export default async function AsignacionPage({
   params,
@@ -37,10 +38,15 @@ export default async function AsignacionPage({
             </tr>
           </thead>
           <tbody>
-            {movimientos.map((m) => (
+            {movimientos.map((m) => {
+              const cp = nombreContraparte(m);
+              return (
               <tr key={m.id} className="hover:bg-slate-50">
                 <td className="font-medium">
-                  {m.contraparte?.razonSocial ?? <span className="text-slate-400">Sin contraparte</span>}
+                  {cp.nombre ?? <span className="text-slate-400">Sin identificar</span>}
+                  {cp.esNueva && (
+                    <span className="ml-1 text-xs rounded bg-blue-50 text-blue-700 px-1">nueva</span>
+                  )}
                 </td>
                 <td className="whitespace-nowrap text-slate-600">
                   {m.tipoComprobante?.replace(/_/g, ' ') ?? '—'} {m.puntoVenta ? `${m.puntoVenta}-` : ''}{m.numero ?? ''}
@@ -53,7 +59,8 @@ export default async function AsignacionPage({
                   </Link>
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {movimientos.length === 0 && (
               <tr>
                 <td colSpan={5} className="text-center text-slate-400 py-8">
