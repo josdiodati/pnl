@@ -36,9 +36,21 @@ function limpiar(v: string | null | undefined): string | null {
 
 /** Nombre comparable: sin mayúsculas, puntos, comas ni espacios de más.
  *  "EWWO CONSULTING S.R.L." y "Ewwo Consulting SRL" son el mismo. */
-function claveNombre(v: string | null | undefined): string | null {
+export function claveNombre(v: string | null | undefined): string | null {
   const t = limpiar(v);
   return t ? t.toUpperCase().replace(/[^A-Z0-9]/g, '') : null;
+}
+
+/** Una contraparte no puede ser la propia empresa. Misma regla que usa el alta
+ *  automática, para que la prevención y la limpieza no puedan divergir. */
+export function esLaPropiaEmpresa(
+  contraparte: { cuit: string | null; razonSocial: string | null },
+  empresa: { cuit: string | null; razonSocial: string | null },
+): boolean {
+  const cuitEmpresa = limpiar(empresa.cuit);
+  if (cuitEmpresa && limpiar(contraparte.cuit) === cuitEmpresa) return true;
+  const nombreEmpresa = claveNombre(empresa.razonSocial);
+  return Boolean(nombreEmpresa && claveNombre(contraparte.razonSocial) === nombreEmpresa);
 }
 
 export function decidirAltaContraparte(e: EntradaAltaContraparte): DecisionAltaContraparte {
