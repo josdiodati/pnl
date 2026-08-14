@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { rolAlcanza } from '@/lib/roles';
-import { buildWhereMovimientos, resumirMovimientos, totalFirmadoDe, type FiltrosMovimientos } from '@/lib/movimientos/query';
+import { buildWhereMovimientos, resumirMovimientos, totalFirmadoDe, tonoImporte, type FiltrosMovimientos } from '@/lib/movimientos/query';
 import { formatMoney, formatMoneyFirmado, formatFecha } from '@/lib/format';
 import { EstadoBadge, CanalBadge } from '@/components/badges';
 import { OkBanner } from '@/components/error-banner';
@@ -172,8 +172,16 @@ export default async function MovimientosPage({
                   </td>
                   <td><EstadoBadge estado={m.estado} /></td>
                   <td><CanalBadge canal={m.canalIngreso} /></td>
-                  <td className={`num font-medium ${firmado != null && firmado < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                  <td
+                    className={`num font-medium ${
+                      { 'sin-signo': 'text-slate-400', egreso: 'text-red-700', ingreso: 'text-emerald-700' }[
+                        tonoImporte(firmado)
+                      ]
+                    }`}
+                    title={firmado == null ? 'Sin categoría: el signo se define al imputarlo' : undefined}
+                  >
                     {firmado != null ? formatMoneyFirmado(firmado) : formatMoney(m.total ? Number(m.total) : null)}
+                    {firmado == null && <span className="ml-1 text-[10px] font-normal">sin imputar</span>}
                   </td>
                 </tr>
               );

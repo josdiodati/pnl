@@ -69,6 +69,14 @@ export function totalFirmadoDe(mov: MovimientoConRelaciones): number | null {
   return signoMovimiento(mov.categoria.tipo, mov.tipoComprobante) * Math.round(Number(mov.total) * 100);
 }
 
+/** Cómo se lee un importe en el libro. Un movimiento sin categoría NO tiene
+ *  signo — el signo lo define la categoría — así que no puede mostrarse como
+ *  ingreso: en un libro de facturas de proveedores eso invierte el sentido. */
+export function tonoImporte(firmado: number | null): 'sin-signo' | 'egreso' | 'ingreso' {
+  if (firmado == null) return 'sin-signo';
+  return firmado < 0 ? 'egreso' : 'ingreso';
+}
+
 export type ResumenMovimientos = {
   ingresos: number; // cents, only ASIGNADO
   egresos: number;
