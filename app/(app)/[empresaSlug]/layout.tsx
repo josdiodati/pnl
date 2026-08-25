@@ -50,6 +50,14 @@ export default async function EmpresaLayout({
         { href: `${base}/asientos`, label: 'Asientos manuales', icono: 'asiento' },
       ],
     },
+    ...(esAdmin
+      ? [
+          {
+            titulo: 'Personal',
+            items: [{ href: `${base}/empleados`, label: 'Empleados', icono: 'headcount' }],
+          },
+        ]
+      : []),
     ...(esValidador
       ? [
           {
