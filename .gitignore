@@ -1,6 +1,7 @@
-node_modules/
+node_modules
 .next/
-storage/
+# Archivos subidos en runtime (raíz del repo; NO lib/storage, que es código)
+/storage/
 .pgdata/
 .env
 *.tsbuildinfo
