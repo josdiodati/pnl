@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isForbidden } from '@/lib/errors';
 import { rolAlcanza } from '@/lib/roles';
-import { buildWhereMovimientos, totalFirmadoDe, type FiltrosMovimientos } from '@/lib/movimientos/query';
+import { buildWhereMovimientos, totalFirmadoDe, montoVinculadoCentavos, type FiltrosMovimientos } from '@/lib/movimientos/query';
 import { importesPorLinea } from '@/lib/movimientos/distribucion';
 import { resumirCostosPersonal } from '@/lib/empleados/costos';
 
@@ -29,6 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
       categoria: true,
       contraparte: true,
       lineas: { include: { centroCosto: true, cliente: true, proyecto: true } },
+      vinculosEmpleados: { select: { monto: true } },
     },
     orderBy: [{ fechaDevengamiento: 'asc' }, { createdAt: 'asc' }],
   });
@@ -58,6 +59,13 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
       .map((r) => ({ costoTotalEmpleador: r.costoTotalEmpleador, lineas: r.lineas })),
     vinculosDeSeleccion.map((v) => ({ monto: v.monto, lineasEmpleado: v.empleado.distribucion })),
   );
+  // Si se filtra por centro de costo o cliente, la línea agregada respeta esa
+  // porción, igual que las filas de datos (que ya vienen filtradas por where).
+  const personalMostrado = filtros.centroCostoId
+    ? resumenPersonal.porCentroCosto.get(filtros.centroCostoId) ?? 0
+    : filtros.clienteId
+      ? resumenPersonal.porCliente.get(filtros.clienteId) ?? 0
+      : resumenPersonal.total;
 
   const esc = (v: unknown) => {
     const s = v == null ? '' : String(v);
@@ -72,7 +80,18 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
   ];
 
   for (const m of movimientos) {
-    const firmado = totalFirmadoDe(m as never);
+    // A diferencia de la pantalla (que muestra el movimiento entero, con el
+    // badge "· vinculado a empleados"), el CSV existe para sumarse en Excel:
+    // cada línea descuenta la porción vinculada a empleados (mismo ajuste que
+    // resumirMovimientos) para que sumar todas las filas + la línea agregada
+    // de "Costos de personal" dé el resultado correcto, sin doble conteo.
+    const firmadoBruto = totalFirmadoDe(m as never);
+    const vinculado = montoVinculadoCentavos(m as never);
+    const firmado = firmadoBruto == null
+      ? null
+      : firmadoBruto < 0
+        ? Math.min(firmadoBruto + vinculado, 0)
+        : Math.max(firmadoBruto - vinculado, 0);
     const base = [
       m.fechaDevengamiento?.toISOString().slice(0, 10) ?? '',
       m.origen,
@@ -128,7 +147,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
       'Costos de personal (recibos + vinculados)',
       '', '', '', '', '',
       '',
-      (resumenPersonal.total / 100).toFixed(2).replace('.', ','),
+      (personalMostrado / 100).toFixed(2).replace('.', ','),
     ].map(esc).join(';'),
   );
 
