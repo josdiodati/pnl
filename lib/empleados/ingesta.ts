@@ -4,7 +4,7 @@ import { getFileStorage } from '@/lib/storage';
 import { enqueueJob } from '@/lib/jobs';
 import { writeAudit } from '@/lib/audit';
 import { getOrCreatePeriodo } from '@/lib/periodos';
-import { normalizarCuit } from '@/lib/checks/cuit';
+import { normalizarCuit, cuitEsValido } from '@/lib/checks/cuit';
 import { validarDistribucion } from '@/lib/movimientos/distribucion';
 import { DomainError } from '@/lib/errors';
 import { contarPaginasPdf, textoDePagina } from './pdf';
@@ -77,6 +77,9 @@ export async function procesarExtraccionRecibo(payload: {
   // --- Empleado: matching por CUIL, alta automática si no existe ---
   const cuil = extraccion.cuil ? normalizarCuit(extraccion.cuil) : null;
   if (!cuil) throw new Error(`Página ${payload.pagina}: no se pudo extraer el CUIL del recibo`);
+  if (!cuitEsValido(cuil)) {
+    throw new Error(`Página ${payload.pagina}: el CUIL extraído no es válido (${cuil})`);
+  }
   let empleado = await db.empleado.findFirst({ where: { cuil }, include: { distribucion: true } });
   if (!empleado) {
     const creado = await db.empleado.create({
