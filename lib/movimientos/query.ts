@@ -64,12 +64,19 @@ export type MovimientoConRelaciones = {
   tipoComprobante: string | null;
   categoria: { tipo: 'INGRESO' | 'EGRESO'; nombre: string } | null;
   lineas: { centroCostoId: string; clienteId: string | null; porcentaje: unknown }[];
+  /** Vínculos comprobante→empleado: su monto se descuenta del libro y computa en Costos de personal. */
+  vinculosEmpleados?: { monto: unknown }[];
 };
 
 /** Signed total in cents; null when not computable (no category/total yet). */
 export function totalFirmadoDe(mov: MovimientoConRelaciones): number | null {
   if (mov.total == null || !mov.categoria) return null;
   return signoMovimiento(mov.categoria.tipo, mov.tipoComprobante) * Math.round(Number(mov.total) * 100);
+}
+
+/** Suma en centavos de lo vinculado a empleados (0 si no hay vínculos). */
+export function montoVinculadoCentavos(mov: MovimientoConRelaciones): number {
+  return (mov.vinculosEmpleados ?? []).reduce((acc, v) => acc + Math.round(Number(v.monto) * 100), 0);
 }
 
 /** Cómo se lee un importe en el libro. Un movimiento sin categoría NO tiene
@@ -101,8 +108,14 @@ export function resumirMovimientos(movs: MovimientoConRelaciones[]): ResumenMovi
 
   for (const mov of movs) {
     if (mov.estado !== 'ASIGNADO') continue;
-    const firmado = totalFirmadoDe(mov);
-    if (firmado == null) continue;
+    const firmadoBruto = totalFirmadoDe(mov);
+    if (firmadoBruto == null) continue;
+    // Sin doble conteo: la porción vinculada a empleados sale del libro general
+    // y entra por resumirCostosPersonal según la distribución del empleado.
+    const vinculado = montoVinculadoCentavos(mov);
+    const firmado = firmadoBruto < 0
+      ? Math.min(firmadoBruto + vinculado, 0)
+      : Math.max(firmadoBruto - vinculado, 0);
     if (firmado >= 0) ingresos += firmado;
     else egresos += firmado;
 
