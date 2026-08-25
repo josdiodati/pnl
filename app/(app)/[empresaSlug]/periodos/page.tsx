@@ -28,7 +28,7 @@ export default async function PeriodosPage({
   const desde = new Date(Date.UTC(meses[0].anio, meses[0].mes - 1, 1));
   const hasta = new Date(Date.UTC(meses[11].anio, meses[11].mes, 1));
 
-  const [periodos, asignados, pendientes] = await Promise.all([
+  const [periodos, asignados, pendientes, pendientesPorPeriodo] = await Promise.all([
     ctx.db.periodo.findMany({
       where: { OR: meses.map((m) => ({ anio: m.anio, mes: m.mes })) },
     }),
@@ -42,6 +42,11 @@ export default async function PeriodosPage({
         fechaDevengamiento: { gte: desde, lt: hasta },
       },
       select: { id: true, estado: true, fechaDevengamiento: true, descripcion: true },
+    }),
+    ctx.db.reciboSueldo.groupBy({
+      by: ['periodoId'],
+      where: { estado: 'PENDIENTE_REVISION' },
+      _count: { id: true },
     }),
   ]);
 
@@ -97,6 +102,9 @@ export default async function PeriodosPage({
               const porAsignar = pend.filter((p) => p.estado === 'VALIDADO').length;
               const retenidos = pend.filter((p) => p.estado === 'RETENIDO').length;
               const bloqueantes = porValidar + porAsignar + retenidos;
+              const pendRecibos = periodo
+                ? pendientesPorPeriodo.find((p) => p.periodoId === periodo.id)?._count.id ?? 0
+                : 0;
               return (
                 <tr key={k} className={cerrado ? 'bg-slate-50' : ''}>
                   <td className="font-medium whitespace-nowrap">{MES_LABEL[mes]} {anio}</td>
@@ -122,7 +130,12 @@ export default async function PeriodosPage({
                     {retenidos > 0 && (
                       <span className="text-orange-700">{retenidos} retenido{retenidos !== 1 ? 's' : ''}</span>
                     )}
-                    {bloqueantes === 0 && <span className="text-slate-400">—</span>}
+                    {bloqueantes === 0 && pendRecibos === 0 && <span className="text-slate-400">—</span>}
+                    {pendRecibos > 0 && (
+                      <p className="text-[11px] text-amber-700">
+                        ⚠ {pendRecibos} recibo{pendRecibos !== 1 ? 's' : ''} de sueldo pendiente{pendRecibos !== 1 ? 's' : ''} de revisión: se pueden confirmar después sólo reabriendo el período.
+                      </p>
+                    )}
                   </td>
                   <td className="text-right whitespace-nowrap">
                     {!cerrado ? (

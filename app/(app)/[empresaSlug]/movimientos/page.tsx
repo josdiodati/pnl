@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { rolAlcanza } from '@/lib/roles';
 import { buildWhereMovimientos, resumirMovimientos, totalFirmadoDe, tonoImporte, type FiltrosMovimientos } from '@/lib/movimientos/query';
+import { resumirCostosPersonal } from '@/lib/empleados/costos';
 import { formatMoney, formatMoneyFirmado, formatFecha } from '@/lib/format';
 import { CanalBadge } from '@/components/badges';
 import { OkBanner } from '@/components/error-banner';
@@ -22,7 +23,7 @@ export default async function MovimientosPage({
   const [movimientos, categorias, centros, clientes, contrapartes] = await Promise.all([
     ctx.db.movimiento.findMany({
       where,
-      include: { categoria: true, contraparte: true, lineas: true },
+      include: { categoria: true, contraparte: true, lineas: true, vinculosEmpleados: { select: { monto: true } } },
       orderBy: [{ fechaDevengamiento: 'desc' }, { createdAt: 'desc' }],
       take: 500,
     }),
@@ -33,6 +34,37 @@ export default async function MovimientosPage({
   ]);
 
   const resumen = resumirMovimientos(movimientos as never);
+
+  // Costos de personal del rango: recibos CONFIRMADOS cuyos períodos caen en
+  // [desde, hasta] (por mes) + porciones vinculadas de los movimientos listados.
+  const recibosConfirmados = await ctx.db.reciboSueldo.findMany({
+    where: { estado: 'CONFIRMADO' },
+    include: { periodo: true, lineas: true },
+  });
+  const dentroDelRango = (anio: number, mes: number) => {
+    const clave = anio * 100 + mes;
+    const desde = searchParams.desde ? Number(searchParams.desde.slice(0, 7).replace('-', '')) : null;
+    const hasta = searchParams.hasta ? Number(searchParams.hasta.slice(0, 7).replace('-', '')) : null;
+    return (desde == null || clave >= desde) && (hasta == null || clave <= hasta);
+  };
+  const vinculosDeSeleccion = await ctx.db.movimientoEmpleado.findMany({
+    where: { movimientoId: { in: movimientos.map((m) => m.id) } },
+    include: { empleado: { include: { distribucion: true } } },
+  });
+  const resumenPersonal = resumirCostosPersonal(
+    recibosConfirmados
+      .filter((r) => dentroDelRango(r.periodo.anio, r.periodo.mes))
+      .map((r) => ({ costoTotalEmpleador: r.costoTotalEmpleador, lineas: r.lineas })),
+    vinculosDeSeleccion.map((v) => ({ monto: v.monto, lineasEmpleado: v.empleado.distribucion })),
+  );
+  // Si se filtra por centro de costo o cliente, el bloque muestra sólo esa porción.
+  const personalMostrado = searchParams.centroCostoId
+    ? resumenPersonal.porCentroCosto.get(searchParams.centroCostoId) ?? 0
+    : searchParams.clienteId
+      ? resumenPersonal.porCliente.get(searchParams.clienteId) ?? 0
+      : resumenPersonal.total;
+  const sinFiltroDePersonal = !searchParams.centroCostoId && !searchParams.clienteId;
+
   const qs = new URLSearchParams(
     Object.entries(searchParams).filter(([k, v]) => v && k !== 'ok') as [string, string][],
   ).toString();
@@ -58,7 +90,7 @@ export default async function MovimientosPage({
       <OkBanner mensaje={searchParams.ok} />
 
       {/* Mini-summary over the validated movements of the selection */}
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid sm:grid-cols-4 gap-3">
         <div className="card p-3">
           <p className="text-xs text-slate-500">Ingresos (asignados)</p>
           <p className="text-xl font-semibold tabular-nums text-emerald-700">{formatMoneyFirmado(resumen.ingresos)}</p>
@@ -72,6 +104,9 @@ export default async function MovimientosPage({
           <p className={`text-xl font-semibold tabular-nums ${resumen.resultado >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
             {formatMoneyFirmado(resumen.resultado)}
           </p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            Resultado con personal: <span className="tabular-nums">{formatMoneyFirmado(resumen.resultado + personalMostrado)}</span>
+          </p>
           <p className="text-[11px] text-slate-500 mt-1 space-x-2">
             {[...resumen.porCentroCosto.entries()].map(([ccId, total]) => (
               <span key={ccId} className="whitespace-nowrap">
@@ -79,6 +114,19 @@ export default async function MovimientosPage({
               </span>
             ))}
           </p>
+        </div>
+        <div className="card p-3">
+          <p className="text-xs text-slate-500">Costos de personal</p>
+          <p className="text-xl font-semibold tabular-nums text-red-700">{formatMoneyFirmado(personalMostrado)}</p>
+          {sinFiltroDePersonal && (
+            <p className="text-[11px] text-slate-500 mt-1 space-x-2">
+              {[...resumenPersonal.porCentroCosto.entries()].map(([ccId, total]) => (
+                <span key={ccId} className="whitespace-nowrap">
+                  {centros.find((c) => c.id === ccId)?.nombre ?? '?'}: <span className="tabular-nums">{formatMoneyFirmado(total)}</span>
+                </span>
+              ))}
+            </p>
+          )}
         </div>
       </div>
 
@@ -141,6 +189,9 @@ export default async function MovimientosPage({
                       <span className="font-medium">{m.contraparte?.razonSocial ?? m.descripcion ?? 'Sin descripción'}</span>
                       {m.contraparte && m.descripcion && <span className="text-slate-500"> — {m.descripcion}</span>}
                     </Link>
+                    {(m.vinculosEmpleados?.length ?? 0) > 0 && (
+                      <span className="text-[10px] text-slate-400 ml-1">· vinculado a empleados</span>
+                    )}
                     {m.numero && (
                       <span className="text-xs text-slate-400 ml-1">
                         {m.tipoComprobante?.replace(/_/g, ' ')} {m.puntoVenta ? `${m.puntoVenta}-` : ''}{m.numero}

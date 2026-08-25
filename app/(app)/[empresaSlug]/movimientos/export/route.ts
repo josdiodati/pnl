@@ -4,6 +4,7 @@ import { isForbidden } from '@/lib/errors';
 import { rolAlcanza } from '@/lib/roles';
 import { buildWhereMovimientos, totalFirmadoDe, type FiltrosMovimientos } from '@/lib/movimientos/query';
 import { importesPorLinea } from '@/lib/movimientos/distribucion';
+import { resumirCostosPersonal } from '@/lib/empleados/costos';
 
 // CSV export of the filtered selection: one row per assignment line, so the
 // double dimension (cost center + client/project) lands directly in Excel.
@@ -31,6 +32,32 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
     },
     orderBy: [{ fechaDevengamiento: 'asc' }, { createdAt: 'asc' }],
   });
+
+  // Costos de personal del rango filtrado: recibos CONFIRMADOS cuyos períodos
+  // caen en [desde, hasta] (por mes) + porciones vinculadas de los movimientos
+  // exportados (mismo cálculo que en la página de Movimientos).
+  const dentroDelRango = (anio: number, mes: number) => {
+    const clave = anio * 100 + mes;
+    const desde = filtros.desde ? Number(filtros.desde.slice(0, 7).replace('-', '')) : null;
+    const hasta = filtros.hasta ? Number(filtros.hasta.slice(0, 7).replace('-', '')) : null;
+    return (desde == null || clave >= desde) && (hasta == null || clave <= hasta);
+  };
+  const [recibosConfirmados, vinculosDeSeleccion] = await Promise.all([
+    ctx.db.reciboSueldo.findMany({
+      where: { estado: 'CONFIRMADO' },
+      include: { periodo: true, lineas: true },
+    }),
+    ctx.db.movimientoEmpleado.findMany({
+      where: { movimientoId: { in: movimientos.map((m) => m.id) } },
+      include: { empleado: { include: { distribucion: true } } },
+    }),
+  ]);
+  const resumenPersonal = resumirCostosPersonal(
+    recibosConfirmados
+      .filter((r) => dentroDelRango(r.periodo.anio, r.periodo.mes))
+      .map((r) => ({ costoTotalEmpleador: r.costoTotalEmpleador, lineas: r.lineas })),
+    vinculosDeSeleccion.map((v) => ({ monto: v.monto, lineasEmpleado: v.empleado.distribucion })),
+  );
 
   const esc = (v: unknown) => {
     const s = v == null ? '' : String(v);
@@ -92,6 +119,18 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
       );
     }
   }
+
+  // Línea agregada de costos de personal: un único total, sin detalle por
+  // empleado (las columnas no aplicables quedan vacías).
+  filas.push(
+    [
+      '', '', '', '', '', '', '', '', '', '', '',
+      'Costos de personal (recibos + vinculados)',
+      '', '', '', '', '',
+      '',
+      (resumenPersonal.total / 100).toFixed(2).replace('.', ','),
+    ].map(esc).join(';'),
+  );
 
   return new NextResponse('﻿' + filas.join('\n'), {
     headers: {
