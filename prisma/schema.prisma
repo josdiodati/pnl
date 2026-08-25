@@ -42,6 +42,8 @@ model Empresa {
   periodos              Periodo[]
   auditLogs             AuditLog[]
   telegramVinculos      TelegramVinculo[]
+  empleados             Empleado[]
+  recibosSueldo         ReciboSueldo[]
   createdAt             DateTime         @default(now())
 }
 
@@ -109,6 +111,8 @@ model CentroCosto {
   empresa   Empresa         @relation(fields: [empresaId], references: [id])
   lineas    MovimientoLinea[]
   plantillaLineas PlantillaDistribucionLinea[]
+  empleadoLineas EmpleadoDistribucionLinea[] @relation("empleadoLineas")
+  reciboLineas ReciboDistribucionLinea[] @relation("reciboLineas")
 
   @@unique([empresaId, nombre])
 }
@@ -123,6 +127,8 @@ model Cliente {
   empresa   Empresa @relation(fields: [empresaId], references: [id])
   lineas    MovimientoLinea[]
   plantillaLineas PlantillaDistribucionLinea[]
+  empleadoLineas EmpleadoDistribucionLinea[] @relation("empleadoLineas")
+  reciboLineas ReciboDistribucionLinea[] @relation("reciboLineas")
 
   @@unique([empresaId, nombre])
 }
@@ -137,6 +143,8 @@ model Proyecto {
   empresa   Empresa @relation(fields: [empresaId], references: [id])
   lineas    MovimientoLinea[]
   plantillaLineas PlantillaDistribucionLinea[]
+  empleadoLineas EmpleadoDistribucionLinea[] @relation("empleadoLineas")
+  reciboLineas ReciboDistribucionLinea[] @relation("reciboLineas")
 
   @@unique([empresaId, nombre])
 }
@@ -329,6 +337,7 @@ model Movimiento {
   periodo     Periodo?     @relation(fields: [periodoId], references: [id])
   creadoPor   Usuario      @relation("creadoPor", fields: [creadoPorId], references: [id])
   validadoPor Usuario?     @relation("validadoPor", fields: [validadoPorId], references: [id])
+  vinculosEmpleados MovimientoEmpleado[]
 
   @@index([empresaId, estado])
   @@index([empresaId, fechaDevengamiento])
@@ -370,8 +379,137 @@ model Periodo {
   cerradoAt    DateTime?
   empresa      Empresa       @relation(fields: [empresaId], references: [id])
   movimientos  Movimiento[]
+  recibosSueldo ReciboSueldo[]
 
   @@unique([empresaId, anio, mes])
+}
+
+// ---------- Empleados (Spec D: costos de personal) ----------
+
+enum TipoRecibo {
+  MENSUAL
+  SAC
+  VACACIONES
+  LIQUIDACION_FINAL
+  OTRO
+}
+
+enum EstadoRecibo {
+  PENDIENTE_REVISION
+  CONFIRMADO
+  ANULADO
+}
+
+model Empleado {
+  id           String    @id @default(cuid())
+  empresaId    String
+  nombre       String
+  cuil         String // 11 dígitos normalizados; clave de matching en la ingesta
+  legajo       String?
+  categoria    String?
+  sector       String?
+  fechaIngreso DateTime?
+  fechaEgreso  DateTime?
+  activo       Boolean   @default(true)
+  empresa      Empresa   @relation(fields: [empresaId], references: [id])
+  distribucion EmpleadoDistribucionLinea[]
+  recibos      ReciboSueldo[]
+  vinculos     MovimientoEmpleado[]
+  createdAt    DateTime  @default(now())
+
+  @@unique([empresaId, cuil])
+}
+
+// Distribución por defecto de la ficha (se COPIA al recibo al confirmar).
+model EmpleadoDistribucionLinea {
+  id            String      @id @default(cuid())
+  empleadoId    String
+  centroCostoId String
+  clienteId     String?
+  proyectoId    String?
+  porcentaje    Decimal     @db.Decimal(7, 4) // suman 100
+  empleado      Empleado    @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  centroCosto   CentroCosto @relation("empleadoLineas", fields: [centroCostoId], references: [id])
+  cliente       Cliente?    @relation("empleadoLineas", fields: [clienteId], references: [id])
+  proyecto      Proyecto?   @relation("empleadoLineas", fields: [proyectoId], references: [id])
+}
+
+model ReciboSueldo {
+  id         String       @id @default(cuid())
+  empresaId  String
+  empleadoId String
+  periodoId  String
+  tipo       TipoRecibo   @default(MENSUAL)
+  estado     EstadoRecibo @default(PENDIENTE_REVISION)
+  nota       String? // motivo de anulación (p.ej. duplicado) o advertencias de ingesta
+
+  // Totales extraídos (positivos). costoTotalEmpleador es LA cifra que va al P&L.
+  brutoRemunerativo       Decimal? @db.Decimal(18, 2)
+  noRemunerativo          Decimal? @db.Decimal(18, 2)
+  retenciones             Decimal? @db.Decimal(18, 2)
+  sueldoNeto              Decimal? @db.Decimal(18, 2)
+  contribucionesEmpleador Decimal? @db.Decimal(18, 2)
+  costoTotalEmpleador     Decimal? @db.Decimal(18, 2)
+
+  // Lista flexible de conceptos {concepto, unidad?, importe, naturaleza}:
+  // otro modelo de recibo (otra empresa) no exige migración de schema.
+  conceptos Json?
+
+  // El PDF multi-recibo se guarda UNA vez; cada recibo apunta a su página.
+  archivoKey    String?
+  archivoNombre String?
+  archivoMime   String?
+  pagina        Int?
+
+  extraccionRaw       Json?
+  camposRevisar       Json?
+  confianza           Json?
+  tokensEntrada       Int?
+  tokensSalida        Int?
+  tokensCacheCreacion Int?
+  tokensCacheLectura  Int?
+  modeloExtractor     String?
+
+  empresa      Empresa   @relation(fields: [empresaId], references: [id])
+  empleado     Empleado  @relation(fields: [empleadoId], references: [id])
+  periodo      Periodo   @relation(fields: [periodoId], references: [id])
+  lineas       ReciboDistribucionLinea[]
+  createdAt    DateTime  @default(now())
+  confirmadoAt DateTime?
+
+  // La guarda anti-duplicado (empleado, período, tipo) es de código, no @@unique:
+  // el duplicado se conserva como fila ANULADO visible en la ficha.
+  @@index([empresaId, empleadoId, periodoId])
+}
+
+// Distribución EFECTIVA del recibo: copia de la ficha al confirmar, editable
+// sólo en ese recibo. Copia, no referencia: cambiar la ficha no reescribe historia.
+model ReciboDistribucionLinea {
+  id            String       @id @default(cuid())
+  reciboId      String
+  centroCostoId String
+  clienteId     String?
+  proyectoId    String?
+  porcentaje    Decimal      @db.Decimal(7, 4)
+  recibo        ReciboSueldo @relation(fields: [reciboId], references: [id], onDelete: Cascade)
+  centroCosto   CentroCosto  @relation("reciboLineas", fields: [centroCostoId], references: [id])
+  cliente       Cliente?     @relation("reciboLineas", fields: [clienteId], references: [id])
+  proyecto      Proyecto?    @relation("reciboLineas", fields: [proyectoId], references: [id])
+}
+
+// Vínculo comprobante→empleado (prepaga, etc.). Montos, no porcentajes: una
+// factura única reparte importes distintos y el remanente sigue siendo gasto
+// general. La porción vinculada sigue la distribución de la FICHA del empleado.
+model MovimientoEmpleado {
+  id           String     @id @default(cuid())
+  movimientoId String
+  empleadoId   String
+  monto        Decimal    @db.Decimal(18, 2)
+  movimiento   Movimiento @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
+  empleado     Empleado   @relation(fields: [empleadoId], references: [id])
+  createdAt    DateTime   @default(now())
+
+  @@unique([movimientoId, empleadoId])
 }
 
 // ---------- Infra ----------

@@ -18,12 +18,17 @@ export const SCOPED_MODELS = new Set([
   'AuditLog',
   'Invitacion',
   'TelegramVinculo',
+  'Empleado',
+  'ReciboSueldo',
 ]);
 
 // Child models without empresaId: scoped through their parent relation.
 const RELATION_SCOPE: Record<string, (empresaId: string) => object> = {
   MovimientoLinea: (empresaId) => ({ movimiento: { empresaId } }),
   PlantillaDistribucionLinea: (empresaId) => ({ plantilla: { empresaId } }),
+  EmpleadoDistribucionLinea: (empresaId) => ({ empleado: { empresaId } }),
+  ReciboDistribucionLinea: (empresaId) => ({ recibo: { empresaId } }),
+  MovimientoEmpleado: (empresaId) => ({ movimiento: { empresaId } }),
 };
 
 const READ_OPS = new Set(['findMany', 'findFirst', 'findFirstOrThrow', 'count', 'aggregate', 'groupBy']);

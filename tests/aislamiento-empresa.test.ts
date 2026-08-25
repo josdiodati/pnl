@@ -44,6 +44,20 @@ describe('applyEmpresaScope (unitario)', () => {
     const args = { where: { email: 'a@b.c' } };
     expect(applyEmpresaScope('Usuario', 'findMany', args, 'emp1')).toBe(args);
   });
+
+  it('scopea los modelos de empleados', () => {
+    expect(applyEmpresaScope('Empleado', 'findMany', {}, 'emp1').where).toEqual({ empresaId: 'emp1' });
+    expect(applyEmpresaScope('ReciboSueldo', 'findMany', {}, 'emp1').where).toEqual({ empresaId: 'emp1' });
+    expect(applyEmpresaScope('EmpleadoDistribucionLinea', 'findMany', {}, 'emp1').where).toEqual({
+      empleado: { empresaId: 'emp1' },
+    });
+    expect(applyEmpresaScope('ReciboDistribucionLinea', 'findMany', {}, 'emp1').where).toEqual({
+      recibo: { empresaId: 'emp1' },
+    });
+    expect(applyEmpresaScope('MovimientoEmpleado', 'findMany', {}, 'emp1').where).toEqual({
+      movimiento: { empresaId: 'emp1' },
+    });
+  });
 });
 
 describe('jerarquía de roles', () => {
