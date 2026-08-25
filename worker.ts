@@ -5,6 +5,7 @@ import { claimNextJob, completeJob, failJob } from '@/lib/jobs';
 import { procesarExtraccion, procesarArca, marcarErrorProcesamiento } from '@/lib/pipeline';
 import { procesarEmailEntrante } from '@/lib/canales/email';
 import { procesarUpdateTelegram } from '@/lib/canales/telegram';
+import { procesarExtraccionRecibo } from '@/lib/empleados/ingesta';
 
 const POLL_MS = 2000;
 let corriendo = true;
@@ -21,6 +22,9 @@ async function procesarJob(): Promise<boolean> {
         break;
       case 'ARCA':
         await procesarArca(payload as { movimientoId: string; empresaId: string });
+        break;
+      case 'EXTRACCION_RECIBO':
+        await procesarExtraccionRecibo(payload as never);
         break;
       case 'EMAIL_IN':
         await procesarEmailEntrante(payload as never);
