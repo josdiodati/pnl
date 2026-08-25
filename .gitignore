@@ -9,3 +9,6 @@ next-env.d.ts
 
 # Comprobantes fiscales reales (datos sensibles: CUITs, importes, clientes)
 Docs/ComprobantesEjemplos/
+
+# Recibos de sueldo reales (datos sensibles)
+Docs/RecibosSueldoEwwo/
