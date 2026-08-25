@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import { validarDistribucion, type LineaDistribucion } from '@/lib/movimientos/distribucion';
+import { validarPertenenciaLineas } from '@/lib/movimientos/service';
 import type { TotalesRecibo } from './aritmetica';
 
 // Acciones de usuario sobre empleados y recibos. Todas asumen que el caller ya
@@ -41,6 +42,7 @@ export async function confirmarRecibo(
         porcentaje: Number(l.porcentaje),
       }));
   validarDistribucion(lineas);
+  await validarPertenenciaLineas(ctx.db, lineas);
 
   const t = cambios.totales ?? {};
   if ((t.costoTotalEmpleador ?? (recibo.costoTotalEmpleador != null ? Number(recibo.costoTotalEmpleador) : null)) == null) {
@@ -129,6 +131,7 @@ export async function guardarDistribucionEmpleado(ctx: EmpresaContext, empleadoI
   const empleado = await ctx.db.empleado.findFirst({ where: { id: empleadoId } });
   if (!empleado) throw new DomainError('Empleado inexistente.');
   validarDistribucion(lineas);
+  await validarPertenenciaLineas(ctx.db, lineas);
   await prisma.empleadoDistribucionLinea.deleteMany({ where: { empleadoId } });
   await prisma.empleadoDistribucionLinea.createMany({
     data: lineas.map((l) => ({

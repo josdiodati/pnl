@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
+import type { ScopedDb } from '@/lib/empresa/scope';
 import { DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import { assertTransicion, esEstadoInicialValido, ESTADOS_BLOQUEAN_CIERRE } from './estados';
@@ -87,21 +88,32 @@ async function assertPeriodoAbierto(ctx: EmpresaContext, fecha: Date, accion: st
   return periodo.id;
 }
 
-async function reemplazarLineas(ctx: EmpresaContext, movimientoId: string, lineas: LineaDistribucion[]): Promise<void> {
-  validarDistribucion(lineas);
-  // Cost centers (and optional client/project) must belong to the company.
+/**
+ * Valida que el centro de costo (y el cliente/proyecto opcionales) de cada
+ * línea pertenezcan a esta empresa: se consulta con el cliente scoped, así
+ * que un ID de otra empresa colado desde el form nunca matchea. Se usa antes
+ * de persistir cualquier distribución (movimientos y, ahora, recibos de
+ * sueldo / fichas de empleado).
+ */
+export async function validarPertenenciaLineas(db: ScopedDb, lineas: LineaDistribucion[]): Promise<void> {
   for (const linea of lineas) {
-    const cc = await ctx.db.centroCosto.findFirst({ where: { id: linea.centroCostoId } });
+    const cc = await db.centroCosto.findFirst({ where: { id: linea.centroCostoId } });
     if (!cc) throw new DomainError('Centro de costo inexistente en esta empresa.');
     if (linea.clienteId) {
-      const cli = await ctx.db.cliente.findFirst({ where: { id: linea.clienteId } });
+      const cli = await db.cliente.findFirst({ where: { id: linea.clienteId } });
       if (!cli) throw new DomainError('Cliente inexistente en esta empresa.');
     }
     if (linea.proyectoId) {
-      const pr = await ctx.db.proyecto.findFirst({ where: { id: linea.proyectoId } });
+      const pr = await db.proyecto.findFirst({ where: { id: linea.proyectoId } });
       if (!pr) throw new DomainError('Proyecto inexistente en esta empresa.');
     }
   }
+}
+
+async function reemplazarLineas(ctx: EmpresaContext, movimientoId: string, lineas: LineaDistribucion[]): Promise<void> {
+  validarDistribucion(lineas);
+  // Cost centers (and optional client/project) must belong to the company.
+  await validarPertenenciaLineas(ctx.db, lineas);
   await prisma.movimientoLinea.deleteMany({ where: { movimientoId } });
   await prisma.movimientoLinea.createMany({
     data: lineas.map((l) => ({

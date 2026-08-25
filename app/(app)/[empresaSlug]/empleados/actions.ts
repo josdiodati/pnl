@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isDomainError, isForbidden } from '@/lib/errors';
+import { parsearImporteAr } from '@/lib/format';
 import { ingestarRecibos } from '@/lib/empleados/ingesta';
 import {
   confirmarRecibo, anularRecibo, guardarFichaEmpleado, guardarDistribucionEmpleado,
@@ -27,8 +28,8 @@ function leerLineas(formData: FormData) {
 
 function numeroOpcional(formData: FormData, name: string): number | undefined {
   const v = formData.get(name);
-  if (v == null || String(v).trim() === '') return undefined;
-  return Number(String(v).replace(/\./g, '').replace(',', '.'));
+  if (v == null) return undefined;
+  return parsearImporteAr(String(v));
 }
 
 function volverConError(slug: string, path: string, err: unknown): never {

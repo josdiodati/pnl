@@ -93,6 +93,7 @@ export async function procesarExtraccionRecibo(payload: {
       } as never,
     });
     await writeAudit(db, {
+      usuarioId: payload.usuarioId,
       entidad: 'Empleado',
       entidadId: creado.id,
       accion: 'CREAR',
@@ -205,6 +206,7 @@ export async function procesarExtraccionRecibo(payload: {
   }
 
   await writeAudit(db, {
+    usuarioId: payload.usuarioId,
     entidad: 'ReciboSueldo',
     entidadId: recibo.id,
     accion: decision.estado === 'CONFIRMADO' ? 'AUTO_CONFIRMAR' : decision.estado === 'ANULADO' ? 'AUTO_DUPLICADO' : 'EXTRAER',

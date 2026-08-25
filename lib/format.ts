@@ -9,6 +9,23 @@ export function formatMoney(valor: number | string | null | undefined): string {
   return `$ ${moneyFmt.format(n)}`;
 }
 
+/**
+ * Parsea un importe tipeado (o precargado) en un input de texto, aceptando
+ * tanto la convención es-AR (punto de miles, coma decimal: "1.234,56") como
+ * el formato que produce `String(Number(valor))` al precargar un form
+ * (punto decimal, sin miles: "5993554.02"). Si el texto tiene coma, los
+ * puntos son separadores de miles y se descartan, y la coma pasa a ser el
+ * punto decimal. Si no tiene coma, un único punto se interpreta como
+ * separador decimal (número JS de toda la vida). Vacío (o sólo espacios)
+ * devuelve `undefined`.
+ */
+export function parsearImporteAr(texto: string): number | undefined {
+  const t = texto.trim();
+  if (t === '') return undefined;
+  const normalizado = t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t;
+  return Number(normalizado);
+}
+
 export function formatMoneyFirmado(centavos: number): string {
   return `$ ${moneyFmt.format(centavos / 100)}`;
 }
