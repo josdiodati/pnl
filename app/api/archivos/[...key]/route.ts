@@ -22,9 +22,21 @@ export async function GET(_req: NextRequest, { params }: { params: { key: string
     where: { empresaId, archivoKey: key },
     select: { archivoMime: true, archivoNombre: true, creadoPorId: true },
   });
-  if (!movimiento) return new NextResponse('Archivo inexistente', { status: 404 });
-  if (!rolAlcanza(membresia.rol, 'VALIDADOR') && movimiento.creadoPorId !== usuarioId) {
-    return new NextResponse('403 Forbidden', { status: 403 });
+  let archivo: { archivoMime: string | null; archivoNombre: string | null } | null = movimiento;
+  if (movimiento) {
+    if (!rolAlcanza(membresia.rol, 'VALIDADOR') && movimiento.creadoPorId !== usuarioId) {
+      return new NextResponse('403 Forbidden', { status: 403 });
+    }
+  } else {
+    // Recibos de sueldo comparten el mismo storage; son datos sensibles, sólo
+    // ADMINISTRADOR los ve (misma restricción que las páginas de Empleados).
+    const recibo = await prisma.reciboSueldo.findFirst({
+      where: { empresaId, archivoKey: key },
+      select: { archivoMime: true, archivoNombre: true },
+    });
+    if (!recibo) return new NextResponse('Archivo inexistente', { status: 404 });
+    if (!rolAlcanza(membresia.rol, 'ADMINISTRADOR')) return new NextResponse('403 Forbidden', { status: 403 });
+    archivo = recibo;
   }
 
   const storage = getFileStorage();
@@ -33,8 +45,8 @@ export async function GET(_req: NextRequest, { params }: { params: { key: string
 
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
-      'Content-Type': movimiento.archivoMime ?? 'application/octet-stream',
-      'Content-Disposition': `inline; filename="${(movimiento.archivoNombre ?? 'archivo').replace(/"/g, '')}"`,
+      'Content-Type': archivo!.archivoMime ?? 'application/octet-stream',
+      'Content-Disposition': `inline; filename="${(archivo!.archivoNombre ?? 'archivo').replace(/"/g, '')}"`,
       'Cache-Control': 'private, max-age=3600',
     },
   });
