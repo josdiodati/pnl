@@ -115,12 +115,17 @@ export default async function ValidacionPage({
               const revisar = Object.keys((m.camposRevisar as object | null) ?? {}).length;
               const duplicados = ((m.flags as { duplicados?: string[] } | null)?.duplicados ?? []).length;
               const reglaPre = (m.flags as { reglaPreasignacion?: string } | null)?.reglaPreasignacion;
+              const duplicadoArchivo = Boolean((m.flags as { duplicadoArchivo?: string } | null)?.duplicadoArchivo);
               const cp = nombreContraparte(m);
               return (
                 <tr key={m.id} className="hover:bg-slate-50">
                   <td className="whitespace-nowrap text-slate-500">{formatFecha(m.createdAt)}</td>
                   <td className="font-medium">
-                    {cp.nombre ?? <span className="text-slate-400">Sin identificar</span>}
+                    {cp.nombre ?? (
+                      // Un duplicado por archivo no se extrajo: el nombre del
+                      // archivo es lo único que permite reconocerlo.
+                      <span className="text-slate-400">{m.archivoNombre ?? 'Sin identificar'}</span>
+                    )}
                     {cp.esNueva && (
                       <span className="ml-1 text-xs rounded bg-blue-50 text-blue-700 px-1">nueva</span>
                     )}
@@ -134,6 +139,9 @@ export default async function ValidacionPage({
                     <EstadoBadge estado={m.estado} />
                     {m.cae && <ArcaBadge estado={m.arcaEstado} />}
                     <QrBadge estado={m.qrEstado} />
+                    {duplicadoArchivo && (
+                      <span className="inline-block rounded bg-slate-200 text-slate-700 px-1.5 py-0.5 text-xs font-medium">archivo duplicado</span>
+                    )}
                     {duplicados > 0 && (
                       <span className="inline-block rounded bg-red-100 text-red-800 px-1.5 py-0.5 text-xs font-medium">⚠ posible duplicado</span>
                     )}

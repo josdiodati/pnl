@@ -147,8 +147,19 @@ export default async function ValidacionDetallePage({
       )}
       {mov.estado === 'DUPLICADO' && (
         <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-          Detectado como <strong>duplicado</strong> (mismo CUIT + tipo + punto de venta + número que otro comprobante),
-          confirmado por QR/ARCA. Si en realidad no es un duplicado, usá «No es duplicado: volver a pendiente».
+          {flags.duplicadoArchivo ? (
+            <>
+              <strong>Archivo duplicado</strong>: es exactamente el mismo archivo (mismo hash) que otro comprobante ya
+              ingresado, así que no se procesó. Si igual corresponde procesarlo, usá «No es duplicado: volver a
+              pendiente» y se re-encola la extracción.
+            </>
+          ) : (
+            <>
+              Detectado como <strong>duplicado</strong> (mismo CUIT + tipo + punto de venta + número que otro
+              comprobante), confirmado por QR/ARCA. Si en realidad no es un duplicado, usá «No es duplicado: volver a
+              pendiente».
+            </>
+          )}
         </div>
       )}
 

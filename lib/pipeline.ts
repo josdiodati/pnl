@@ -72,6 +72,40 @@ export async function ingestarComprobante(params: {
     despues: { origen: 'COMPROBANTE', canal: params.canal, archivo: params.filename, hash },
   });
 
+  // Duplicado a nivel ARCHIVO: si la empresa ya tiene el MISMO archivo (hash),
+  // va directo a DUPLICADO sin encolar extracción — es byte a byte el mismo
+  // documento, re-extraerlo solo gasta tokens. Se excluyen ANULADO y
+  // ERROR_PROCESAMIENTO para que re-subir tras anular o tras un error se
+  // procese normal. La sugerencia de posible duplicado por valores
+  // (CUIT+tipo+PV+nº) sigue intacta en la extracción para archivos distintos.
+  const mismoArchivo = await db.movimiento.findFirst({
+    where: {
+      archivoHash: hash,
+      id: { not: movimiento.id },
+      estado: { notIn: ['ANULADO', 'ERROR_PROCESAMIENTO'] },
+    },
+    select: { id: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (mismoArchivo) {
+    assertTransicion('INGRESADO', 'DUPLICADO');
+    await db.movimiento.update({
+      where: { id: movimiento.id },
+      data: {
+        estado: 'DUPLICADO',
+        flags: { duplicadoArchivo: mismoArchivo.id, notaDuplicado: 'Archivo duplicado' } as never,
+      },
+    });
+    await writeAudit(db, {
+      usuarioId: params.usuarioId,
+      entidad: 'Movimiento',
+      entidadId: movimiento.id,
+      accion: 'AUTO_DUPLICADO',
+      despues: { estado: 'DUPLICADO', duplicados: [mismoArchivo.id], confirmadoPor: 'HASH_ARCHIVO', archivo: params.filename },
+    });
+    return { movimientoId: movimiento.id };
+  }
+
   await enqueueJob('EXTRACCION', { movimientoId: movimiento.id, empresaId: params.empresaId }, params.empresaId);
   return { movimientoId: movimiento.id };
 }

@@ -346,6 +346,25 @@ export async function observarMovimiento(ctx: EmpresaContext, id: string, nota?:
 
 export async function volverAPendiente(ctx: EmpresaContext, id: string, nota?: string): Promise<void> {
   const mov = await getMovimientoOrThrow(ctx, id);
+
+  // Un duplicado POR ARCHIVO nunca pasó por la extracción (se apartó en la
+  // ingesta): recuperarlo lo devuelve al pipeline y re-encola su extracción,
+  // en vez de dejar un pendiente vacío.
+  if (mov.estado === 'DUPLICADO' && mov.extraccionRaw == null && mov.archivoKey) {
+    assertTransicion(mov.estado, 'INGRESADO');
+    await ctx.db.movimiento.update({ where: { id }, data: { estado: 'INGRESADO' } });
+    await enqueueJob('EXTRACCION', { movimientoId: id, empresaId: ctx.empresa.id }, ctx.empresa.id);
+    await writeAudit(ctx.db, {
+      usuarioId: ctx.usuario.id,
+      entidad: 'Movimiento',
+      entidadId: id,
+      accion: 'VOLVER_A_PENDIENTE',
+      antes: { estado: mov.estado },
+      despues: { estado: 'INGRESADO', nota: nota?.trim() || null, reprocesa: true },
+    });
+    return;
+  }
+
   assertTransicion(mov.estado, 'PENDIENTE_VALIDACION');
 
   // Un pendiente bloquea el cierre del mes: devolver a revisión algo cuyo período

@@ -21,7 +21,9 @@ import { DomainError } from '@/lib/errors';
 // therefore include ASIGNADO in their allowed target states.
 
 const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
-  INGRESADO: ['PROCESANDO'],
+  // DUPLICADO directo desde la ingesta: mismo archivo (hash) que otro
+  // comprobante de la empresa — se aparta sin gastar extracción.
+  INGRESADO: ['PROCESANDO', 'DUPLICADO'],
   // VALIDADO/ASIGNADO directos: autovalidación en el pipeline (QR + aritmética;
   // ASIGNADO si una regla de preasignación da asignación completa).
   // OBSERVADO: descarte automático por regla. DUPLICADO: duplicado confirmado por QR/ARCA.
@@ -38,7 +40,9 @@ const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
   ASIGNADO: ['VALIDADO', 'ANULADO', 'PENDIENTE_VALIDACION', 'OBSERVADO'],
   ANULADO: [],
   ERROR_PROCESAMIENTO: ['PROCESANDO', 'PENDIENTE_VALIDACION'],
-  DUPLICADO: ['PENDIENTE_VALIDACION', 'ANULADO'],
+  // INGRESADO: un duplicado POR ARCHIVO nunca se extrajo; si se recupera
+  // ("no es duplicado") vuelve al pipeline y se re-encola su extracción.
+  DUPLICADO: ['PENDIENTE_VALIDACION', 'ANULADO', 'INGRESADO'],
 };
 
 // Valid initial states per origin: vouchers always enter the OCR pipeline;
