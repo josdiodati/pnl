@@ -196,6 +196,7 @@ export default async function ValidacionDetallePage({
                 contraparteId: mov.contraparteId ?? '',
                 descripcion: mov.descripcion ?? '',
                 moneda: mov.moneda,
+                tipoCambio: mov.tipoCambio != null ? String(Number(mov.tipoCambio)) : '',
                 cae: mov.cae ?? '',
                 importes: {
                   netoGravado: n(mov.netoGravado),

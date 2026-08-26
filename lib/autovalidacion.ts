@@ -10,6 +10,9 @@ export type EntradaAutoval = {
   importes: Record<string, number | null>;
   total: number | null;
   hayDuplicados: boolean;
+  /** Moneda del comprobante y TC (pesos por unidad); una moneda extranjera sin TC no es apta. */
+  moneda?: string;
+  tipoCambio?: number | null;
 };
 
 const COMPONENTES = [
@@ -24,6 +27,9 @@ export function evaluarAutovalidacion(e: EntradaAutoval): { apto: boolean; motiv
   if (!e.cae) motivos.push('sin CAE');
   if (!e.qrAporto) motivos.push('el QR no aportó el encabezado');
   if (e.hayDuplicados) motivos.push('posible duplicado');
+  if (e.moneda && e.moneda !== 'ARS' && !(e.tipoCambio && e.tipoCambio > 0)) {
+    motivos.push('moneda extranjera sin tipo de cambio');
+  }
   if (e.total == null) {
     motivos.push('sin total');
   } else {

@@ -83,6 +83,7 @@ export async function validarAction(formData: FormData): Promise<void> {
       contraparteId,
       descripcion: String(formData.get('descripcion') ?? '').trim() || null,
       moneda: (String(formData.get('moneda') ?? 'ARS')) as Moneda,
+      tipoCambio: aNumero(formData.get('tipoCambio')),
       tipoComprobante: String(formData.get('tipoComprobante') ?? '') || null,
       puntoVenta: String(formData.get('puntoVenta') ?? '').trim() || null,
       numero: String(formData.get('numero') ?? '').trim() || null,

@@ -243,6 +243,12 @@ export default async function MovimientosPage({
                   >
                     {firmado != null ? formatMoneyFirmado(firmado) : formatMoney(m.total ? Number(m.total) : null)}
                     {firmado == null && <span className="ml-1 text-[10px] font-normal">sin imputar</span>}
+                    {m.moneda !== 'ARS' && (
+                      <span className="block text-[10px] font-normal text-slate-400">
+                        {m.moneda} {formatMoney(m.total ? Number(m.total) : null)}
+                        {m.tipoCambio != null ? ` · TC ${Number(m.tipoCambio).toLocaleString('es-AR')}` : ' · sin TC'}
+                      </span>
+                    )}
                   </td>
                 </tr>
               );

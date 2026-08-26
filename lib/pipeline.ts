@@ -168,6 +168,12 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
   const totalFinal = qrAfip ? qrAfip.importe : extraccion.total;
   const caeFinal = qrAfip ? String(qrAfip.codAut) : extraccion.cae;
   const puntoVentaFinal = qrAfip ? String(qrAfip.ptoVta).padStart(5, '0') : extraccion.puntoVenta;
+  // Moneda y tipo de cambio: el QR es autoritativo (trae moneda y ctz oficial).
+  // Sin QR, la moneda queda la del LLM y el TC lo pide la validación.
+  const MONEDA_QR: Record<string, 'ARS' | 'USD' | 'EUR'> = { PES: 'ARS', DOL: 'USD', '060': 'EUR' };
+  const monedaFinal = qrAfip?.moneda ? (MONEDA_QR[qrAfip.moneda] ?? 'OTRA') : extraccion.moneda;
+  const tipoCambioFinal =
+    monedaFinal !== 'ARS' && qrAfip && qrAfip.ctz > 0 ? qrAfip.ctz : null;
   const numeroFinal = qrAfip ? String(qrAfip.nroCmp).padStart(8, '0') : extraccion.numero;
 
   const direccion = clasificarDireccion(cuit, cuitReceptor, cuitEmpresa);
@@ -305,6 +311,8 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     },
     total: totalFinal != null ? Number(totalFinal) : null,
     hayDuplicados: duplicados.length > 0,
+    moneda: monedaFinal,
+    tipoCambio: tipoCambioFinal,
   });
   let observarPorRegla: string | null = null;
   if (estadoFinal !== 'RETENIDO') {
@@ -353,7 +361,8 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       contraparteId: contraparte?.id ?? null,
       categoriaId: categoriaEfectiva,
       descripcion: descripcionFinal,
-      moneda: extraccion.moneda,
+      moneda: monedaFinal,
+      tipoCambio: tipoCambioFinal,
       tipoComprobante: extraccion.tipoComprobante,
       puntoVenta: puntoVentaFinal,
       numero: numeroFinal,

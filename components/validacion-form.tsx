@@ -27,6 +27,7 @@ export type CampoMovimiento = {
   contraparteId: string;
   descripcion: string;
   moneda: string;
+  tipoCambio: string; // '' si no tiene; pesos por unidad de moneda extranjera
   cae: string;
   importes: Record<string, number | null>;
   camposRevisar: Record<string, string>;
@@ -101,6 +102,7 @@ export function ValidacionForm({
   const [contraparteId, setContraparteId] = useState(mov.contraparteId);
   const [categoriaId, setCategoriaId] = useState(mov.categoriaId);
   const [tipoComprobante, setTipoComprobante] = useState(mov.tipoComprobante);
+  const [moneda, setMoneda] = useState(mov.moneda);
   const [total, setTotal] = useState<string>(mov.importes.total != null ? String(mov.importes.total) : '');
   // Los componentes del importe son estado (no defaultValue) para poder
   // recalcular el desvío aritmético mientras se tipea: el mensaje que viene
@@ -280,13 +282,27 @@ export function ValidacionForm({
             </select>
           </Campo>
           <Campo label="Moneda">
-            <select name="moneda" defaultValue={mov.moneda} className="input">
+            <select name="moneda" value={moneda} onChange={(e) => setMoneda(e.target.value)} className="input">
               <option value="ARS">ARS</option>
               <option value="USD">USD</option>
               <option value="EUR">EUR</option>
               <option value="OTRA">Otra</option>
             </select>
           </Campo>
+          {moneda !== 'ARS' && (
+            <Campo label="Tipo de cambio (pesos)">
+              {/* Obligatorio para validar: el libro unifica en pesos (total × TC).
+                  Si el QR de AFIP trajo la cotización oficial, viene precargado. */}
+              <input
+                name="tipoCambio"
+                defaultValue={mov.tipoCambio}
+                className="input"
+                placeholder="p.ej. 1325,50"
+                inputMode="decimal"
+                required
+              />
+            </Campo>
+          )}
         </div>
 
         <Campo label="Descripción">

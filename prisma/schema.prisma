@@ -291,6 +291,9 @@ model Movimiento {
   contraparteId      String?
   descripcion        String?
   moneda             Moneda           @default(ARS)
+  // Pesos por unidad de moneda extranjera. Obligatorio para validar/asignar
+  // cuando moneda ≠ ARS; el QR de AFIP lo aporta solo (ctz) cuando existe.
+  tipoCambio         Decimal?         @db.Decimal(12, 4)
 
   // Amounts (positive; accounting sign derives from categoria + tipoComprobante)
   netoGravado      Decimal? @db.Decimal(18, 2)

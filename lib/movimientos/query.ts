@@ -66,12 +66,23 @@ export type MovimientoConRelaciones = {
   lineas: { centroCostoId: string; clienteId: string | null; porcentaje: unknown }[];
   /** Vínculos comprobante→empleado: su monto se descuenta del libro y computa en Costos de personal. */
   vinculosEmpleados?: { monto: unknown }[];
+  /** Moneda del comprobante y TC (pesos por unidad): el libro unifica en ARS. */
+  moneda?: string;
+  tipoCambio?: unknown;
 };
 
 /** Signed total in cents; null when not computable (no category/total yet). */
 export function totalFirmadoDe(mov: MovimientoConRelaciones): number | null {
   if (mov.total == null || !mov.categoria) return null;
-  return signoMovimiento(mov.categoria.tipo, mov.tipoComprobante) * Math.round(Number(mov.total) * 100);
+  // Moneda extranjera: el libro unifica en pesos (total × TC). Sin tipo de
+  // cambio el movimiento no es computable — igual que sin categoría.
+  let totalArs = Number(mov.total);
+  if (mov.moneda && mov.moneda !== 'ARS') {
+    const tc = mov.tipoCambio == null ? null : Number(mov.tipoCambio);
+    if (!tc || !(tc > 0)) return null;
+    totalArs *= tc;
+  }
+  return signoMovimiento(mov.categoria.tipo, mov.tipoComprobante) * Math.round(totalArs * 100);
 }
 
 /** Suma en centavos de lo vinculado a empleados (0 si no hay vínculos). */

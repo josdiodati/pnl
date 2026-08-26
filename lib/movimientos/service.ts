@@ -147,6 +147,8 @@ export type DatosValidacion = {
   contraparteId?: string | null;
   descripcion?: string | null;
   moneda?: Moneda;
+  /** Pesos por unidad de moneda extranjera; obligatorio si moneda ≠ ARS. */
+  tipoCambio?: number | null;
   tipoComprobante?: string | null;
   puntoVenta?: string | null;
   numero?: string | null;
@@ -183,6 +185,13 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
 
   const total = datos.importes?.total ?? (mov.total != null ? Number(mov.total) : null);
   if (total == null) throw new DomainError('El total es obligatorio para validar.');
+
+  // Moneda extranjera: el libro unifica en pesos, así que el TC es obligatorio.
+  const monedaEff = datos.moneda ?? mov.moneda;
+  const tipoCambioEff = datos.tipoCambio !== undefined ? datos.tipoCambio : (mov.tipoCambio != null ? Number(mov.tipoCambio) : null);
+  if (monedaEff !== 'ARS' && !(tipoCambioEff && tipoCambioEff > 0)) {
+    throw new DomainError('El comprobante está en moneda extranjera: cargá el tipo de cambio para validarlo.');
+  }
 
   // Gate de ARCA: solo aplica a comprobantes (no a asientos/ventas manuales sin archivo).
   if (mov.origen === 'COMPROBANTE' || mov.origen === 'VENTA_COMPROBANTE') {
@@ -231,7 +240,8 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
       contraparteId: datos.contraparteId ?? null,
       categoriaId: categoriaEff,
       descripcion: datos.descripcion ?? mov.descripcion,
-      moneda: datos.moneda ?? mov.moneda,
+      moneda: monedaEff,
+      tipoCambio: monedaEff === 'ARS' ? null : tipoCambioEff,
       tipoComprobante: datos.tipoComprobante !== undefined ? datos.tipoComprobante : mov.tipoComprobante,
       puntoVenta: datos.puntoVenta !== undefined ? datos.puntoVenta : mov.puntoVenta,
       numero: datos.numero !== undefined ? datos.numero : mov.numero,
@@ -309,6 +319,11 @@ export async function asignarMovimiento(ctx: EmpresaContext, id: string, datos: 
   if (!puedeAsignar(mov.estado)) throw new DomainError('Solo se pueden asignar comprobantes validados.');
   const categoria = await ctx.db.categoria.findFirst({ where: { id: datos.categoriaId, activa: true } });
   if (!categoria) throw new DomainError('Elegí una categoría válida.');
+  // El libro unifica en pesos: no entra al P&L una moneda extranjera sin TC
+  // (cubre lo validado antes de que existiera el campo).
+  if (mov.moneda !== 'ARS' && !(mov.tipoCambio != null && Number(mov.tipoCambio) > 0)) {
+    throw new DomainError('El comprobante está en moneda extranjera sin tipo de cambio: cargalo desde Validación antes de asignar.');
+  }
   if (mov.fechaDevengamiento) await assertPeriodoAbierto(ctx, mov.fechaDevengamiento, 'asignar');
   const antes = snapshot(mov);
   // Validate the transition BEFORE mutating the DB: if the state is illegal
