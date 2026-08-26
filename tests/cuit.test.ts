@@ -37,3 +37,18 @@ describe('CUIT: dígito verificador módulo 11', () => {
     expect(formatearCuit('30714325651')).toBe('30-71432565-1');
   });
 });
+
+describe('identificador externo (proveedores sin CUIT)', () => {
+  it('genera EXT- distintivo, nunca un CUIT válido', async () => {
+    const { generarIdentificadorExterno, esIdentificadorExterno, cuitEsValido } = await import('@/lib/checks/cuit');
+    const id = generarIdentificadorExterno();
+    expect(id).toMatch(/^EXT-[0-9A-F]{8}$/);
+    expect(esIdentificadorExterno(id)).toBe(true);
+    expect(cuitEsValido(id)).toBe(false);
+  });
+  it('un CUIT normal no es identificador externo', async () => {
+    const { esIdentificadorExterno } = await import('@/lib/checks/cuit');
+    expect(esIdentificadorExterno('30712093486')).toBe(false);
+    expect(esIdentificadorExterno(null)).toBe(false);
+  });
+});

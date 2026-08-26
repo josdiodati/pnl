@@ -16,6 +16,7 @@ import { procesarArca } from '@/lib/pipeline';
 import { guardarReglaDesdeAsignacion } from '@/lib/reglas/guardar-desde-asignacion';
 import { nombreContraparte, cuitContraparteDe } from '@/lib/movimientos/nombre-contraparte';
 import { cuitEsValido, normalizarCuit } from '@/lib/checks';
+import { esIdentificadorExterno, generarIdentificadorExterno } from '@/lib/checks/cuit';
 import { writeAudit } from '@/lib/audit';
 import type { Moneda } from '@prisma/client';
 
@@ -57,11 +58,25 @@ export async function validarAction(formData: FormData): Promise<void> {
     // Optional inline creation of a new contraparte without leaving the screen
     let contraparteId = String(formData.get('contraparteId') ?? '') || null;
     if (contraparteId === '__nueva__') {
-      const cuit = normalizarCuit(String(formData.get('nuevaContraparte_cuit') ?? ''));
+      const cuitCrudo = String(formData.get('nuevaContraparte_cuit') ?? '').trim();
       const razonSocial = String(formData.get('nuevaContraparte_razonSocial') ?? '').trim();
       const tipo = (String(formData.get('nuevaContraparte_tipo') ?? 'PROVEEDOR')) as 'PROVEEDOR' | 'CLIENTE' | 'AMBOS';
       if (!razonSocial) throw new DomainError('Ingresá la razón social de la contraparte nueva.');
-      if (!cuitEsValido(cuit)) throw new DomainError('El CUIT de la contraparte nueva es inválido.');
+      // Override no fiscal / extranjero: sin CUIT se genera un identificador
+      // distintivo EXT- (AWS, Anthropic, etc. no tienen CUIT argentino).
+      let cuit: string;
+      if (!cuitCrudo && formData.get('overrideNoFiscal') === 'on') {
+        cuit = generarIdentificadorExterno();
+      } else if (esIdentificadorExterno(cuitCrudo)) {
+        cuit = cuitCrudo;
+      } else {
+        cuit = normalizarCuit(cuitCrudo);
+        if (!cuitEsValido(cuit)) {
+          throw new DomainError(
+            'El CUIT de la contraparte nueva es inválido. Si es un proveedor extranjero/no fiscal, marcá el override y dejá el CUIT vacío: se genera un identificador EXT- automático.',
+          );
+        }
+      }
       const existente = await ctx.db.contraparte.findFirst({ where: { cuit } });
       if (existente) {
         contraparteId = existente.id;

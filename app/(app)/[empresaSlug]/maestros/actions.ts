@@ -6,6 +6,7 @@ import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isDomainError, isForbidden, DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import { cuitEsValido, normalizarCuit } from '@/lib/checks';
+import { esIdentificadorExterno } from '@/lib/checks/cuit';
 import { validarDistribucion } from '@/lib/movimientos/distribucion';
 import { prisma } from '@/lib/db';
 
@@ -213,7 +214,9 @@ export async function guardarContraparte(formData: FormData): Promise<void> {
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
     const id = String(formData.get('id') ?? '');
-    const cuit = normalizarCuit(String(formData.get('cuit') ?? ''));
+    const cuitCrudo = String(formData.get('cuit') ?? '').trim();
+    // Los identificadores EXT- (proveedores extranjeros sin CUIT) se aceptan tal cual.
+    const cuit = esIdentificadorExterno(cuitCrudo) ? cuitCrudo : normalizarCuit(cuitCrudo);
     const razonSocial = String(formData.get('razonSocial') ?? '').trim();
     const tipo = String(formData.get('tipo')) as 'PROVEEDOR' | 'CLIENTE' | 'AMBOS';
     const condicionIva = String(formData.get('condicionIva') ?? '').trim() || null;
@@ -222,7 +225,7 @@ export async function guardarContraparte(formData: FormData): Promise<void> {
     const instruccionesExtraccion = String(formData.get('instruccionesExtraccion') ?? '').trim() || null;
 
     if (!razonSocial) throw new DomainError('La razón social es obligatoria.');
-    if (!cuitEsValido(cuit)) throw new DomainError('CUIT inválido (dígito verificador).');
+    if (!esIdentificadorExterno(cuit) && !cuitEsValido(cuit)) throw new DomainError('CUIT inválido (dígito verificador).');
     if (categoriaDefaultId && !(await ctx.db.categoria.findFirst({ where: { id: categoriaDefaultId } }))) {
       throw new DomainError('Categoría default inexistente.');
     }

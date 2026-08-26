@@ -254,6 +254,10 @@ export function ValidacionForm({
             <div>
               <label className="label">CUIT nuevo</label>
               <input name="nuevaContraparte_cuit" defaultValue={mov.cuitEmisor} className="input" />
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Proveedor extranjero / no fiscal sin CUIT: marcá el override y dejá este campo vacío — se genera un
+                identificador EXT- automático.
+              </p>
             </div>
             <div>
               <label className="label">Razón social</label>

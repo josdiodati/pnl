@@ -27,3 +27,15 @@ export function formatearCuit(cuit: string): string {
   if (c.length !== 11) return cuit;
   return `${c.slice(0, 2)}-${c.slice(2, 10)}-${c.slice(10)}`;
 }
+
+// Proveedores extranjeros / no fiscales (AWS, Anthropic, Google…) no tienen
+// CUIT: se los identifica con un código sintético distintivo. Nunca colisiona
+// con un CUIT real (tiene letras) ni matchea contra CUITs extraídos.
+export function esIdentificadorExterno(valor: string | null | undefined): boolean {
+  return Boolean(valor && valor.startsWith('EXT-'));
+}
+
+export function generarIdentificadorExterno(): string {
+  const azar = Math.random().toString(16).slice(2, 10).toUpperCase().padEnd(8, '0');
+  return `EXT-${azar}`;
+}
