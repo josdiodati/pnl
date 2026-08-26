@@ -227,6 +227,59 @@ export async function eliminarCostoManual(ctx: EmpresaContext, params: { emplead
   });
 }
 
+/**
+ * Prepaga asignada por empleado y período (pantalla Personal → Prepagas).
+ * Un registro por empleado-mes; neto = costoPlan − fsrPct% × (aportes+contribuciones).
+ */
+export async function guardarPrepagaEmpleado(
+  ctx: EmpresaContext,
+  params: { empleadoId: string; anio: number; mes: number; prepaga: string; costoPlan: number; aportes: number; contribuciones: number; fsrPct: number },
+): Promise<void> {
+  const empleado = await ctx.db.empleado.findFirst({ where: { id: params.empleadoId } });
+  if (!empleado) throw new DomainError('Empleado inexistente.');
+  if (!params.prepaga.trim()) throw new DomainError('Indicá la prepaga/plan asignado.');
+  if (!(params.costoPlan >= 0) || !(params.aportes >= 0) || !(params.contribuciones >= 0)) {
+    throw new DomainError('Los importes no pueden ser negativos.');
+  }
+  if (!(params.fsrPct >= 0 && params.fsrPct <= 100)) throw new DomainError('El % que llega a la prepaga va de 0 a 100.');
+  if (!(params.mes >= 1 && params.mes <= 12) || !Number.isInteger(params.anio)) throw new DomainError('Período inválido.');
+  const periodo = await getOrCreatePeriodo(ctx.db, new Date(Date.UTC(params.anio, params.mes - 1, 1)));
+
+  const data = {
+    prepaga: params.prepaga.trim(),
+    costoPlan: params.costoPlan,
+    aportes: params.aportes,
+    contribuciones: params.contribuciones,
+    fsrPct: params.fsrPct,
+  };
+  const previo = await ctx.db.prepagaEmpleado.findFirst({ where: { empleadoId: params.empleadoId, periodoId: periodo.id } });
+  if (previo) {
+    await ctx.db.prepagaEmpleado.update({ where: { id: previo.id }, data });
+  } else {
+    await prisma.prepagaEmpleado.create({ data: { ...data, empleadoId: params.empleadoId, periodoId: periodo.id } });
+  }
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'Empleado',
+    entidadId: params.empleadoId,
+    accion: 'PREPAGA_GUARDAR',
+    despues: { periodo: `${params.anio}-${params.mes}`, ...data },
+  });
+}
+
+export async function eliminarPrepagaEmpleado(ctx: EmpresaContext, params: { empleadoId: string; prepagaId: string }): Promise<void> {
+  const registro = await ctx.db.prepagaEmpleado.findFirst({ where: { id: params.prepagaId, empleadoId: params.empleadoId } });
+  if (!registro) throw new DomainError('El registro de prepaga no existe.');
+  await ctx.db.prepagaEmpleado.delete({ where: { id: registro.id } });
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'Empleado',
+    entidadId: params.empleadoId,
+    accion: 'PREPAGA_ELIMINAR',
+    antes: { prepaga: registro.prepaga, costoPlan: Number(registro.costoPlan) },
+  });
+}
+
 export async function vincularMovimiento(
   ctx: EmpresaContext,
   params: { movimientoId: string; empleadoId: string; monto: number },

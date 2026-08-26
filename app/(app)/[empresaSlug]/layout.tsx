@@ -54,7 +54,10 @@ export default async function EmpresaLayout({
       ? [
           {
             titulo: 'Personal',
-            items: [{ href: `${base}/empleados`, label: 'Empleados', icono: 'headcount' }],
+            items: [
+              { href: `${base}/empleados`, label: 'Empleados', icono: 'headcount' },
+              { href: `${base}/empleados/prepagas`, label: 'Prepagas', icono: 'distribucion' },
+            ],
           },
         ]
       : []),

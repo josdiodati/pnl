@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { MES_LABEL, periodoDeFecha, ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
 import { formatMoney } from '@/lib/format';
-import { totalFirmadoDe } from '@/lib/movimientos/query';
+import { netoComputable } from '@/lib/empleados/prepaga';
 import { armarMatrizPersonal, type SerieMatriz } from '@/lib/empleados/matriz';
 import { RecibosUpload } from '@/components/recibos-upload';
 import { OkBanner } from '@/components/error-banner';
@@ -29,7 +29,7 @@ const SECCIONES: { clave: 'headcount' | 'netos' | 'retenciones' | 'cargas' | 'sa
   { clave: 'retenciones', titulo: 'Retenciones (aportes del empleado)', dinero: true },
   { clave: 'cargas', titulo: 'Cargas sociales (patronales)', dinero: true },
   { clave: 'sacOtros', titulo: 'SAC / otros recibos (incluido arriba)', dinero: true, memo: true },
-  { clave: 'prepagas', titulo: 'Prepagas', dinero: true },
+  { clave: 'prepagas', titulo: 'Prepagas (asignadas)', dinero: true },
   { clave: 'vinculados', titulo: 'Vinculados', dinero: true },
   { clave: 'costoTotal', titulo: 'Costo total empleador', dinero: true },
 ];
@@ -149,7 +149,7 @@ export default async function EmpleadosPage({
 
   // ---------- Vista: detalle mensual (con filtro por centro) ----------
   if (vista === 'detalle') {
-    const [empleados, recibosPeriodo, vinculos, movsPersonalMes] = await Promise.all([
+    const [empleados, recibosPeriodo, vinculos, prepagasMesRegistros] = await Promise.all([
       ctx.db.empleado.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
       ctx.db.reciboSueldo.findMany({
         where: { periodo: { anio, mes }, estado: { in: ['CONFIRMADO', 'PENDIENTE_REVISION'] } },
@@ -159,9 +159,9 @@ export default async function EmpleadosPage({
         where: { movimiento: { estado: 'ASIGNADO', periodo: { anio, mes } } },
         include: { empleado: { include: { distribucion: true } } },
       }),
-      ctx.db.movimiento.findMany({
-        where: { estado: 'ASIGNADO', periodo: { anio, mes }, categoria: { esCostoPersonal: true } },
-        include: { categoria: true, lineas: true },
+      ctx.db.prepagaEmpleado.findMany({
+        where: { periodo: { anio, mes } },
+        include: { empleado: { include: { distribucion: true } } },
       }),
     ]);
 
@@ -198,20 +198,28 @@ export default async function EmpleadosPage({
       return centroFiltro === 'SIN_ASIGNAR' ? r.pendiente : r.centros.has(centroFiltro);
     });
 
-    // Prepagas del mes (agregado por categoría de personal, no por empleado):
-    // con filtro, sólo la porción de las líneas de ese centro — así el KPI
-    // coincide con la fila "Costo total" de la matriz.
-    const prepagasMes = movsPersonalMes.reduce((acc, mv) => {
-      const f = Math.abs(totalFirmadoDe(mv as never) ?? 0) / 100;
-      if (!f) return acc;
-      return acc + f * (centroFiltro && centroFiltro !== 'SIN_ASIGNAR' ? pctEnCentro(mv.lineas) : 1);
-    }, 0);
+    // Prepagas ASIGNADAS por empleado (gestión): la porción del centro sale de
+    // la distribución de la ficha; el agregado contable queda en el libro.
+    const prepagaPorEmpleado = new Map<string, number>();
+    for (const r of prepagasMesRegistros) {
+      const neto =
+        netoComputable({
+          costoPlan: Number(r.costoPlan),
+          aportes: Number(r.aportes),
+          contribuciones: Number(r.contribuciones),
+          fsrPct: Number(r.fsrPct),
+        }) / 100;
+      const porcion = neto * pctEnCentro(r.empleado.distribucion);
+      if (porcion > 0) prepagaPorEmpleado.set(r.empleadoId, (prepagaPorEmpleado.get(r.empleadoId) ?? 0) + porcion);
+    }
 
     const idsFiltrados = new Set(filtrados.map((e) => e.id));
-    const costoEmpleados =
-      [...recibosPorEmpleado.entries()].reduce((a, [id, r]) => a + (idsFiltrados.has(id) || !centroFiltro ? r.confirmado : 0), 0) +
-      [...vinculadoPorEmpleado.entries()].reduce((a, [id, v]) => a + (idsFiltrados.has(id) || !centroFiltro ? v : 0), 0);
-    const costoTotal = costoEmpleados + (centroFiltro === 'SIN_ASIGNAR' ? 0 : prepagasMes);
+    const sumaFiltrada = (m: Map<string, number>) =>
+      [...m.entries()].reduce((a, [id, v]) => a + (idsFiltrados.has(id) || !centroFiltro ? v : 0), 0);
+    const costoTotal =
+      sumaFiltrada(new Map([...recibosPorEmpleado.entries()].map(([id, r]) => [id, r.confirmado]))) +
+      sumaFiltrada(vinculadoPorEmpleado) +
+      sumaFiltrada(prepagaPorEmpleado);
     const mesAnterior = mes === 1 ? { anio: anio - 1, mes: 12 } : { anio, mes: mes - 1 };
     const mesSiguiente = mes === 12 ? { anio: anio + 1, mes: 1 } : { anio, mes: mes + 1 };
     const qsCentro = centroFiltro ? `&centro=${centroFiltro}` : '';
@@ -227,12 +235,6 @@ export default async function EmpleadosPage({
               Costo total de personal · {MES_LABEL[mes]} {anio}{nombreCentro ? ` · ${nombreCentro}` : ''}
             </p>
             <p className="text-xl font-semibold tabular-nums text-red-700">{formatMoney(costoTotal)}</p>
-            {centroFiltro !== 'SIN_ASIGNAR' && prepagasMes > 0 && (
-              <p className="text-[11px] text-slate-500 mt-1">
-                Empleados {formatMoney(costoEmpleados)} + Prepagas {formatMoney(prepagasMes)} (agregado, no figura por
-                empleado en la tabla)
-              </p>
-            )}
           </div>
           <div className="card p-3">
             <p className="text-xs text-slate-500">Empleados con recibo</p>
@@ -264,6 +266,7 @@ export default async function EmpleadosPage({
                 <th>Categoría / sector</th>
                 <th className="text-right">Recibos{nombreCentro && centroFiltro !== 'SIN_ASIGNAR' ? ' (porción)' : ''}</th>
                 <th className="text-right">Vinculados{nombreCentro && centroFiltro !== 'SIN_ASIGNAR' ? ' (porción)' : ''}</th>
+                <th className="text-right" title="Neto de la prepaga asignada (plan − % × aportes+contribuciones); se carga en Personal → Prepagas">Prepaga</th>
                 <th className="text-right">Costo total</th>
                 <th>Estado</th>
               </tr>
@@ -272,20 +275,22 @@ export default async function EmpleadosPage({
               {filtrados.map((e) => {
                 const r = recibosPorEmpleado.get(e.id);
                 const vinc = vinculadoPorEmpleado.get(e.id) ?? 0;
-                const total = (r?.confirmado ?? 0) + vinc;
+                const prep = prepagaPorEmpleado.get(e.id) ?? 0;
+                const total = (r?.confirmado ?? 0) + vinc + prep;
                 return (
                   <tr key={e.id} className="hover:bg-slate-50">
                     <td><Link href={`${base}/${e.id}`} className="font-medium hover:underline">{e.nombre}</Link></td>
                     <td className="text-xs text-slate-500">{[e.categoria, e.sector].filter(Boolean).join(' / ') || '—'}</td>
                     <td className="num">{r?.confirmado ? formatMoney(r.confirmado) : '—'}</td>
                     <td className="num">{vinc ? formatMoney(vinc) : '—'}</td>
+                    <td className="num">{prep ? formatMoney(prep) : '—'}</td>
                     <td className="num font-medium">{total ? formatMoney(total) : '—'}</td>
                     <td className="text-xs">{r?.pendiente ? '⏳ pendiente' : r?.confirmado ? '✔ confirmado' : '— sin recibo'}</td>
                   </tr>
                 );
               })}
               {filtrados.length === 0 && (
-                <tr><td colSpan={6} className="text-center text-slate-400 py-8">
+                <tr><td colSpan={7} className="text-center text-slate-400 py-8">
                   {centroFiltro ? 'Sin empleados en ese centro para este mes.' : 'Sin empleados: subí el PDF de recibos para darlos de alta.'}
                 </td></tr>
               )}
@@ -304,14 +309,16 @@ export default async function EmpleadosPage({
   const periodoIds = periodos.map((p) => p.id);
   const periodoPorId = new Map(periodos.map((p) => [p.id, p]));
 
-  const [recibosEj, movsPersonal, vincsEj] = await Promise.all([
+  const [recibosEj, prepagasEj, vincsEj] = await Promise.all([
     ctx.db.reciboSueldo.findMany({
       where: { periodoId: { in: periodoIds }, estado: { in: ['CONFIRMADO', 'PENDIENTE_REVISION'] } },
       include: { lineas: true },
     }),
-    ctx.db.movimiento.findMany({
-      where: { estado: 'ASIGNADO', periodoId: { in: periodoIds }, categoria: { esCostoPersonal: true } },
-      include: { categoria: true, lineas: true },
+    // Prepagas ASIGNADAS por empleado (gestión): sólo lo asignado computa acá;
+    // las facturas agregadas quedan en el libro.
+    ctx.db.prepagaEmpleado.findMany({
+      where: { periodoId: { in: periodoIds } },
+      include: { empleado: { include: { distribucion: true } } },
     }),
     ctx.db.movimientoEmpleado.findMany({
       where: {
@@ -343,15 +350,19 @@ export default async function EmpleadosPage({
         lineas: r.lineas.map((l) => ({ centroCostoId: l.centroCostoId, porcentaje: Number(l.porcentaje) })),
       };
     }),
-    prepagas: movsPersonal
-      .map((mv) => {
-        const p = periodoPorId.get(mv.periodoId!)!;
-        const firmado = totalFirmadoDe(mv as never);
+    prepagas: prepagasEj
+      .map((r) => {
+        const p = periodoPorId.get(r.periodoId)!;
         return {
           anio: p.anio,
           mes: p.mes,
-          centavos: Math.abs(firmado ?? 0),
-          lineas: mv.lineas.map((l) => ({ centroCostoId: l.centroCostoId, porcentaje: Number(l.porcentaje) })),
+          centavos: netoComputable({
+            costoPlan: Number(r.costoPlan),
+            aportes: Number(r.aportes),
+            contribuciones: Number(r.contribuciones),
+            fsrPct: Number(r.fsrPct),
+          }),
+          lineas: r.empleado.distribucion.map((l) => ({ centroCostoId: l.centroCostoId, porcentaje: Number(l.porcentaje) })),
         };
       })
       .filter((x) => x.centavos > 0),

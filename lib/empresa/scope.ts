@@ -30,6 +30,7 @@ const RELATION_SCOPE: Record<string, (empresaId: string) => object> = {
   EmpleadoDistribucionLinea: (empresaId) => ({ empleado: { empresaId } }),
   ReciboDistribucionLinea: (empresaId) => ({ recibo: { empresaId } }),
   CostoManualEmpleado: (empresaId) => ({ empleado: { empresaId } }),
+  PrepagaEmpleado: (empresaId) => ({ empleado: { empresaId } }),
   MovimientoEmpleado: (empresaId) => ({ movimiento: { empresaId } }),
 };
 

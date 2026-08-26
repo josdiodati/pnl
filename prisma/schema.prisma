@@ -419,6 +419,7 @@ model Periodo {
   movimientos  Movimiento[]
   recibosSueldo ReciboSueldo[]
   costosManualesEmpleados CostoManualEmpleado[]
+  prepagasEmpleados       PrepagaEmpleado[]
 
   @@unique([empresaId, anio, mes])
 }
@@ -454,6 +455,7 @@ model Empleado {
   distribucion EmpleadoDistribucionLinea[]
   recibos      ReciboSueldo[]
   costosManuales CostoManualEmpleado[]
+  prepagas       PrepagaEmpleado[]
   vinculos     MovimientoEmpleado[]
   createdAt    DateTime  @default(now())
 
@@ -549,6 +551,26 @@ model CostoManualEmpleado {
   empleado   Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
   periodo    Periodo  @relation(fields: [periodoId], references: [id])
   createdAt  DateTime @default(now())
+}
+
+// Prepaga asignada por empleado y período (vista de gestión, no contable):
+// neto = costoPlan − fsrPct% × (aportes + contribuciones). Las vistas de
+// empleados/proyectos computan max(0, neto); el libro sigue con las facturas.
+model PrepagaEmpleado {
+  id             String   @id @default(cuid())
+  empleadoId     String
+  periodoId      String
+  prepaga        String // plan asignado (ej. "OSDE 210", "Swiss SMG02")
+  costoPlan      Decimal  @db.Decimal(18, 2)
+  aportes        Decimal  @db.Decimal(18, 2) @default(0)
+  contribuciones Decimal  @db.Decimal(18, 2) @default(0)
+  fsrPct         Decimal  @db.Decimal(5, 2) @default(85) // % que llega a la prepaga
+  empleado       Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  periodo        Periodo  @relation(fields: [periodoId], references: [id])
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  @@unique([empleadoId, periodoId])
 }
 
 // Vínculo comprobante→empleado (prepaga, etc.). Montos, no porcentajes: una

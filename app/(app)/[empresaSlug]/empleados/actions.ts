@@ -8,6 +8,7 @@ import { ingestarRecibos } from '@/lib/empleados/ingesta';
 import {
   confirmarRecibo, anularRecibo, guardarFichaEmpleado, guardarDistribucionEmpleado,
   vincularMovimiento, desvincularMovimiento, agregarCostoManual, eliminarCostoManual, reasignarRecibo,
+  guardarPrepagaEmpleado, eliminarPrepagaEmpleado,
 } from '@/lib/empleados/service';
 import type { TotalesRecibo } from '@/lib/empleados/aritmetica';
 
@@ -192,4 +193,40 @@ export async function reasignarReciboAction(formData: FormData): Promise<void> {
     volverConError(slug, `empleados/recibos/${reciboId}`, err);
   }
   redirect(`/${slug}/empleados/recibos/${reciboId}?ok=${encodeURIComponent('Distribución reasignada')}`);
+}
+
+export async function guardarPrepagaAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const anio = Number(formData.get('anio'));
+  const mes = Number(formData.get('mes'));
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    await guardarPrepagaEmpleado(ctx, {
+      empleadoId: String(formData.get('empleadoId')),
+      anio,
+      mes,
+      prepaga: String(formData.get('prepaga') ?? ''),
+      costoPlan: numeroOpcional(formData, 'costoPlan') ?? 0,
+      aportes: numeroOpcional(formData, 'aportes') ?? 0,
+      contribuciones: numeroOpcional(formData, 'contribuciones') ?? 0,
+      fsrPct: numeroOpcional(formData, 'fsrPct') ?? 85,
+    });
+  } catch (err) {
+    volverConError(slug, 'empleados/prepagas', err);
+  }
+  redirect(`/${slug}/empleados/prepagas?ok=${encodeURIComponent('Prepaga guardada')}`);
+}
+
+export async function eliminarPrepagaAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    await eliminarPrepagaEmpleado(ctx, {
+      empleadoId: String(formData.get('empleadoId')),
+      prepagaId: String(formData.get('prepagaId')),
+    });
+  } catch (err) {
+    volverConError(slug, 'empleados/prepagas', err);
+  }
+  redirect(`/${slug}/empleados/prepagas?ok=${encodeURIComponent('Registro eliminado')}`);
 }
