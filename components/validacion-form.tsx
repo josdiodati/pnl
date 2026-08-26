@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { validarAction } from '@/app/(app)/[empresaSlug]/validacion/actions';
 import { mensajeAritmetica, parseImporte } from '@/lib/checks/aritmetica';
-import { IMPORTES } from '@/lib/movimientos/importes';
+import { IMPORTES, desglosarIvaIncluido } from '@/lib/movimientos/importes';
 import { DistribucionEditor, type OpcionId, type OpcionCliente, type OpcionProyecto, type PlantillaOpcion } from './distribucion-editor';
 import { ReglaDesdeAsignacion, type ReglaExistente } from './regla-desde-asignacion';
 
@@ -103,6 +103,7 @@ export function ValidacionForm({
   const [categoriaId, setCategoriaId] = useState(mov.categoriaId);
   const [tipoComprobante, setTipoComprobante] = useState(mov.tipoComprobante);
   const [moneda, setMoneda] = useState(mov.moneda);
+  const [alicuotaDesglose, setAlicuotaDesglose] = useState('21');
   const [total, setTotal] = useState<string>(mov.importes.total != null ? String(mov.importes.total) : '');
   // Los componentes del importe son estado (no defaultValue) para poder
   // recalcular el desvío aritmético mientras se tipea: el mensaje que viene
@@ -312,6 +313,41 @@ export function ValidacionForm({
 
       <fieldset className="rounded-md border border-slate-200 p-3">
         <legend className="text-xs font-semibold text-slate-500 px-1">Importes</legend>
+        {/* Comprobantes B / tickets: el IVA viene incluido en el total sin
+            discriminar. Este helper lo desglosa eligiendo la alícuota, para
+            separar el IVA de los montos que realmente cuentan. */}
+        {(tipoComprobante.endsWith('_B') || tipoComprobante === 'TICKET' || tipoComprobante === 'RECIBO') && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 rounded bg-slate-50 px-2 py-1.5 text-xs">
+            <span className="text-slate-600">IVA incluido en el total:</span>
+            <select value={alicuotaDesglose} onChange={(e) => setAlicuotaDesglose(e.target.value)} className="input !w-auto text-xs">
+              <option value="21">21%</option>
+              <option value="10.5">10,5%</option>
+              <option value="27">27%</option>
+              <option value="0">Exento / 0%</option>
+            </select>
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              onClick={() => {
+                const t = parseImporte(total);
+                if (t == null) return;
+                const pct = Number(alicuotaDesglose);
+                const { neto, iva } = desglosarIvaIncluido(t, pct);
+                setComponentes((prev) => ({
+                  ...prev,
+                  netoGravado: pct === 0 ? '' : String(neto),
+                  noGravadoExento: pct === 0 ? String(neto) : '',
+                  iva21: pct === 21 ? String(iva) : '',
+                  iva105: pct === 10.5 ? String(iva) : '',
+                  iva27: pct === 27 ? String(iva) : '',
+                }));
+              }}
+            >
+              Desglosar del total
+            </button>
+            <span className="text-slate-400">calcula neto e IVA a partir del total (neto = total / (1 + alícuota))</span>
+          </div>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {IMPORTES.map(({ campo, label }) => (
             <Campo key={campo} label={label} revisar={r[campo]}>
