@@ -14,7 +14,7 @@ import {
 } from '@/lib/movimientos/service';
 import { procesarArca } from '@/lib/pipeline';
 import { guardarReglaDesdeAsignacion } from '@/lib/reglas/guardar-desde-asignacion';
-import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
+import { nombreContraparte, cuitContraparteDe } from '@/lib/movimientos/nombre-contraparte';
 import { cuitEsValido, normalizarCuit } from '@/lib/checks';
 import { writeAudit } from '@/lib/audit';
 import type { Moneda } from '@prisma/client';
@@ -119,7 +119,7 @@ export async function validarAction(formData: FormData): Promise<void> {
         include: { contraparte: true },
       });
       const resultado = await guardarReglaDesdeAsignacion(ctx, {
-        cuit: mov?.cuitEmisor ?? null,
+        cuit: mov ? cuitContraparteDe(mov) : null,
         razonSocial: mov ? nombreContraparte(mov).nombre : null,
         categoriaId: categoriaRegla,
         lineas: lineasRegla,

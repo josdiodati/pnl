@@ -93,7 +93,7 @@ export default async function ReglasPage({
                 </select>
               </div>
               <div>
-                <label className="label">CUIT</label>
+                <label className="label" title="El emisor en compras; el RECEPTOR en ventas (en una venta el emisor es siempre la propia empresa)">CUIT de la contraparte</label>
                 <input
                   name="cuit"
                   className="input"

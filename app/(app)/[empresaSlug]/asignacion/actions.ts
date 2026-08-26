@@ -6,7 +6,7 @@ import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isDomainError, isForbidden } from '@/lib/errors';
 import { asignarMovimiento } from '@/lib/movimientos/service';
 import { guardarReglaDesdeAsignacion } from '@/lib/reglas/guardar-desde-asignacion';
-import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
+import { nombreContraparte, cuitContraparteDe } from '@/lib/movimientos/nombre-contraparte';
 
 function leerLineas(formData: FormData) {
   const ccIds = formData.getAll('linea_centroCostoId').map(String);
@@ -46,7 +46,7 @@ export async function asignarAction(formData: FormData): Promise<void> {
         include: { contraparte: true },
       });
       const resultado = await guardarReglaDesdeAsignacion(ctx, {
-        cuit: mov?.cuitEmisor ?? null,
+        cuit: mov ? cuitContraparteDe(mov) : null,
         razonSocial: mov ? nombreContraparte(mov).nombre : null,
         categoriaId,
         lineas,

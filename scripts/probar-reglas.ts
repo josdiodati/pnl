@@ -1,3 +1,4 @@
+import { cuitContraparteDe } from '@/lib/movimientos/nombre-contraparte';
 /**
  * Evalúa las reglas YA existentes de la empresa contra un comprobante existente.
  * No crea ni modifica nada. Muestra, por cada regla, si matchea; cuál gana
@@ -27,13 +28,13 @@ async function main() {
 
   const entrada: EntradaRegla = {
     creadoPorId: mov.creadoPorId,
-    cuitEmisor: mov.cuitEmisor,
+    cuitContraparte: cuitContraparteDe(mov),
     canalIngreso: mov.canalIngreso,
     texto: `${razonSocial} ${mov.descripcion ?? ''}`,
   };
 
   console.log('=== Comprobante ===');
-  console.log({ id: mov.id, estado: mov.estado, canal: mov.canalIngreso, cuitEmisor: mov.cuitEmisor,
+  console.log({ id: mov.id, estado: mov.estado, canal: mov.canalIngreso, cuitContraparte: cuitContraparteDe(mov),
     razonSocialEmisor: razonSocial, creadoPorId: mov.creadoPorId, qrEstado: mov.qrEstado });
   console.log('Entrada para matching:', entrada);
 

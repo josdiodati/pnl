@@ -11,7 +11,7 @@ import { formatFechaHora, fechaInputValue } from '@/lib/format';
 import { elegirRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { reglaVigenteParaCuit } from '@/lib/reglas/desde-asignacion';
-import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
+import { nombreContraparte, cuitContraparteDe, esVenta } from '@/lib/movimientos/nombre-contraparte';
 import {
   observarAction,
   anularAction,
@@ -60,7 +60,7 @@ export default async function ValidacionDetallePage({
 
   // Regla ya vigente para este CUIT: si el validador marca "crear regla", esta es
   // la que se pisa. Sale de las reglas ya cargadas, sin consulta extra.
-  const reglaVigente = reglaVigenteParaCuit(reglas, mov.cuitEmisor);
+  const reglaVigente = reglaVigenteParaCuit(reglas, cuitContraparteDe(mov));
   const imputacionDeRegla = (r: NonNullable<typeof reglaVigente>) => {
     const cat = categorias.find((c) => c.id === r.categoriaId)?.nombre ?? 'sin categoría';
     const dist = r.distribucionId
@@ -76,10 +76,11 @@ export default async function ValidacionDetallePage({
   let reglaSugerida: string | null = null;
   let sugerida: Awaited<ReturnType<typeof resolverAsignacionDeRegla>> | null = null;
   if (editable && mov.lineas.length === 0) {
-    const razonSocial = (mov.extraccionRaw as { razonSocialEmisor?: string } | null)?.razonSocialEmisor ?? '';
+    const raw = mov.extraccionRaw as { razonSocialEmisor?: string; razonSocialReceptor?: string } | null;
+    const razonSocial = (esVenta(mov.origen) ? raw?.razonSocialReceptor : raw?.razonSocialEmisor) ?? '';
     const regla = elegirRegla(reglas, {
       creadoPorId: mov.creadoPorId,
-      cuitEmisor: mov.cuitEmisor,
+      cuitContraparte: cuitContraparteDe(mov),
       canalIngreso: mov.canalIngreso,
       texto: `${razonSocial} ${mov.descripcion ?? ''}`,
     });

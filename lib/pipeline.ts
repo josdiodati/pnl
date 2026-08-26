@@ -319,9 +319,11 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     const reglas = await db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }] });
     const regla = elegirRegla(reglas, {
       creadoPorId: mov.creadoPorId,
-      cuitEmisor: cuit,
+      // La contraparte, no el emisor: en ventas el emisor es siempre la propia
+      // empresa y una regla por CUIT matchearía TODAS las ventas.
+      cuitContraparte,
       canalIngreso: mov.canalIngreso,
-      texto: `${extraccion.razonSocialEmisor ?? ''} ${descripcionFinal ?? ''}`,
+      texto: `${(direccion === 'VENTA' ? extraccion.razonSocialReceptor : extraccion.razonSocialEmisor) ?? ''} ${descripcionFinal ?? ''}`,
     });
     if (regla?.accion === 'OBSERVAR') {
       observarPorRegla = regla.nombre; // descarte automático

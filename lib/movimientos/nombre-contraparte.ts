@@ -37,3 +37,11 @@ export function nombreContraparte(mov: MovimientoParaNombre): NombreContraparte 
 
   return { nombre: extraido, esNueva: limpiar(mov.cuitEmisor) != null };
 }
+
+/** CUIT de la contraparte del movimiento: emisor en compras, receptor en
+ *  ventas (guardado por el pipeline como cuitReceptorEfectivo). */
+export function cuitContraparteDe(mov: { origen: string; cuitEmisor: string | null; extraccionRaw: unknown }): string | null {
+  if (!esVenta(mov.origen)) return mov.cuitEmisor;
+  const raw = mov.extraccionRaw as { cuitReceptorEfectivo?: string } | null;
+  return raw?.cuitReceptorEfectivo ?? null;
+}

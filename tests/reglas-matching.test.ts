@@ -7,7 +7,7 @@ const base = {
   categoriaId: 'c1', distribucionId: null, centroCostoId: 'cc1', clienteId: null, proyectoId: null,
   createdAt: new Date(0), updatedAt: new Date(0),
 } as any;
-const e: EntradaRegla = { creadoPorId: 'u1', cuitEmisor: '30711111118', canalIngreso: 'WEB', texto: 'ypf combustible nafta' };
+const e: EntradaRegla = { creadoPorId: 'u1', cuitContraparte: '30711111118', canalIngreso: 'WEB', texto: 'ypf combustible nafta' };
 
 describe('reglaMatchea', () => {
   it('sin condiciones NO matchea', () => {

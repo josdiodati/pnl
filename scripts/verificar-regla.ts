@@ -1,3 +1,4 @@
+import { cuitContraparteDe } from '@/lib/movimientos/nombre-contraparte';
 /**
  * Verifica el motor de reglas + autovalidación contra un comprobante YA existente
  * (sin subir nada nuevo). Crea una regla que lo matchea por su CUIT (o canal),
@@ -28,7 +29,7 @@ async function main() {
   console.log('=== Comprobante ===');
   console.log({
     id: mov.id, estado: mov.estado, canal: mov.canalIngreso, creadoPorId: mov.creadoPorId,
-    cuitEmisor: mov.cuitEmisor, razonSocialEmisor: razonSocial, descripcion: mov.descripcion,
+    cuitContraparte: cuitContraparteDe(mov), razonSocialEmisor: razonSocial, descripcion: mov.descripcion,
     qrEstado: mov.qrEstado, cae: mov.cae, total: mov.total?.toString() ?? null,
     esComprobanteFiscalArg: extr.esComprobanteFiscalArg, qrAfip: extr.qrAfip ? 'presente' : 'ausente',
     duplicados: dups.length,
@@ -84,7 +85,7 @@ async function main() {
     const reglas = await db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }] });
     const elegida = elegirRegla(reglas, {
       creadoPorId: mov.creadoPorId,
-      cuitEmisor: mov.cuitEmisor,
+      cuitContraparte: cuitContraparteDe(mov),
       canalIngreso: mov.canalIngreso,
       texto: `${razonSocial} ${mov.descripcion ?? ''}`,
     });

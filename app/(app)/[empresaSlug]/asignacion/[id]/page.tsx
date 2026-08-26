@@ -7,7 +7,7 @@ import { DistribucionEditor } from '@/components/distribucion-editor';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { ReglaDesdeAsignacion } from '@/components/regla-desde-asignacion';
 import { buscarReglaPorCuit } from '@/lib/reglas/guardar-desde-asignacion';
-import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
+import { nombreContraparte, cuitContraparteDe, esVenta } from '@/lib/movimientos/nombre-contraparte';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { totalFirmadoDe } from '@/lib/movimientos/query';
 import { elegirRegla } from '@/lib/reglas/matching';
@@ -49,10 +49,11 @@ export default async function AsignacionDetallePage({
   let reglaAplicada: string | null = null;
   let sugerida: Awaited<ReturnType<typeof resolverAsignacionDeRegla>> | null = null;
   if (mov.lineas.length === 0) {
-    const razonSocial = (mov.extraccionRaw as { razonSocialEmisor?: string } | null)?.razonSocialEmisor ?? '';
+    const raw = mov.extraccionRaw as { razonSocialEmisor?: string; razonSocialReceptor?: string } | null;
+    const razonSocial = (esVenta(mov.origen) ? raw?.razonSocialReceptor : raw?.razonSocialEmisor) ?? '';
     const regla = elegirRegla(reglas, {
       creadoPorId: mov.creadoPorId,
-      cuitEmisor: mov.cuitEmisor,
+      cuitContraparte: cuitContraparteDe(mov),
       canalIngreso: mov.canalIngreso,
       texto: `${razonSocial} ${mov.descripcion ?? ''}`,
     });
