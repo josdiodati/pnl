@@ -254,7 +254,8 @@ export function ValidacionForm({
             </div>
             <div>
               <label className="label">Razón social</label>
-              <input name="nuevaContraparte_razonSocial" className="input" />
+              {/* Pre-cargada con lo que leyó la extracción (lo mismo que muestra el listado). */}
+              <input name="nuevaContraparte_razonSocial" defaultValue={razonSocialContraparte ?? ''} className="input" />
             </div>
             <div>
               <label className="label">Tipo</label>
