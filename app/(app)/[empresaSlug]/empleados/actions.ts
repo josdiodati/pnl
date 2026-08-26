@@ -7,7 +7,7 @@ import { parsearImporteAr } from '@/lib/format';
 import { ingestarRecibos } from '@/lib/empleados/ingesta';
 import {
   confirmarRecibo, anularRecibo, guardarFichaEmpleado, guardarDistribucionEmpleado,
-  vincularMovimiento, desvincularMovimiento, agregarCostoManual, eliminarCostoManual,
+  vincularMovimiento, desvincularMovimiento, agregarCostoManual, eliminarCostoManual, reasignarRecibo,
 } from '@/lib/empleados/service';
 import type { TotalesRecibo } from '@/lib/empleados/aritmetica';
 
@@ -180,4 +180,16 @@ export async function eliminarCostoManualAction(formData: FormData): Promise<voi
     volverConError(slug, `empleados/${empleadoId}`, err);
   }
   redirect(`/${slug}/empleados/${empleadoId}?ok=${encodeURIComponent('Costo individual eliminado')}`);
+}
+
+export async function reasignarReciboAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const reciboId = String(formData.get('reciboId'));
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    await reasignarRecibo(ctx, reciboId, leerLineas(formData));
+  } catch (err) {
+    volverConError(slug, `empleados/recibos/${reciboId}`, err);
+  }
+  redirect(`/${slug}/empleados/recibos/${reciboId}?ok=${encodeURIComponent('Distribución reasignada')}`);
 }

@@ -5,7 +5,7 @@ import { MES_LABEL } from '@/lib/periodos';
 import { formatearCuit } from '@/lib/checks/cuit';
 import { DocViewer } from '@/components/doc-viewer';
 import { DistribucionEditor } from '@/components/distribucion-editor';
-import { confirmarReciboAction, anularReciboAction } from '../../actions';
+import { confirmarReciboAction, anularReciboAction, reasignarReciboAction } from '../../actions';
 
 // Revisión de un recibo extraído: documento original a la izquierda, totales
 // editables (con los avisos de camposRevisar) + distribución a la derecha.
@@ -14,7 +14,7 @@ export default async function ReciboPage({
   searchParams,
 }: {
   params: { empresaSlug: string; id: string };
-  searchParams: { error?: string };
+  searchParams: { error?: string; ok?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'ADMINISTRADOR');
   const recibo = await ctx.db.reciboSueldo.findFirst({
@@ -74,6 +74,7 @@ export default async function ReciboPage({
           </p>
         </div>
         {searchParams.error && <p className="text-sm text-red-600">{searchParams.error}</p>}
+        {searchParams.ok && <p className="text-sm text-emerald-700">{searchParams.ok}</p>}
         {recibo.nota && <p className="text-sm text-amber-700">{recibo.nota}</p>}
 
         <form action={confirmarReciboAction} className="space-y-4">
@@ -129,7 +130,17 @@ export default async function ReciboPage({
             <p className="text-sm text-amber-700">El período está cerrado: el recibo no se puede modificar.</p>
           )}
           {recibo.estado === 'CONFIRMADO' && recibo.periodo.estado === 'ABIERTO' && (
-            <p className="text-sm text-slate-500">Este recibo ya está confirmado.</p>
+            <div className="space-y-1">
+              {/* Reasignar: corrige la distribución de un mes ya confirmado sin
+                  anular nada (los totales no se tocan por este camino). */}
+              <button formAction={reasignarReciboAction} className="btn-primary">
+                Guardar reasignación
+              </button>
+              <p className="text-xs text-slate-500">
+                Este recibo ya está confirmado. Podés corregir su distribución acá; para los meses futuros cambiá la
+                distribución en la ficha del empleado.
+              </p>
+            </div>
           )}
           {recibo.estado === 'ANULADO' && <p className="text-sm text-slate-500">Este recibo está anulado.</p>}
         </form>

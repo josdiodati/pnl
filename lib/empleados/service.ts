@@ -85,6 +85,37 @@ export async function confirmarRecibo(
   });
 }
 
+/**
+ * Corrige la distribución de un recibo YA CONFIRMADO (meses pasados con la
+ * asignación mal cargada). Sólo con período abierto; reemplaza las líneas y
+ * queda auditado. No toca la ficha: eso es para los meses futuros.
+ */
+export async function reasignarRecibo(ctx: EmpresaContext, reciboId: string, lineas: LineaDistribucion[]): Promise<void> {
+  const recibo = await reciboEditable(ctx, reciboId);
+  if (recibo.estado !== 'CONFIRMADO') throw new DomainError('Sólo se reasigna un recibo confirmado.');
+  validarDistribucion(lineas);
+  await validarPertenenciaLineas(ctx.db, lineas);
+  const antes = await prisma.reciboDistribucionLinea.findMany({ where: { reciboId: recibo.id } });
+  await prisma.reciboDistribucionLinea.deleteMany({ where: { reciboId: recibo.id } });
+  await prisma.reciboDistribucionLinea.createMany({
+    data: lineas.map((l) => ({
+      reciboId: recibo.id,
+      centroCostoId: l.centroCostoId,
+      clienteId: l.clienteId ?? null,
+      proyectoId: l.proyectoId ?? null,
+      porcentaje: l.porcentaje,
+    })),
+  });
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'ReciboSueldo',
+    entidadId: recibo.id,
+    accion: 'REASIGNAR',
+    antes: { lineas: antes.map((l) => ({ cc: l.centroCostoId, pct: Number(l.porcentaje) })) },
+    despues: { lineas: lineas.map((l) => ({ cc: l.centroCostoId, pct: l.porcentaje })) },
+  });
+}
+
 export async function anularRecibo(ctx: EmpresaContext, reciboId: string, nota: string): Promise<void> {
   const recibo = await reciboEditable(ctx, reciboId);
   if (recibo.estado === 'ANULADO') throw new DomainError('El recibo ya está anulado.');
