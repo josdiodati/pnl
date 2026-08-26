@@ -13,6 +13,9 @@ export type EntradaAutoval = {
   /** Moneda del comprobante y TC (pesos por unidad); una moneda extranjera sin TC no es apta. */
   moneda?: string;
   tipoCambio?: number | null;
+  /** false = el comprobante quedó sin contraparte vinculada (el alta automática
+   *  se abstuvo): no se autovalida, el validador la crea en la cola. */
+  tieneContraparte?: boolean;
 };
 
 const COMPONENTES = [
@@ -30,6 +33,7 @@ export function evaluarAutovalidacion(e: EntradaAutoval): { apto: boolean; motiv
   if (e.moneda && e.moneda !== 'ARS' && !(e.tipoCambio && e.tipoCambio > 0)) {
     motivos.push('moneda extranjera sin tipo de cambio');
   }
+  if (e.tieneContraparte === false) motivos.push('sin contraparte en el maestro');
   if (e.total == null) {
     motivos.push('sin total');
   } else {

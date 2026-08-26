@@ -313,6 +313,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     hayDuplicados: duplicados.length > 0,
     moneda: monedaFinal,
     tipoCambio: tipoCambioFinal,
+    tieneContraparte: contraparte != null,
   });
   let observarPorRegla: string | null = null;
   if (estadoFinal !== 'RETENIDO') {

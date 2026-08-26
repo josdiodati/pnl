@@ -20,6 +20,14 @@ describe('evaluarAutovalidacion', () => {
     expect(evaluarAutovalidacion({ ...ok, total: 121.5 }).apto).toBe(true);
   });
   it('sin total → no apto', () => { expect(evaluarAutovalidacion({ ...ok, total: null }).apto).toBe(false); });
+  it('sin contraparte en el maestro → no apto (queda para que el validador la cree)', () => {
+    const r = evaluarAutovalidacion({ ...ok, tieneContraparte: false });
+    expect(r.apto).toBe(false);
+    expect(r.motivos.join(' ')).toMatch(/contraparte/);
+  });
+  it('con contraparte vinculada → apto', () => {
+    expect(evaluarAutovalidacion({ ...ok, tieneContraparte: true }).apto).toBe(true);
+  });
 });
 
 describe('decidirAutovalidacion', () => {
