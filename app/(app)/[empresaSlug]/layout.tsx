@@ -79,6 +79,7 @@ export default async function EmpresaLayout({
             titulo: 'Control',
             items: [
               { href: `${base}/periodos`, label: 'Períodos y cierres', icono: 'periodo' },
+              { href: `${base}/reportes`, label: 'Reportes P&L', icono: 'reporte' },
               ...(esAdmin ? [{ href: `${base}/auditoria`, label: 'Auditoría', icono: 'auditoria' }] : []),
               ...(esAdmin ? [{ href: `${base}/config`, label: 'Configuración', icono: 'config' }] : []),
             ],
@@ -88,7 +89,6 @@ export default async function EmpresaLayout({
     {
       titulo: 'Próxima etapa',
       items: [
-        { href: `${base}/reportes`, label: 'Reportes P&L', icono: 'reporte', futuro: true },
         { href: `${base}/prorrateos`, label: 'Prorrateos', icono: 'prorrateo', futuro: true },
         { href: `${base}/headcount`, label: 'Headcount', icono: 'headcount', futuro: true },
       ],
