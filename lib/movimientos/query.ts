@@ -62,7 +62,7 @@ export type MovimientoConRelaciones = {
   estado: string;
   total: unknown;
   tipoComprobante: string | null;
-  categoria: { tipo: 'INGRESO' | 'EGRESO'; nombre: string } | null;
+  categoria: { tipo: 'INGRESO' | 'EGRESO'; nombre: string; esCostoPersonal?: boolean } | null;
   lineas: { centroCostoId: string; clienteId: string | null; porcentaje: unknown }[];
   /** Vínculos comprobante→empleado: su monto se descuenta del libro y computa en Costos de personal. */
   vinculosEmpleados?: { monto: unknown }[];
@@ -108,6 +108,9 @@ export function resumirMovimientos(movs: MovimientoConRelaciones[]): ResumenMovi
 
   for (const mov of movs) {
     if (mov.estado !== 'ASIGNADO') continue;
+    // Las categorías "de costo de personal" (ej. Prepagas) computan en el
+    // bloque Costos de personal, no en el resumen general — sin doble conteo.
+    if (mov.categoria?.esCostoPersonal) continue;
     const firmadoBruto = totalFirmadoDe(mov);
     if (firmadoBruto == null) continue;
     // Sin doble conteo: la porción vinculada a empleados sale del libro general

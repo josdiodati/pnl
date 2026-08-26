@@ -46,6 +46,10 @@ export default async function CategoriasPage({
               ))}
             </select>
           </div>
+          <label className="flex items-center gap-2 text-sm pb-2" title="Sus movimientos computan dentro del bloque Costos de personal del libro (ej. Prepagas), no en el gasto general">
+            <input type="checkbox" name="esCostoPersonal" value="1" defaultChecked={editando?.esCostoPersonal} />
+            Es costo de personal
+          </label>
           <button className="btn-primary">{editando ? 'Guardar cambios' : 'Crear'}</button>
           {editando && (
             <Link href={`/${params.empresaSlug}/maestros/categorias`} className="btn-secondary">Cancelar</Link>
@@ -61,7 +65,12 @@ export default async function CategoriasPage({
           <tbody>
             {categorias.map((c) => (
               <tr key={c.id} className={!c.activa ? 'opacity-50' : ''}>
-                <td className={c.padreId ? 'pl-8' : 'font-medium'}>{c.nombre}</td>
+                <td className={c.padreId ? 'pl-8' : 'font-medium'}>
+                  {c.nombre}
+                  {c.esCostoPersonal && (
+                    <span className="ml-1.5 inline-block rounded bg-red-50 text-red-700 px-1.5 py-0.5 text-[10px]">personal</span>
+                  )}
+                </td>
                 <td>{c.tipo === 'INGRESO' ? 'Ingreso' : 'Egreso'}</td>
                 <td>{c.padreId ? categorias.find((p) => p.id === c.padreId)?.nombre : '—'}</td>
                 <td>{c.activa ? 'Activa' : 'Inactiva'}</td>

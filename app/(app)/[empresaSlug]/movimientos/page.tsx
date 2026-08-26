@@ -51,11 +51,31 @@ export default async function MovimientosPage({
     where: { movimientoId: { in: movimientos.map((m) => m.id) } },
     include: { empleado: { include: { distribucion: true } } },
   });
+  // Movimientos de categorías "de costo de personal" (ej. Prepagas): computan
+  // acá y NO en el resumen general (resumirMovimientos ya los excluye). Si un
+  // movimiento de estas categorías tuviera vínculos, se ignoran: el movimiento
+  // entero ya entra al bloque.
+  const idsPersonal = new Set(
+    movimientos.filter((m) => m.categoria?.esCostoPersonal && m.estado === 'ASIGNADO').map((m) => m.id),
+  );
   const resumenPersonal = resumirCostosPersonal(
     recibosConfirmados
       .filter((r) => dentroDelRango(r.periodo.anio, r.periodo.mes))
       .map((r) => ({ costoTotalEmpleador: r.costoTotalEmpleador, lineas: r.lineas })),
-    vinculosDeSeleccion.map((v) => ({ monto: v.monto, lineasEmpleado: v.empleado.distribucion })),
+    vinculosDeSeleccion
+      .filter((v) => !idsPersonal.has(v.movimientoId))
+      .map((v) => ({ monto: v.monto, lineasEmpleado: v.empleado.distribucion })),
+    movimientos
+      .filter((m) => idsPersonal.has(m.id))
+      .map((m) => ({
+        firmadoCentavos: totalFirmadoDe(m as never) ?? 0,
+        lineas: m.lineas.map((l) => ({
+          centroCostoId: l.centroCostoId,
+          clienteId: l.clienteId ?? null,
+          proyectoId: (l as { proyectoId?: string | null }).proyectoId ?? null,
+          porcentaje: l.porcentaje,
+        })),
+      })),
   );
   // Si se filtra por centro de costo o cliente, el bloque muestra sólo esa porción.
   const personalMostrado = searchParams.centroCostoId

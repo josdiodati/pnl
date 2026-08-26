@@ -4,6 +4,7 @@ import { DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import { validarDistribucion, type LineaDistribucion } from '@/lib/movimientos/distribucion';
 import { validarPertenenciaLineas } from '@/lib/movimientos/service';
+import { getOrCreatePeriodo } from '@/lib/periodos';
 import type { TotalesRecibo } from './aritmetica';
 
 // Acciones de usuario sobre empleados y recibos. Todas asumen que el caller ya
@@ -148,6 +149,50 @@ export async function guardarDistribucionEmpleado(ctx: EmpresaContext, empleadoI
     entidadId: empleadoId,
     accion: 'DISTRIBUCION',
     despues: { lineas: lineas.map((l) => ({ cc: l.centroCostoId, pct: l.porcentaje })) },
+  });
+}
+
+/**
+ * Costo individual de SEGUIMIENTO por empleado y período (ej. su plan de
+ * prepaga). No impacta el P&L: el gasto real ya entra una vez por la factura
+ * agregada (categoría marcada "es costo de personal").
+ */
+export async function agregarCostoManual(
+  ctx: EmpresaContext,
+  params: { empleadoId: string; anio: number; mes: number; concepto: string; monto: number },
+): Promise<void> {
+  const empleado = await ctx.db.empleado.findFirst({ where: { id: params.empleadoId } });
+  if (!empleado) throw new DomainError('Empleado inexistente.');
+  if (!params.concepto.trim()) throw new DomainError('El concepto es obligatorio.');
+  if (!(params.monto > 0)) throw new DomainError('El monto debe ser mayor a 0.');
+  if (!(params.mes >= 1 && params.mes <= 12) || !Number.isInteger(params.anio)) {
+    throw new DomainError('Período inválido.');
+  }
+  const periodo = await getOrCreatePeriodo(ctx.db, new Date(Date.UTC(params.anio, params.mes - 1, 1)));
+  const costo = await prisma.costoManualEmpleado.create({
+    data: { empleadoId: params.empleadoId, periodoId: periodo.id, concepto: params.concepto.trim(), monto: params.monto },
+  });
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'Empleado',
+    entidadId: params.empleadoId,
+    accion: 'COSTO_MANUAL_ALTA',
+    despues: { costoId: costo.id, periodo: `${params.anio}-${params.mes}`, concepto: params.concepto, monto: params.monto },
+  });
+}
+
+export async function eliminarCostoManual(ctx: EmpresaContext, params: { empleadoId: string; costoId: string }): Promise<void> {
+  const costo = await ctx.db.costoManualEmpleado.findFirst({
+    where: { id: params.costoId, empleadoId: params.empleadoId },
+  });
+  if (!costo) throw new DomainError('El costo no existe.');
+  await ctx.db.costoManualEmpleado.delete({ where: { id: costo.id } });
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'Empleado',
+    entidadId: params.empleadoId,
+    accion: 'COSTO_MANUAL_BAJA',
+    antes: { costoId: costo.id, concepto: costo.concepto, monto: Number(costo.monto) },
   });
 }
 

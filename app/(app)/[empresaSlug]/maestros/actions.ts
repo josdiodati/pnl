@@ -33,6 +33,7 @@ export async function guardarCategoria(formData: FormData): Promise<void> {
     const nombre = String(formData.get('nombre') ?? '').trim();
     const tipo = String(formData.get('tipo')) as 'INGRESO' | 'EGRESO';
     const padreId = String(formData.get('padreId') ?? '') || null;
+    const esCostoPersonal = formData.get('esCostoPersonal') === '1';
     if (!nombre) throw new DomainError('El nombre es obligatorio.');
     if (padreId) {
       const padre = await ctx.db.categoria.findFirst({ where: { id: padreId } });
@@ -45,11 +46,11 @@ export async function guardarCategoria(formData: FormData): Promise<void> {
       if (!antes) throw new DomainError('Categoría inexistente.');
       const hijas = await ctx.db.categoria.count({ where: { padreId: id } });
       if (padreId && hijas > 0) throw new DomainError('Una categoría con subcategorías no puede pasar a ser hija.');
-      await ctx.db.categoria.update({ where: { id }, data: { nombre, tipo, padreId } });
-      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Categoria', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, tipo, padreId } });
+      await ctx.db.categoria.update({ where: { id }, data: { nombre, tipo, padreId, esCostoPersonal } });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Categoria', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, tipo, padreId, esCostoPersonal } });
     } else {
-      const nueva = await ctx.db.categoria.create({ data: { nombre, tipo, padreId } as never });
-      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Categoria', entidadId: nueva.id, accion: 'CREAR', despues: { nombre, tipo, padreId } });
+      const nueva = await ctx.db.categoria.create({ data: { nombre, tipo, padreId, esCostoPersonal } as never });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Categoria', entidadId: nueva.id, accion: 'CREAR', despues: { nombre, tipo, padreId, esCostoPersonal } });
     }
   } catch (err) {
     volver(slug, 'categorias', mensaje(err));

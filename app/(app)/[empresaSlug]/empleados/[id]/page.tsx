@@ -6,7 +6,10 @@ import { formatMoney, formatFecha } from '@/lib/format';
 import { formatearCuit } from '@/lib/checks/cuit';
 import { DistribucionEditor } from '@/components/distribucion-editor';
 import { OkBanner } from '@/components/error-banner';
-import { guardarFichaAction, guardarDistribucionAction, vincularAction, desvincularAction } from '../actions';
+import {
+  guardarFichaAction, guardarDistribucionAction, vincularAction, desvincularAction,
+  agregarCostoManualAction, eliminarCostoManualAction,
+} from '../actions';
 
 // Ficha del empleado: datos editables, distribución por defecto, historial de
 // costo por período y comprobantes vinculados (prepaga, etc.).
@@ -24,6 +27,7 @@ export default async function EmpleadoPage({
       distribucion: true,
       recibos: { include: { periodo: true }, orderBy: { createdAt: 'desc' } },
       vinculos: { include: { movimiento: { include: { contraparte: true, periodo: true } } } },
+      costosManuales: { include: { periodo: true }, orderBy: { createdAt: 'desc' } },
     },
   });
   if (!empleado) notFound();
@@ -41,10 +45,10 @@ export default async function EmpleadoPage({
   ]);
 
   // Historial: recibos confirmados + vinculados, agrupados por período.
-  const porPeriodo = new Map<string, { anio: number; mes: number; mensual: number; sac: number; otros: number; vinculado: number }>();
+  const porPeriodo = new Map<string, { anio: number; mes: number; mensual: number; sac: number; otros: number; vinculado: number; individual: number }>();
   const bucket = (anio: number, mes: number) => {
     const k = `${anio}-${mes}`;
-    if (!porPeriodo.has(k)) porPeriodo.set(k, { anio, mes, mensual: 0, sac: 0, otros: 0, vinculado: 0 });
+    if (!porPeriodo.has(k)) porPeriodo.set(k, { anio, mes, mensual: 0, sac: 0, otros: 0, vinculado: 0, individual: 0 });
     return porPeriodo.get(k)!;
   };
   for (const r of empleado.recibos) {
@@ -58,6 +62,11 @@ export default async function EmpleadoPage({
   for (const v of empleado.vinculos) {
     if (v.movimiento.estado !== 'ASIGNADO' || !v.movimiento.periodo) continue;
     bucket(v.movimiento.periodo.anio, v.movimiento.periodo.mes).vinculado += Number(v.monto);
+  }
+  // Los costos individuales son SEGUIMIENTO: se muestran en su columna pero no
+  // suman al costo total contable (el gasto real entra por la factura agregada).
+  for (const c of empleado.costosManuales) {
+    bucket(c.periodo.anio, c.periodo.mes).individual += Number(c.monto);
   }
   const historial = [...porPeriodo.values()].sort((a, b) => b.anio - a.anio || b.mes - a.mes);
 
@@ -141,6 +150,7 @@ export default async function EmpleadoPage({
               <th className="text-right">Otros recibos</th>
               <th className="text-right">Vinculados</th>
               <th className="text-right">Costo total</th>
+              <th className="text-right" title="Seguimiento manual: no suma al costo total contable">Individual (seg.)</th>
             </tr>
           </thead>
           <tbody>
@@ -152,15 +162,61 @@ export default async function EmpleadoPage({
                 <td className="num">{h.otros ? formatMoney(h.otros) : '—'}</td>
                 <td className="num">{h.vinculado ? formatMoney(h.vinculado) : '—'}</td>
                 <td className="num font-medium">{formatMoney(h.mensual + h.sac + h.otros + h.vinculado)}</td>
+                <td className="num text-slate-500">{h.individual ? formatMoney(h.individual) : '—'}</td>
               </tr>
             ))}
             {historial.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center text-slate-400 py-6">Sin costos registrados todavía.</td>
+                <td colSpan={7} className="text-center text-slate-400 py-6">Sin costos registrados todavía.</td>
               </tr>
             )}
           </tbody>
         </table>
+        <p className="px-3 pb-3 text-[11px] text-slate-500">
+          «Individual (seg.)» es seguimiento manual (ej. su plan de prepaga): no suma al costo total contable — ese
+          gasto ya entra una vez por la factura agregada de la categoría de personal.
+        </p>
+      </div>
+
+      <div className="card p-3 space-y-3">
+        <p className="text-sm font-medium">Costos individuales (seguimiento)</p>
+        {empleado.costosManuales.map((c) => (
+          <form key={c.id} action={eliminarCostoManualAction} className="flex items-center gap-2 text-sm">
+            <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+            <input type="hidden" name="empleadoId" value={empleado.id} />
+            <input type="hidden" name="costoId" value={c.id} />
+            <span className="grow">
+              {MES_LABEL[c.periodo.mes]} {c.periodo.anio} · {c.concepto}
+            </span>
+            <span className="num font-medium">{formatMoney(Number(c.monto))}</span>
+            <button className="btn-secondary text-xs">Quitar</button>
+          </form>
+        ))}
+        <form action={agregarCostoManualAction} className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+          <input type="hidden" name="empleadoId" value={empleado.id} />
+          <div>
+            <label className="label">Mes</label>
+            <select name="mes" className="input text-sm" defaultValue={new Date().getMonth() + 1}>
+              {MES_LABEL.slice(1).map((m, i) => (
+                <option key={m} value={i + 1}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Año</label>
+            <input name="anio" type="number" className="input text-sm w-24" defaultValue={new Date().getFullYear()} />
+          </div>
+          <div className="grow min-w-48">
+            <label className="label">Concepto</label>
+            <input name="concepto" className="input text-sm" placeholder="p.ej. Plan OSDE 210" />
+          </div>
+          <div>
+            <label className="label">Monto ($)</label>
+            <input name="monto" className="input text-sm w-32" placeholder="0,00" />
+          </div>
+          <button className="btn-primary text-sm">Agregar</button>
+        </form>
       </div>
 
       <div className="card overflow-x-auto">

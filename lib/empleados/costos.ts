@@ -8,6 +8,8 @@ import { importesPorLinea, type LineaDistribucion } from '@/lib/movimientos/dist
 export type LineaResumen = { centroCostoId: string; clienteId: string | null; proyectoId: string | null; porcentaje: unknown };
 export type ReciboParaResumen = { costoTotalEmpleador: unknown; lineas: LineaResumen[] };
 export type VinculoParaResumen = { monto: unknown; lineasEmpleado: LineaResumen[] };
+/** Movimiento ASIGNADO de una categoría marcada "es costo de personal" (ej. Prepagas). */
+export type MovimientoPersonalParaResumen = { firmadoCentavos: number; lineas: LineaResumen[] };
 
 export type ResumenPersonal = {
   total: number;
@@ -35,7 +37,11 @@ function acumular(resumen: ResumenPersonal, firmado: number, lineas: LineaResume
   }
 }
 
-export function resumirCostosPersonal(recibos: ReciboParaResumen[], vinculos: VinculoParaResumen[]): ResumenPersonal {
+export function resumirCostosPersonal(
+  recibos: ReciboParaResumen[],
+  vinculos: VinculoParaResumen[],
+  movimientosPersonal: MovimientoPersonalParaResumen[] = [],
+): ResumenPersonal {
   const resumen: ResumenPersonal = { total: 0, porCentroCosto: new Map(), porCliente: new Map() };
   for (const r of recibos) {
     if (r.costoTotalEmpleador == null) continue;
@@ -44,6 +50,9 @@ export function resumirCostosPersonal(recibos: ReciboParaResumen[], vinculos: Vi
   for (const v of vinculos) {
     if (v.monto == null) continue;
     acumular(resumen, -Math.round(Number(v.monto) * 100), v.lineasEmpleado);
+  }
+  for (const m of movimientosPersonal) {
+    acumular(resumen, m.firmadoCentavos, m.lineas);
   }
   return resumen;
 }

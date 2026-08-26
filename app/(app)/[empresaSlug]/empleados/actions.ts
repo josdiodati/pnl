@@ -7,7 +7,7 @@ import { parsearImporteAr } from '@/lib/format';
 import { ingestarRecibos } from '@/lib/empleados/ingesta';
 import {
   confirmarRecibo, anularRecibo, guardarFichaEmpleado, guardarDistribucionEmpleado,
-  vincularMovimiento, desvincularMovimiento,
+  vincularMovimiento, desvincularMovimiento, agregarCostoManual, eliminarCostoManual,
 } from '@/lib/empleados/service';
 import type { TotalesRecibo } from '@/lib/empleados/aritmetica';
 
@@ -150,4 +150,34 @@ export async function desvincularAction(formData: FormData): Promise<void> {
     volverConError(slug, `empleados/${empleadoId}`, err);
   }
   redirect(`/${slug}/empleados/${empleadoId}?ok=${encodeURIComponent('Vínculo eliminado')}`);
+}
+
+export async function agregarCostoManualAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const empleadoId = String(formData.get('empleadoId'));
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    await agregarCostoManual(ctx, {
+      empleadoId,
+      anio: Number(formData.get('anio')),
+      mes: Number(formData.get('mes')),
+      concepto: String(formData.get('concepto') ?? ''),
+      monto: numeroOpcional(formData, 'monto') ?? 0,
+    });
+  } catch (err) {
+    volverConError(slug, `empleados/${empleadoId}`, err);
+  }
+  redirect(`/${slug}/empleados/${empleadoId}?ok=${encodeURIComponent('Costo individual agregado')}`);
+}
+
+export async function eliminarCostoManualAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const empleadoId = String(formData.get('empleadoId'));
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    await eliminarCostoManual(ctx, { empleadoId, costoId: String(formData.get('costoId')) });
+  } catch (err) {
+    volverConError(slug, `empleados/${empleadoId}`, err);
+  }
+  redirect(`/${slug}/empleados/${empleadoId}?ok=${encodeURIComponent('Costo individual eliminado')}`);
 }

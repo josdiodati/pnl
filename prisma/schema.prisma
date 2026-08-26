@@ -91,6 +91,9 @@ model Categoria {
   tipo      TipoCategoria
   padreId   String? // hierarchy, max 2 levels
   activa    Boolean       @default(true)
+  // Sus movimientos computan dentro del bloque "Costos de personal" del libro
+  // (ej. Prepagas) y salen del resumen general — sin doble conteo.
+  esCostoPersonal Boolean @default(false)
   empresa   Empresa       @relation(fields: [empresaId], references: [id])
   padre     Categoria?    @relation("jerarquia", fields: [padreId], references: [id])
   hijas     Categoria[]   @relation("jerarquia")
@@ -403,6 +406,7 @@ model Periodo {
   empresa      Empresa       @relation(fields: [empresaId], references: [id])
   movimientos  Movimiento[]
   recibosSueldo ReciboSueldo[]
+  costosManualesEmpleados CostoManualEmpleado[]
 
   @@unique([empresaId, anio, mes])
 }
@@ -437,6 +441,7 @@ model Empleado {
   empresa      Empresa   @relation(fields: [empresaId], references: [id])
   distribucion EmpleadoDistribucionLinea[]
   recibos      ReciboSueldo[]
+  costosManuales CostoManualEmpleado[]
   vinculos     MovimientoEmpleado[]
   createdAt    DateTime  @default(now())
 
@@ -518,6 +523,20 @@ model ReciboDistribucionLinea {
   centroCosto   CentroCosto  @relation("reciboLineas", fields: [centroCostoId], references: [id])
   cliente       Cliente?     @relation("reciboLineas", fields: [clienteId], references: [id])
   proyecto      Proyecto?    @relation("reciboLineas", fields: [proyectoId], references: [id])
+}
+
+// Costo individual de seguimiento por empleado y período, cargado a mano en la
+// ficha (ej. cuánto cuesta su plan de prepaga). NO impacta el P&L: el gasto
+// real ya entra una sola vez por la factura agregada (categoría de personal).
+model CostoManualEmpleado {
+  id         String   @id @default(cuid())
+  empleadoId String
+  periodoId  String
+  concepto   String
+  monto      Decimal  @db.Decimal(18, 2)
+  empleado   Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  periodo    Periodo  @relation(fields: [periodoId], references: [id])
+  createdAt  DateTime @default(now())
 }
 
 // Vínculo comprobante→empleado (prepaga, etc.). Montos, no porcentajes: una
