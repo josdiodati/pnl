@@ -12,6 +12,7 @@ export default async function ProyectosPage({
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const items = await ctx.db.proyecto.findMany({ orderBy: { nombre: 'asc' } });
+  const clientes = await ctx.db.cliente.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } });
   const editando = searchParams.editar ? items.find((p) => p.id === searchParams.editar) : null;
 
   return (
@@ -31,6 +32,15 @@ export default async function ProyectosPage({
             <label className="label">Código (opcional)</label>
             <input name="codigo" className="input" defaultValue={editando?.codigo ?? ''} />
           </div>
+          <div className="w-56">
+            <label className="label" title="Un proyecto clasificado sólo aparece bajo su cliente; sin clasificar aparece en todos">Cliente (árbol)</label>
+            <select name="clienteId" className="input" defaultValue={editando?.clienteId ?? ''}>
+              <option value="">— Sin clasificar —</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
+            </select>
+          </div>
           <button className="btn-primary">{editando ? 'Guardar cambios' : 'Crear'}</button>
           {editando && (
             <Link href={`/${params.empresaSlug}/maestros/proyectos`} className="btn-secondary">Cancelar</Link>
@@ -41,13 +51,14 @@ export default async function ProyectosPage({
       <div className="card overflow-x-auto">
         <table className="table-base">
           <thead>
-            <tr><th>Nombre</th><th>Código</th><th>Estado</th><th></th></tr>
+            <tr><th>Nombre</th><th>Código</th><th>Cliente</th><th>Estado</th><th></th></tr>
           </thead>
           <tbody>
             {items.map((p) => (
               <tr key={p.id} className={!p.activo ? 'opacity-50' : ''}>
                 <td className="font-medium">{p.nombre}</td>
                 <td>{p.codigo ?? '—'}</td>
+                <td>{p.clienteId ? clientes.find((c) => c.id === p.clienteId)?.nombre ?? '?' : '—'}</td>
                 <td>{p.activo ? 'Activo' : 'Inactivo'}</td>
                 <td className="text-right whitespace-nowrap">
                   <Link href={`?editar=${p.id}`} className="text-sm underline text-slate-600 mr-3">Editar</Link>

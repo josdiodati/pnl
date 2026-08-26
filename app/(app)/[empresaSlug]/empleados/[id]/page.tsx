@@ -126,8 +126,8 @@ export default async function EmpleadoPage({
           <p className="text-xs text-slate-500">Cada recibo nuevo la hereda al confirmarse. Cambiarla no toca recibos ya confirmados.</p>
           <DistribucionEditor
             centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
-            clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre }))}
-            proyectos={proyectos.map((p) => ({ id: p.id, nombre: p.nombre }))}
+            clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre, centroCostoId: c.centroCostoId }))}
+            proyectos={proyectos.map((p) => ({ id: p.id, nombre: p.nombre, clienteId: p.clienteId }))}
             inicial={empleado.distribucion.map((l) => ({
               centroCostoId: l.centroCostoId,
               clienteId: l.clienteId ?? '',

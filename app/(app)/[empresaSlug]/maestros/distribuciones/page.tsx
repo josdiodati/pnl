@@ -40,7 +40,7 @@ export default async function DistribucionesPage({
           <DistribucionEditor
             key={editando?.id ?? 'nueva'}
             centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
-            clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre }))}
+            clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre, centroCostoId: c.centroCostoId }))}
             proyectos={proyectos.map((c) => ({ id: c.id, nombre: c.nombre }))}
             inicial={editando?.lineas.map((l) => ({
               centroCostoId: l.centroCostoId,

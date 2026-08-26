@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { crearAsientoAction, crearVentaAction } from '@/app/(app)/[empresaSlug]/asientos/actions';
-import { DistribucionEditor, type OpcionId, type PlantillaOpcion } from './distribucion-editor';
+import { DistribucionEditor, type OpcionId, type OpcionCliente, type OpcionProyecto, type PlantillaOpcion } from './distribucion-editor';
 
 export type CategoriaOpcion = { id: string; nombre: string; tipo: 'INGRESO' | 'EGRESO'; padreId: string | null };
 export type ContraparteOpcion = { id: string; razonSocial: string; tipo: 'PROVEEDOR' | 'CLIENTE' | 'AMBOS' };
@@ -24,8 +24,8 @@ export function AsientoManualForm({
   categorias: CategoriaOpcion[];
   contrapartes: ContraparteOpcion[];
   centros: OpcionId[];
-  clientes: OpcionId[];
-  proyectos: OpcionId[];
+  clientes: OpcionCliente[];
+  proyectos: OpcionProyecto[];
   plantillas: PlantillaOpcion[];
   puedeValidar: boolean;
 }) {
@@ -118,8 +118,8 @@ export function VentaManualForm({
   categorias: CategoriaOpcion[];
   contrapartes: ContraparteOpcion[];
   centros: OpcionId[];
-  clientes: OpcionId[];
-  proyectos: OpcionId[];
+  clientes: OpcionCliente[];
+  proyectos: OpcionProyecto[];
   plantillas: PlantillaOpcion[];
   puedeValidar: boolean;
 }) {

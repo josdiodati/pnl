@@ -9,6 +9,10 @@ import { useState } from 'react';
 // linea_porcentaje so plain server actions can read them as parallel arrays.
 
 export type OpcionId = { id: string; nombre: string };
+// Árbol de asignación: cliente clasificado bajo un centro, proyecto bajo un
+// cliente. Sin clasificar (null/undefined) = disponible en cualquier rama.
+export type OpcionCliente = OpcionId & { centroCostoId?: string | null };
+export type OpcionProyecto = OpcionId & { clienteId?: string | null };
 export type LineaEditor = { centroCostoId: string; clienteId: string; proyectoId: string; porcentaje: string };
 export type PlantillaOpcion = {
   id: string;
@@ -27,8 +31,8 @@ export function DistribucionEditor({
   totalFirmado,
 }: {
   centros: OpcionId[];
-  clientes: OpcionId[];
-  proyectos: OpcionId[];
+  clientes: OpcionCliente[];
+  proyectos: OpcionProyecto[];
   plantillas?: PlantillaOpcion[];
   inicial?: LineaEditor[];
   /** Signed total in pesos; when present, each row shows its derived amount live. */
@@ -48,8 +52,30 @@ export function DistribucionEditor({
   const sumaRedondeada = Math.round(suma * 10000) / 10000;
   const completo = sumaRedondeada === 100;
 
+  // Opciones válidas por fila según el árbol (los sin clasificar valen siempre).
+  const clientesDe = (centroCostoId: string) =>
+    clientes.filter((c) => !c.centroCostoId || c.centroCostoId === centroCostoId);
+  const proyectosDe = (clienteId: string) =>
+    proyectos.filter((p) => !p.clienteId || (clienteId !== '' && p.clienteId === clienteId));
+
   function actualizar(i: number, campo: keyof LineaEditor, valor: string) {
-    setLineas((prev) => prev.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)));
+    setLineas((prev) =>
+      prev.map((l, j) => {
+        if (j !== i) return l;
+        const nueva = { ...l, [campo]: valor };
+        // Cascada: al cambiar el centro se limpia un cliente que ya no
+        // corresponde (y eso arrastra al proyecto); ídem cliente→proyecto.
+        if (campo === 'centroCostoId' && nueva.clienteId) {
+          const cli = clientes.find((c) => c.id === nueva.clienteId);
+          if (cli?.centroCostoId && cli.centroCostoId !== valor) nueva.clienteId = '';
+        }
+        if ((campo === 'centroCostoId' || campo === 'clienteId') && nueva.proyectoId) {
+          const pr = proyectos.find((p) => p.id === nueva.proyectoId);
+          if (pr?.clienteId && pr.clienteId !== nueva.clienteId) nueva.proyectoId = '';
+        }
+        return nueva;
+      }),
+    );
   }
 
   function dividir() {
@@ -135,7 +161,7 @@ export function DistribucionEditor({
             className="input !w-44"
           >
             <option value="">Sin cliente</option>
-            {clientes.map((c) => (
+            {clientesDe(l.centroCostoId).map((c) => (
               <option key={c.id} value={c.id}>{c.nombre}</option>
             ))}
           </select>
@@ -146,7 +172,7 @@ export function DistribucionEditor({
             className="input !w-44"
           >
             <option value="">Sin proyecto</option>
-            {proyectos.map((p) => (
+            {proyectosDe(l.clienteId).map((p) => (
               <option key={p.id} value={p.id}>{p.nombre}</option>
             ))}
           </select>

@@ -113,6 +113,7 @@ model CentroCosto {
   nombre    String
   tipo      TipoCentroCosto
   activo    Boolean         @default(true)
+  clientesHijos Cliente[]   @relation("clientesDelCentro")
   empresa   Empresa         @relation(fields: [empresaId], references: [id])
   lineas    MovimientoLinea[]
   plantillaLineas PlantillaDistribucionLinea[]
@@ -129,6 +130,11 @@ model Cliente {
   nombre    String
   codigo    String?
   activo    Boolean @default(true)
+  // Árbol de asignación: un cliente clasificado sólo vale bajo su centro de
+  // costo; sin clasificar (null) vale bajo cualquiera.
+  centroCostoId String?
+  centroCosto   CentroCosto? @relation("clientesDelCentro", fields: [centroCostoId], references: [id])
+  proyectosHijos Proyecto[]  @relation("proyectosDelCliente")
   empresa   Empresa @relation(fields: [empresaId], references: [id])
   lineas    MovimientoLinea[]
   plantillaLineas PlantillaDistribucionLinea[]
@@ -145,6 +151,9 @@ model Proyecto {
   nombre    String
   codigo    String?
   activo    Boolean @default(true)
+  // Árbol de asignación: un proyecto clasificado sólo vale bajo su cliente.
+  clienteId String?
+  cliente   Cliente? @relation("proyectosDelCliente", fields: [clienteId], references: [id])
   empresa   Empresa @relation(fields: [empresaId], references: [id])
   lineas    MovimientoLinea[]
   plantillaLineas PlantillaDistribucionLinea[]

@@ -36,8 +36,8 @@ export default async function AsientosPage({
     categorias: categorias.map((c) => ({ id: c.id, nombre: c.nombre, tipo: c.tipo, padreId: c.padreId })),
     contrapartes: contrapartes.map((c) => ({ id: c.id, razonSocial: c.razonSocial, tipo: c.tipo })),
     centros: centros.map((c) => ({ id: c.id, nombre: c.nombre })),
-    clientes: clientes.map((c) => ({ id: c.id, nombre: c.nombre })),
-    proyectos: proyectos.map((c) => ({ id: c.id, nombre: c.nombre })),
+    clientes: clientes.map((c) => ({ id: c.id, nombre: c.nombre, centroCostoId: c.centroCostoId })),
+    proyectos: proyectos.map((c) => ({ id: c.id, nombre: c.nombre, clienteId: c.clienteId })),
     plantillas: plantillasDist.map((p) => ({
       id: p.id,
       nombre: p.nombre,

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { validarAction } from '@/app/(app)/[empresaSlug]/validacion/actions';
 import { mensajeAritmetica, parseImporte } from '@/lib/checks/aritmetica';
 import { IMPORTES } from '@/lib/movimientos/importes';
-import { DistribucionEditor, type OpcionId, type PlantillaOpcion } from './distribucion-editor';
+import { DistribucionEditor, type OpcionId, type OpcionCliente, type OpcionProyecto, type PlantillaOpcion } from './distribucion-editor';
 import { ReglaDesdeAsignacion, type ReglaExistente } from './regla-desde-asignacion';
 
 // Right-hand form of the side-by-side validation screen. Fields flagged by the
@@ -91,8 +91,8 @@ export function ValidacionForm({
   contrapartes: ContraparteOpcion[];
   categorias: CategoriaOpcion[];
   centros: OpcionId[];
-  clientes: OpcionId[];
-  proyectos: OpcionId[];
+  clientes: OpcionCliente[];
+  proyectos: OpcionProyecto[];
   plantillas: PlantillaOpcion[];
   reglaSugerida?: string | null;
   razonSocialContraparte?: string | null;

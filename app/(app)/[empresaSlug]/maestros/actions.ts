@@ -122,15 +122,22 @@ export async function guardarCliente(formData: FormData): Promise<void> {
     const id = String(formData.get('id') ?? '');
     const nombre = String(formData.get('nombre') ?? '').trim();
     const codigo = String(formData.get('codigo') ?? '').trim() || null;
+    // Árbol de asignación: el cliente puede clasificarse bajo un centro de
+    // costo (null = sin clasificar, disponible en cualquier rama).
+    const centroCostoId = String(formData.get('centroCostoId') ?? '') || null;
     if (!nombre) throw new DomainError('El nombre es obligatorio.');
+    if (centroCostoId) {
+      const cc = await ctx.db.centroCosto.findFirst({ where: { id: centroCostoId } });
+      if (!cc) throw new DomainError('Centro de costo inexistente.');
+    }
     if (id) {
       const antes = await ctx.db.cliente.findFirst({ where: { id } });
       if (!antes) throw new DomainError('Cliente inexistente.');
-      await ctx.db.cliente.update({ where: { id }, data: { nombre, codigo } });
-      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Cliente', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, codigo } });
+      await ctx.db.cliente.update({ where: { id }, data: { nombre, codigo, centroCostoId } });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Cliente', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, codigo, centroCostoId } });
     } else {
-      const nuevo = await ctx.db.cliente.create({ data: { nombre, codigo } as never });
-      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Cliente', entidadId: nuevo.id, accion: 'CREAR', despues: { nombre, codigo } });
+      const nuevo = await ctx.db.cliente.create({ data: { nombre, codigo, centroCostoId } as never });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Cliente', entidadId: nuevo.id, accion: 'CREAR', despues: { nombre, codigo, centroCostoId } });
     }
   } catch (err) {
     volver(slug, 'clientes', mensaje(err));
@@ -163,14 +170,20 @@ export async function guardarProyecto(formData: FormData): Promise<void> {
     const nombre = String(formData.get('nombre') ?? '').trim();
     const codigo = String(formData.get('codigo') ?? '').trim() || null;
     if (!nombre) throw new DomainError('El nombre es obligatorio.');
+    // Árbol: el proyecto puede clasificarse bajo un cliente (null = libre).
+    const clienteId = String(formData.get('clienteId') ?? '') || null;
+    if (clienteId) {
+      const cli = await ctx.db.cliente.findFirst({ where: { id: clienteId } });
+      if (!cli) throw new DomainError('Cliente inexistente.');
+    }
     if (id) {
       const antes = await ctx.db.proyecto.findFirst({ where: { id } });
       if (!antes) throw new DomainError('Proyecto inexistente.');
-      await ctx.db.proyecto.update({ where: { id }, data: { nombre, codigo } });
-      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Proyecto', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, codigo } });
+      await ctx.db.proyecto.update({ where: { id }, data: { nombre, codigo, clienteId } });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Proyecto', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, codigo, clienteId } });
     } else {
-      const nuevo = await ctx.db.proyecto.create({ data: { nombre, codigo } as never });
-      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Proyecto', entidadId: nuevo.id, accion: 'CREAR', despues: { nombre, codigo } });
+      const nuevo = await ctx.db.proyecto.create({ data: { nombre, codigo, clienteId } as never });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'Proyecto', entidadId: nuevo.id, accion: 'CREAR', despues: { nombre, codigo, clienteId } });
     }
   } catch (err) {
     volver(slug, 'proyectos', mensaje(err));
@@ -294,11 +307,21 @@ export async function guardarRegla(formData: FormData): Promise<void> {
     if (data.centroCostoId && !(await ctx.db.centroCosto.findFirst({ where: { id: data.centroCostoId } }))) {
       throw new DomainError('Centro de costo inexistente.');
     }
-    if (data.clienteId && !(await ctx.db.cliente.findFirst({ where: { id: data.clienteId } }))) {
-      throw new DomainError('Cliente inexistente.');
+    if (data.clienteId) {
+      const cli = await ctx.db.cliente.findFirst({ where: { id: data.clienteId } });
+      if (!cli) throw new DomainError('Cliente inexistente.');
+      // Árbol de asignación: un cliente clasificado sólo vale bajo su centro.
+      if (cli.centroCostoId && cli.centroCostoId !== data.centroCostoId) {
+        throw new DomainError(`El cliente «${cli.nombre}» pertenece a otro centro de costo.`);
+      }
     }
-    if (data.proyectoId && !(await ctx.db.proyecto.findFirst({ where: { id: data.proyectoId } }))) {
-      throw new DomainError('Proyecto inexistente.');
+    if (data.proyectoId) {
+      const pr = await ctx.db.proyecto.findFirst({ where: { id: data.proyectoId } });
+      if (!pr) throw new DomainError('Proyecto inexistente.');
+      // Ídem: un proyecto clasificado sólo vale bajo su cliente.
+      if (pr.clienteId && pr.clienteId !== data.clienteId) {
+        throw new DomainError(`El proyecto «${pr.nombre}» pertenece a otro cliente.`);
+      }
     }
     if (id) {
       const antes = await ctx.db.reglaAsignacion.findFirst({ where: { id } });

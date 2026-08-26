@@ -102,10 +102,18 @@ export async function validarPertenenciaLineas(db: ScopedDb, lineas: LineaDistri
     if (linea.clienteId) {
       const cli = await db.cliente.findFirst({ where: { id: linea.clienteId } });
       if (!cli) throw new DomainError('Cliente inexistente en esta empresa.');
+      // Árbol de asignación: un cliente clasificado sólo vale bajo su centro.
+      if (cli.centroCostoId && cli.centroCostoId !== linea.centroCostoId) {
+        throw new DomainError(`El cliente «${cli.nombre}» pertenece a otro centro de costo.`);
+      }
     }
     if (linea.proyectoId) {
       const pr = await db.proyecto.findFirst({ where: { id: linea.proyectoId } });
       if (!pr) throw new DomainError('Proyecto inexistente en esta empresa.');
+      // Ídem: un proyecto clasificado sólo vale bajo su cliente.
+      if (pr.clienteId && pr.clienteId !== (linea.clienteId ?? null)) {
+        throw new DomainError(`El proyecto «${pr.nombre}» pertenece a otro cliente.`);
+      }
     }
   }
 }

@@ -118,8 +118,8 @@ export default async function ReciboPage({
             <p className="text-xs text-slate-500 mb-2">Distribución (pre-cargada desde la ficha; el ajuste vale sólo para este recibo)</p>
             <DistribucionEditor
               centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
-              clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre }))}
-              proyectos={proyectos.map((p) => ({ id: p.id, nombre: p.nombre }))}
+              clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre, centroCostoId: c.centroCostoId }))}
+              proyectos={proyectos.map((p) => ({ id: p.id, nombre: p.nombre, clienteId: p.clienteId }))}
               inicial={lineasIniciales}
             />
           </div>

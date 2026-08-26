@@ -165,8 +165,8 @@ export default async function AsignacionDetallePage({
             {/* Distribution editor */}
             <DistribucionEditor
               centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
-              clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre }))}
-              proyectos={proyectos.map((p) => ({ id: p.id, nombre: p.nombre }))}
+              clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre, centroCostoId: c.centroCostoId }))}
+              proyectos={proyectos.map((p) => ({ id: p.id, nombre: p.nombre, clienteId: p.clienteId }))}
               plantillas={plantillas.map((p) => ({
                 id: p.id,
                 nombre: p.nombre,

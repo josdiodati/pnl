@@ -12,6 +12,7 @@ export default async function ClientesPage({
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const items = await ctx.db.cliente.findMany({ orderBy: { nombre: 'asc' } });
+  const centros = await ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } });
   const editando = searchParams.editar ? items.find((c) => c.id === searchParams.editar) : null;
 
   return (
@@ -31,6 +32,15 @@ export default async function ClientesPage({
             <label className="label">Código (opcional)</label>
             <input name="codigo" className="input" defaultValue={editando?.codigo ?? ''} />
           </div>
+          <div className="w-56">
+            <label className="label" title="Un cliente clasificado sólo aparece bajo su centro; sin clasificar aparece en todos">Centro de costo (árbol)</label>
+            <select name="centroCostoId" className="input" defaultValue={editando?.centroCostoId ?? ''}>
+              <option value="">— Sin clasificar —</option>
+              {centros.map((cc) => (
+                <option key={cc.id} value={cc.id}>{cc.nombre}</option>
+              ))}
+            </select>
+          </div>
           <button className="btn-primary">{editando ? 'Guardar cambios' : 'Crear'}</button>
           {editando && (
             <Link href={`/${params.empresaSlug}/maestros/clientes`} className="btn-secondary">Cancelar</Link>
@@ -41,13 +51,14 @@ export default async function ClientesPage({
       <div className="card overflow-x-auto">
         <table className="table-base">
           <thead>
-            <tr><th>Nombre</th><th>Código</th><th>Estado</th><th></th></tr>
+            <tr><th>Nombre</th><th>Código</th><th>Centro de costo</th><th>Estado</th><th></th></tr>
           </thead>
           <tbody>
             {items.map((c) => (
               <tr key={c.id} className={!c.activo ? 'opacity-50' : ''}>
                 <td className="font-medium">{c.nombre}</td>
                 <td>{c.codigo ?? '—'}</td>
+                <td>{c.centroCostoId ? centros.find((cc) => cc.id === c.centroCostoId)?.nombre ?? '?' : '—'}</td>
                 <td>{c.activo ? 'Activo' : 'Inactivo'}</td>
                 <td className="text-right whitespace-nowrap">
                   <Link href={`?editar=${c.id}`} className="text-sm underline text-slate-600 mr-3">Editar</Link>
