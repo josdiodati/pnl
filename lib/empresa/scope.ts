@@ -20,6 +20,7 @@ export const SCOPED_MODELS = new Set([
   'TelegramVinculo',
   'Empleado',
   'ReciboSueldo',
+  'LoteIngesta',
 ]);
 
 // Child models without empresaId: scoped through their parent relation.

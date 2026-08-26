@@ -31,8 +31,21 @@ export async function procesarEmailEntrante(payload: EmailInPayload): Promise<vo
   const creadorId = await resolverCreadorCanal(empresa.id, payload.from);
   if (!creadorId) throw new Error(`La empresa ${slug} no tiene usuarios para asignar como cargador`);
 
-  for (const adj of payload.adjuntos) {
-    if (!MIMES_PERMITIDOS.has(adj.contentType)) continue; // skip signatures, etc.
+  const adjuntos = payload.adjuntos.filter((adj) => MIMES_PERMITIDOS.has(adj.contentType));
+  if (!adjuntos.length) return;
+
+  // Un mail = un lote de ingesta (para el historial de /carga).
+  const lote = await prisma.loteIngesta.create({
+    data: {
+      empresaId: empresa.id,
+      canal: 'EMAIL',
+      creadoPorId: creadorId,
+      origenDetalle: payload.from || null,
+      archivos: adjuntos.length,
+    },
+  });
+
+  for (const adj of adjuntos) {
     await ingestarComprobante({
       empresaId: empresa.id,
       usuarioId: creadorId,
@@ -40,6 +53,7 @@ export async function procesarEmailEntrante(payload: EmailInPayload): Promise<vo
       filename: adj.nombre || 'adjunto.pdf',
       mime: adj.contentType,
       canal: 'EMAIL',
+      loteId: lote.id,
     });
   }
 }

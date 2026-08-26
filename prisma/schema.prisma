@@ -17,6 +17,7 @@ model Usuario {
   empresas     UsuarioEmpresa[]
   movimientosCreados   Movimiento[] @relation("creadoPor")
   movimientosValidados Movimiento[] @relation("validadoPor")
+  lotesIngesta         LoteIngesta[]
   createdAt    DateTime         @default(now())
 }
 
@@ -39,6 +40,7 @@ model Empresa {
   plantillasRecurrentes PlantillaRecurrente[]
   reglasAsignacion      ReglaAsignacion[]
   movimientos           Movimiento[]
+  lotesIngesta          LoteIngesta[]
   periodos              Periodo[]
   auditLogs             AuditLog[]
   telegramVinculos      TelegramVinculo[]
@@ -328,6 +330,7 @@ model Movimiento {
   validadoPorId   String?
   motivoAnulacion String?
   canalIngreso    String? // WEB | FOTO | EMAIL | TELEGRAM | MANUAL
+  loteId          String? // lote de ingesta (un drop web / un mail / un mensaje)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -338,9 +341,29 @@ model Movimiento {
   creadoPor   Usuario      @relation("creadoPor", fields: [creadoPorId], references: [id])
   validadoPor Usuario?     @relation("validadoPor", fields: [validadoPorId], references: [id])
   vinculosEmpleados MovimientoEmpleado[]
+  lote        LoteIngesta? @relation(fields: [loteId], references: [id])
 
   @@index([empresaId, estado])
   @@index([empresaId, fechaDevengamiento])
+}
+
+// Lote de ingesta: agrupa los movimientos de "una vez que se procesaron
+// archivos" (un drop en la web, un mail con adjuntos, un mensaje de Telegram)
+// para mostrar progreso y resultados en /carga. Sin contadores materializados:
+// el resumen se deriva de los movimientos del lote (resumirLote).
+model LoteIngesta {
+  id            String   @id @default(cuid())
+  empresaId     String
+  canal         String // WEB | FOTO | EMAIL | TELEGRAM
+  creadoPorId   String?
+  origenDetalle String? // remitente del email / usuario de telegram
+  archivos      Int      @default(0) // cantidad esperada de comprobantes
+  empresa       Empresa  @relation(fields: [empresaId], references: [id])
+  creadoPor     Usuario? @relation(fields: [creadoPorId], references: [id])
+  movimientos   Movimiento[]
+  createdAt     DateTime @default(now())
+
+  @@index([empresaId, createdAt])
 }
 
 enum OrigenLinea {

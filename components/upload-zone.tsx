@@ -21,13 +21,19 @@ export function UploadZone({ empresaSlug }: { empresaSlug: string }) {
     if (!lista.length) return;
     startTransition(async () => {
       const total: SubirResultado = { ok: 0, errores: [] };
-      // Batches of 5 keep each request small enough for the action body limit
+      // Batches of 5 keep each request small enough for the action body limit.
+      // Un drop = un lote: la primera tanda lo crea (con el total esperado) y
+      // las siguientes reusan el loteId que devuelve el server.
+      let loteId: string | undefined;
       for (let i = 0; i < lista.length; i += 5) {
         const fd = new FormData();
         fd.set('empresaSlug', empresaSlug);
         fd.set('canal', canal);
+        fd.set('totalLote', String(lista.length));
+        if (loteId) fd.set('loteId', loteId);
         for (const f of lista.slice(i, i + 5)) fd.append('archivos', f);
         const r = await subirComprobantesAction(fd);
+        loteId = loteId ?? r.loteId;
         total.ok += r.ok;
         total.errores.push(...r.errores);
       }

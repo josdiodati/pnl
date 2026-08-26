@@ -92,6 +92,16 @@ export async function procesarUpdateTelegram(payload: TelegramInPayload): Promis
     return; // nothing ingestable in this update
   }
 
+  // Un mensaje = un lote de ingesta (para el historial de /carga).
+  const lote = await prisma.loteIngesta.create({
+    data: {
+      empresaId: vinculo.empresaId,
+      canal: 'TELEGRAM',
+      creadoPorId: creadorId,
+      origenDetalle: payload.chatId ? `chat ${payload.chatId}` : null,
+      archivos: 1,
+    },
+  });
   const { movimientoId } = await ingestarComprobante({
     empresaId: vinculo.empresaId,
     usuarioId: creadorId,
@@ -99,6 +109,7 @@ export async function procesarUpdateTelegram(payload: TelegramInPayload): Promis
     filename: payload.fileName ?? 'telegram.jpg',
     mime: payload.mime ?? 'image/jpeg',
     canal: 'TELEGRAM',
+    loteId: lote.id,
   });
   await responder(payload.chatId, `Recibido ✔. Lo estoy procesando (movimiento ${movimientoId.slice(-6)}). Te aviso si queda algo para revisar.`);
 }

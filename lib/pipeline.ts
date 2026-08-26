@@ -42,6 +42,8 @@ export async function ingestarComprobante(params: {
   filename: string;
   mime: string;
   canal: CanalIngreso;
+  /** Lote de ingesta al que pertenece (un drop web / un mail / un mensaje). */
+  loteId?: string | null;
 }): Promise<{ movimientoId: string }> {
   const db = scopedDb(params.empresaId);
   const storage = getFileStorage();
@@ -61,6 +63,7 @@ export async function ingestarComprobante(params: {
       archivoMime: params.mime,
       archivoHash: hash,
       creadoPorId: params.usuarioId,
+      loteId: params.loteId ?? null,
     } as never,
   });
 
