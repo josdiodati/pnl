@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { formatMoney, formatFecha } from '@/lib/format';
-import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
+import { nombreContraparte, esVenta } from '@/lib/movimientos/nombre-contraparte';
 
 export default async function AsignacionPage({
   params,
@@ -31,6 +31,7 @@ export default async function AsignacionPage({
           <thead>
             <tr>
               <th>Contraparte</th>
+              <th>Tipo</th>
               <th>Comprobante</th>
               <th>Fecha</th>
               <th className="text-right">Total</th>
@@ -48,6 +49,13 @@ export default async function AsignacionPage({
                     <span className="ml-1 text-xs rounded bg-blue-50 text-blue-700 px-1">nueva</span>
                   )}
                 </td>
+                <td>
+                  {esVenta(m.origen) ? (
+                    <span className="inline-block rounded bg-emerald-100 text-emerald-800 px-1.5 py-0.5 text-xs font-medium">Venta</span>
+                  ) : (
+                    <span className="inline-block rounded bg-red-50 text-red-700 px-1.5 py-0.5 text-xs font-medium">Gasto</span>
+                  )}
+                </td>
                 <td className="whitespace-nowrap text-slate-600">
                   {m.tipoComprobante?.replace(/_/g, ' ') ?? '—'} {m.puntoVenta ? `${m.puntoVenta}-` : ''}{m.numero ?? ''}
                 </td>
@@ -63,7 +71,7 @@ export default async function AsignacionPage({
             })}
             {movimientos.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-center text-slate-400 py-8">
+                <td colSpan={6} className="text-center text-slate-400 py-8">
                   No hay comprobantes validados pendientes de asignación.
                 </td>
               </tr>
