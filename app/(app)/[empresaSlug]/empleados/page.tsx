@@ -149,24 +149,41 @@ export default async function EmpleadosPage({
 
   // ---------- Vista: detalle mensual (con filtro por centro) ----------
   if (vista === 'detalle') {
-    const [empleados, recibosPeriodo, vinculos] = await Promise.all([
+    const [empleados, recibosPeriodo, vinculos, movsPersonalMes] = await Promise.all([
       ctx.db.empleado.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
       ctx.db.reciboSueldo.findMany({
         where: { periodo: { anio, mes }, estado: { in: ['CONFIRMADO', 'PENDIENTE_REVISION'] } },
         include: { empleado: true, lineas: true },
       }),
-      ctx.db.movimientoEmpleado.findMany({ where: { movimiento: { estado: 'ASIGNADO', periodo: { anio, mes } } } }),
+      ctx.db.movimientoEmpleado.findMany({
+        where: { movimiento: { estado: 'ASIGNADO', periodo: { anio, mes } } },
+        include: { empleado: { include: { distribucion: true } } },
+      }),
+      ctx.db.movimiento.findMany({
+        where: { estado: 'ASIGNADO', periodo: { anio, mes }, categoria: { esCostoPersonal: true } },
+        include: { categoria: true, lineas: true },
+      }),
     ]);
 
+    // Porcentaje de unas líneas que cae en el centro filtrado (1 si no hay filtro).
+    const pctEnCentro = (lineas: { centroCostoId: string; porcentaje: unknown }[]) => {
+      if (!centroFiltro || centroFiltro === 'SIN_ASIGNAR') return 1;
+      return lineas.filter((l) => l.centroCostoId === centroFiltro).reduce((a, l) => a + Number(l.porcentaje), 0) / 100;
+    };
+
+    // Con filtro activo, las columnas muestran LA PORCIÓN de ese centro (un
+    // empleado repartido 60/40 no aparece por su costo completo) — así la
+    // tabla cuadra con la celda de la matriz.
     const vinculadoPorEmpleado = new Map<string, number>();
     for (const v of vinculos) {
-      vinculadoPorEmpleado.set(v.empleadoId, (vinculadoPorEmpleado.get(v.empleadoId) ?? 0) + Number(v.monto));
+      const porcion = Number(v.monto) * pctEnCentro(v.empleado.distribucion);
+      vinculadoPorEmpleado.set(v.empleadoId, (vinculadoPorEmpleado.get(v.empleadoId) ?? 0) + porcion);
     }
     const recibosPorEmpleado = new Map<string, { confirmado: number; pendiente: boolean; centros: Set<string> }>();
     for (const r of recibosPeriodo) {
       const acc = recibosPorEmpleado.get(r.empleadoId) ?? { confirmado: 0, pendiente: false, centros: new Set<string>() };
       if (r.estado === 'CONFIRMADO') {
-        acc.confirmado += Number(r.costoTotalEmpleador ?? 0);
+        acc.confirmado += Number(r.costoTotalEmpleador ?? 0) * pctEnCentro(r.lineas);
         for (const l of r.lineas) acc.centros.add(l.centroCostoId);
         if (r.lineas.length === 0) acc.pendiente = true; // confirmado sin líneas: cuenta como sin asignar
       } else acc.pendiente = true;
@@ -181,9 +198,20 @@ export default async function EmpleadosPage({
       return centroFiltro === 'SIN_ASIGNAR' ? r.pendiente : r.centros.has(centroFiltro);
     });
 
-    const costoTotal =
-      [...recibosPorEmpleado.values()].reduce((a, r) => a + r.confirmado, 0) +
-      [...vinculadoPorEmpleado.values()].reduce((a, v) => a + v, 0);
+    // Prepagas del mes (agregado por categoría de personal, no por empleado):
+    // con filtro, sólo la porción de las líneas de ese centro — así el KPI
+    // coincide con la fila "Costo total" de la matriz.
+    const prepagasMes = movsPersonalMes.reduce((acc, mv) => {
+      const f = Math.abs(totalFirmadoDe(mv as never) ?? 0) / 100;
+      if (!f) return acc;
+      return acc + f * (centroFiltro && centroFiltro !== 'SIN_ASIGNAR' ? pctEnCentro(mv.lineas) : 1);
+    }, 0);
+
+    const idsFiltrados = new Set(filtrados.map((e) => e.id));
+    const costoEmpleados =
+      [...recibosPorEmpleado.entries()].reduce((a, [id, r]) => a + (idsFiltrados.has(id) || !centroFiltro ? r.confirmado : 0), 0) +
+      [...vinculadoPorEmpleado.entries()].reduce((a, [id, v]) => a + (idsFiltrados.has(id) || !centroFiltro ? v : 0), 0);
+    const costoTotal = costoEmpleados + (centroFiltro === 'SIN_ASIGNAR' ? 0 : prepagasMes);
     const mesAnterior = mes === 1 ? { anio: anio - 1, mes: 12 } : { anio, mes: mes - 1 };
     const mesSiguiente = mes === 12 ? { anio: anio + 1, mes: 1 } : { anio, mes: mes + 1 };
     const qsCentro = centroFiltro ? `&centro=${centroFiltro}` : '';
@@ -195,8 +223,16 @@ export default async function EmpleadosPage({
         {encabezado}
         <div className="grid sm:grid-cols-3 gap-3">
           <div className="card p-3">
-            <p className="text-xs text-slate-500">Costo total de personal · {MES_LABEL[mes]} {anio}</p>
+            <p className="text-xs text-slate-500">
+              Costo total de personal · {MES_LABEL[mes]} {anio}{nombreCentro ? ` · ${nombreCentro}` : ''}
+            </p>
             <p className="text-xl font-semibold tabular-nums text-red-700">{formatMoney(costoTotal)}</p>
+            {centroFiltro !== 'SIN_ASIGNAR' && prepagasMes > 0 && (
+              <p className="text-[11px] text-slate-500 mt-1">
+                Empleados {formatMoney(costoEmpleados)} + Prepagas {formatMoney(prepagasMes)} (agregado, no figura por
+                empleado en la tabla)
+              </p>
+            )}
           </div>
           <div className="card p-3">
             <p className="text-xs text-slate-500">Empleados con recibo</p>
@@ -223,7 +259,14 @@ export default async function EmpleadosPage({
         <div className="card overflow-x-auto">
           <table className="table-base">
             <thead>
-              <tr><th>Empleado</th><th>Categoría / sector</th><th className="text-right">Recibos</th><th className="text-right">Vinculados</th><th className="text-right">Costo total</th><th>Estado</th></tr>
+              <tr>
+                <th>Empleado</th>
+                <th>Categoría / sector</th>
+                <th className="text-right">Recibos{nombreCentro && centroFiltro !== 'SIN_ASIGNAR' ? ' (porción)' : ''}</th>
+                <th className="text-right">Vinculados{nombreCentro && centroFiltro !== 'SIN_ASIGNAR' ? ' (porción)' : ''}</th>
+                <th className="text-right">Costo total</th>
+                <th>Estado</th>
+              </tr>
             </thead>
             <tbody>
               {filtrados.map((e) => {
