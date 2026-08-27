@@ -58,6 +58,13 @@ describe('applyEmpresaScope (unitario)', () => {
       movimiento: { empresaId: 'emp1' },
     });
   });
+
+  it('scopea los modelos de resúmenes', () => {
+    expect(applyEmpresaScope('Resumen', 'findMany', {}, 'emp1').where).toEqual({ empresaId: 'emp1' });
+    expect(applyEmpresaScope('ResumenLinea', 'findMany', {}, 'emp1').where).toEqual({
+      resumen: { empresaId: 'emp1' },
+    });
+  });
 });
 
 describe('jerarquía de roles', () => {

@@ -62,6 +62,12 @@ describe('máquina de estados de movimientos (doc 07)', () => {
     expect(esEstadoInicialValido('VENTA_MANUAL', 'INGRESADO')).toBe(false);
   });
 
+  it('un movimiento imputado desde un resumen nace asignado o validado', () => {
+    expect(esEstadoInicialValido('RESUMEN', 'ASIGNADO')).toBe(true);
+    expect(esEstadoInicialValido('RESUMEN', 'VALIDADO')).toBe(true);
+    expect(esEstadoInicialValido('RESUMEN', 'INGRESADO')).toBe(false);
+  });
+
   it('solo ASIGNADO impacta el resultado', () => {
     expect(impactaResultado('ASIGNADO')).toBe(true);
     for (const e of ['INGRESADO', 'PROCESANDO', 'PENDIENTE_VALIDACION', 'RETENIDO', 'OBSERVADO', 'VALIDADO', 'ANULADO', 'ERROR_PROCESAMIENTO'] as const) {

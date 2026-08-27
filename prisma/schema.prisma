@@ -46,6 +46,7 @@ model Empresa {
   telegramVinculos      TelegramVinculo[]
   empleados             Empleado[]
   recibosSueldo         ReciboSueldo[]
+  resumenes             Resumen[]
   createdAt             DateTime         @default(now())
 }
 
@@ -179,6 +180,7 @@ model Contraparte {
   categoriaDefaultId      String?
   distribucionDefaultId   String? // default distribution template
   instruccionesExtraccion String? // recurring corrections, injected into the LLM prompt
+  descriptoresResumen     Json? // lista de strings normalizados
   activa                  Boolean         @default(true)
   empresa                 Empresa         @relation(fields: [empresaId], references: [id])
   movimientos             Movimiento[]
@@ -259,6 +261,7 @@ enum OrigenMovimiento {
   VENTA_COMPROBANTE
   ASIENTO_MANUAL
   VENTA_MANUAL
+  RESUMEN
 }
 
 enum EstadoMovimiento {
@@ -338,6 +341,7 @@ model Movimiento {
 
   // Assignment (double dimension, percentage split)
   lineas MovimientoLinea[]
+  lineasResumen  ResumenLinea[]
 
   flags           Json? // future metadata (e.g. recurring template id, pending "I/O" flag)
   periodoId       String?
@@ -417,11 +421,86 @@ model Periodo {
   cerradoAt    DateTime?
   empresa      Empresa       @relation(fields: [empresaId], references: [id])
   movimientos  Movimiento[]
+  resumenes    Resumen[]
   recibosSueldo ReciboSueldo[]
   costosManualesEmpleados CostoManualEmpleado[]
   prepagasEmpleados       PrepagaEmpleado[]
 
   @@unique([empresaId, anio, mes])
+}
+
+// ---------- Resúmenes de tarjeta y banco (Spec E) ----------
+
+enum TipoResumen {
+  TARJETA
+  BANCO
+}
+
+enum EstadoResumen {
+  PROCESANDO
+  EXTRAIDO
+  ERROR_PROCESAMIENTO
+}
+
+enum EstadoLineaResumen {
+  PENDIENTE
+  SUGERIDA
+  CONCILIADA
+  IMPUTADA
+  IGNORADA
+}
+
+model Resumen {
+  id             String        @id @default(cuid())
+  empresaId      String
+  tipo           TipoResumen
+  emisor         String // "VISA Santander", "Cuenta Frances"
+  periodoId      String
+  fechaCierre    DateTime?
+  totalDeclarado Decimal?      @db.Decimal(18, 2) // control de completitud
+  estado         EstadoResumen @default(PROCESANDO)
+  nota           String? // error de extracción u observaciones
+
+  archivoKey    String
+  archivoNombre String
+  archivoMime   String
+  archivoHash   String
+
+  extraccionRaw       Json?
+  tokensEntrada       Int?
+  tokensSalida        Int?
+  tokensCacheCreacion Int?
+  tokensCacheLectura  Int?
+  modeloExtractor     String?
+
+  empresa  Empresa        @relation(fields: [empresaId], references: [id])
+  periodo  Periodo        @relation(fields: [periodoId], references: [id])
+  lineas   ResumenLinea[]
+  createdAt DateTime      @default(now())
+
+  @@index([empresaId, createdAt])
+}
+
+model ResumenLinea {
+  id          String             @id @default(cuid())
+  resumenId   String
+  orden       Int
+  fecha       DateTime?
+  descriptor  String // tal como viene en el resumen
+  monto       Decimal?           @db.Decimal(18, 2) // FIRMADO en ARS; null = consumo USD sin pesificar
+  moneda      Moneda             @default(ARS)
+  montoOrigen Decimal?           @db.Decimal(18, 2) // importe en moneda origen (TC implícito)
+  cuotas      String? // "3/6"
+  cuenta      String? // cuenta/tarjeta dentro del PDF (BBVA consolida varias)
+  titular     String? // resúmenes de tarjeta agrupan por titular
+  estado      EstadoLineaResumen @default(PENDIENTE)
+  movimientoId String? // conciliado (existente) o imputado (creado)
+  candidatos  Json? // [{movimientoId, score, motivo}] del matching
+  motivoIgnorada String?
+
+  resumen    Resumen     @relation(fields: [resumenId], references: [id], onDelete: Cascade)
+  movimiento Movimiento? @relation(fields: [movimientoId], references: [id])
+  createdAt  DateTime    @default(now())
 }
 
 // ---------- Empleados (Spec D: costos de personal) ----------

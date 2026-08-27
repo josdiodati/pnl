@@ -52,6 +52,9 @@ const ESTADOS_INICIALES: Record<OrigenMovimiento, EstadoMovimiento[]> = {
   VENTA_COMPROBANTE: ['INGRESADO'],
   ASIENTO_MANUAL: ['PENDIENTE_VALIDACION', 'VALIDADO', 'ASIGNADO'],
   VENTA_MANUAL: ['PENDIENTE_VALIDACION', 'VALIDADO', 'ASIGNADO'],
+  // Imputado desde una línea de resumen: el resumen es el respaldo documental;
+  // nace asignado (imputación completa) o validado (sin distribución).
+  RESUMEN: ['ASIGNADO', 'VALIDADO'],
 };
 
 export function puedeTransicionar(desde: EstadoMovimiento, hacia: EstadoMovimiento): boolean {
