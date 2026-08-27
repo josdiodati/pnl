@@ -14,6 +14,7 @@ export type FiltrosMovimientos = {
   origen?: string;
   estado?: string;
   canal?: string;
+  q?: string; // búsqueda libre: contraparte, descripción, número, CUIT, archivo
 };
 
 // Movimientos es el libro: muestra SÓLO los movimientos asignados, que son
@@ -46,6 +47,18 @@ export function buildWhereMovimientos(
   // por querystring se ignora, nunca puede ampliar el rango.
   where.estado = { in: ESTADOS_LIBRO } as never;
   if (f.canal) where.canalIngreso = f.canal;
+  const q = f.q?.trim();
+  if (q) {
+    const contains = { contains: q, mode: 'insensitive' as const };
+    where.OR = [
+      { descripcion: contains },
+      { numero: contains },
+      { cuitEmisor: contains },
+      { archivoNombre: contains },
+      { contraparte: { razonSocial: contains } },
+      { contraparte: { cuit: contains } },
+    ];
+  }
   if (f.centroCostoId || f.clienteId) {
     where.lineas = {
       some: {

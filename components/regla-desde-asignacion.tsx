@@ -9,6 +9,9 @@
 // El conflicto con una regla previa se resuelve acá y no después del submit
 // porque depende solo del CUIT, que ya se conoce al renderizar.
 
+import { OcrPopup } from './ocr-popup';
+import type { OcrParaRegla } from '@/lib/reglas/ocr-para-regla';
+
 export type ReglaExistente = {
   nombre: string;
   imputacion: string;
@@ -18,10 +21,13 @@ export function ReglaDesdeAsignacion({
   cuit,
   razonSocial,
   existente,
+  ocr,
 }: {
   cuit: string | null;
   razonSocial: string | null;
   existente: ReglaExistente | null;
+  /** Lo que leyó el OCR, para elegir la palabra clave desde un pop-up. */
+  ocr?: OcrParaRegla | null;
 }) {
   // Sin CUIT no hay condición que construir: la regla matchearía cualquier cosa.
   if (!cuit) return null;
@@ -47,7 +53,10 @@ export function ReglaDesdeAsignacion({
 
       <div className="grid sm:grid-cols-2 gap-2">
         <div>
-          <label className="label" htmlFor="reglaPalabraClave">…y además diga (opcional)</label>
+          <div className="flex items-center justify-between gap-2">
+            <label className="label" htmlFor="reglaPalabraClave">…y además diga (opcional)</label>
+            {ocr && <OcrPopup ocr={ocr} />}
+          </div>
           <input
             id="reglaPalabraClave"
             name="reglaPalabraClave"

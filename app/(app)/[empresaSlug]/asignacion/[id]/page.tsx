@@ -12,6 +12,7 @@ import { formatMoney, formatFecha } from '@/lib/format';
 import { totalFirmadoDe } from '@/lib/movimientos/query';
 import { elegirRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
+import { ocrParaRegla } from '@/lib/reglas/ocr-para-regla';
 import { asignarAction } from '../actions';
 import { volverAPendienteAction } from '../../validacion/actions';
 
@@ -186,6 +187,7 @@ export default async function AsignacionDetallePage({
               cuit={mov.cuitEmisor}
               razonSocial={nombreContraparte(mov).nombre}
               existente={reglaVigente ? { nombre: reglaVigente.nombre, imputacion: imputacionDe(reglaVigente) } : null}
+              ocr={ocrParaRegla({ extraccionRaw: mov.extraccionRaw, descripcion: mov.descripcion, razonSocialContraparte: nombreContraparte(mov).nombre })}
             />
 
             <div className="flex gap-2 pt-2">

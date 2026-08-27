@@ -12,6 +12,7 @@ import { MES_LABEL } from '@/lib/periodos';
 import { elegirRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { reglaVigenteParaCuit } from '@/lib/reglas/desde-asignacion';
+import { ocrParaRegla } from '@/lib/reglas/ocr-para-regla';
 import { nombreContraparte, cuitContraparteDe, esVenta } from '@/lib/movimientos/nombre-contraparte';
 import {
   observarAction,
@@ -256,6 +257,7 @@ export default async function ValidacionDetallePage({
                 lineas: lineasIniciales,
               }}
               reglaSugerida={reglaSugerida}
+              ocrRegla={ocrParaRegla({ extraccionRaw: mov.extraccionRaw, descripcion: mov.descripcion, razonSocialContraparte: nombreContraparte(mov).nombre })}
               categorias={categorias.map((c) => ({ id: c.id, nombre: c.nombre, tipo: c.tipo, padreId: c.padreId }))}
               centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
               clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre, centroCostoId: c.centroCostoId }))}

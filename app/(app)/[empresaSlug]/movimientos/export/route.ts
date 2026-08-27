@@ -19,7 +19,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
   const sp = req.nextUrl.searchParams;
   const filtros: FiltrosMovimientos = Object.fromEntries(
-    ['desde', 'hasta', 'categoriaId', 'centroCostoId', 'clienteId', 'contraparteId', 'origen', 'estado', 'canal']
+    ['desde', 'hasta', 'categoriaId', 'centroCostoId', 'clienteId', 'contraparteId', 'origen', 'estado', 'canal', 'q']
       .map((k) => [k, sp.get(k) ?? undefined]),
   );
 

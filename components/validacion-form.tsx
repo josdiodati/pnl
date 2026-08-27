@@ -6,6 +6,7 @@ import { mensajeAritmetica, parseImporte } from '@/lib/checks/aritmetica';
 import { IMPORTES, desglosarIvaIncluido } from '@/lib/movimientos/importes';
 import { DistribucionEditor, type OpcionId, type OpcionCliente, type OpcionProyecto, type PlantillaOpcion } from './distribucion-editor';
 import { ReglaDesdeAsignacion, type ReglaExistente } from './regla-desde-asignacion';
+import type { OcrParaRegla } from '@/lib/reglas/ocr-para-regla';
 
 // Right-hand form of the side-by-side validation screen. Fields flagged by the
 // deterministic checks come highlighted in yellow with the reason; the happy
@@ -86,6 +87,7 @@ export function ValidacionForm({
   reglaSugerida,
   razonSocialContraparte,
   reglaVigente,
+  ocrRegla,
 }: {
   empresaSlug: string;
   mov: CampoMovimiento;
@@ -98,6 +100,7 @@ export function ValidacionForm({
   reglaSugerida?: string | null;
   razonSocialContraparte?: string | null;
   reglaVigente?: ReglaExistente | null;
+  ocrRegla?: OcrParaRegla | null;
 }) {
   const [contraparteId, setContraparteId] = useState(mov.contraparteId);
   const [categoriaId, setCategoriaId] = useState(mov.categoriaId);
@@ -404,6 +407,7 @@ export function ValidacionForm({
               cuit={mov.cuitEmisor || null}
               razonSocial={razonSocialContraparte ?? null}
               existente={reglaVigente ?? null}
+              ocr={ocrRegla ?? null}
             />
           </div>
         )}

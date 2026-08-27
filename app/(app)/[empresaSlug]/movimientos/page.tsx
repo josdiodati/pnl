@@ -151,6 +151,16 @@ export default async function MovimientosPage({
       </div>
 
       <form method="get" className="card p-3 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 items-end">
+        <div className="col-span-2">
+          <label className="label">Buscar</label>
+          <input
+            type="search"
+            name="q"
+            defaultValue={searchParams.q ?? ''}
+            className="input text-xs"
+            placeholder="contraparte, descripción, número, CUIT, archivo…"
+          />
+        </div>
         <div>
           <label className="label">Desde</label>
           <input type="date" name="desde" defaultValue={searchParams.desde} className="input text-xs" />
