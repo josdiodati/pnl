@@ -10,44 +10,44 @@ datasource db {
 // ---------- Identity & multi-company ----------
 
 model Usuario {
-  id           String           @id @default(cuid())
-  email        String           @unique
-  passwordHash String
-  nombre       String
-  empresas     UsuarioEmpresa[]
-  movimientosCreados   Movimiento[] @relation("creadoPor")
-  movimientosValidados Movimiento[] @relation("validadoPor")
+  id                   String           @id @default(cuid())
+  email                String           @unique
+  passwordHash         String
+  nombre               String
+  empresas             UsuarioEmpresa[]
+  movimientosCreados   Movimiento[]     @relation("creadoPor")
+  movimientosValidados Movimiento[]     @relation("validadoPor")
   lotesIngesta         LoteIngesta[]
-  createdAt    DateTime         @default(now())
+  createdAt            DateTime         @default(now())
 }
 
 model Empresa {
-  id                    String           @id @default(cuid())
-  slug                  String           @unique // used in URL, inbound email and telegram linking
-  razonSocial           String
-  cuit                  String
-  inicioEjercicioFiscal Int              @default(7) // month 1-12, default July
-  logoKey               String?
-  telegramCodigoVinculo String?          @unique // one-time-ish linking code shown in config screen
-  usuarios              UsuarioEmpresa[]
-  invitaciones          Invitacion[]
-  categorias            Categoria[]
-  centrosCosto          CentroCosto[]
-  clientes              Cliente[]
-  proyectos             Proyecto[]
-  contrapartes          Contraparte[]
+  id                     String                  @id @default(cuid())
+  slug                   String                  @unique // used in URL, inbound email and telegram linking
+  razonSocial            String
+  cuit                   String
+  inicioEjercicioFiscal  Int                     @default(7) // month 1-12, default July
+  logoKey                String?
+  telegramCodigoVinculo  String?                 @unique // one-time-ish linking code shown in config screen
+  usuarios               UsuarioEmpresa[]
+  invitaciones           Invitacion[]
+  categorias             Categoria[]
+  centrosCosto           CentroCosto[]
+  clientes               Cliente[]
+  proyectos              Proyecto[]
+  contrapartes           Contraparte[]
   plantillasDistribucion PlantillaDistribucion[]
-  plantillasRecurrentes PlantillaRecurrente[]
-  reglasAsignacion      ReglaAsignacion[]
-  movimientos           Movimiento[]
-  lotesIngesta          LoteIngesta[]
-  periodos              Periodo[]
-  auditLogs             AuditLog[]
-  telegramVinculos      TelegramVinculo[]
-  empleados             Empleado[]
-  recibosSueldo         ReciboSueldo[]
-  resumenes             Resumen[]
-  createdAt             DateTime         @default(now())
+  plantillasRecurrentes  PlantillaRecurrente[]
+  reglasAsignacion       ReglaAsignacion[]
+  movimientos            Movimiento[]
+  lotesIngesta           LoteIngesta[]
+  periodos               Periodo[]
+  auditLogs              AuditLog[]
+  telegramVinculos       TelegramVinculo[]
+  empleados              Empleado[]
+  recibosSueldo          ReciboSueldo[]
+  resumenes              Resumen[]
+  createdAt              DateTime                @default(now())
 }
 
 enum Rol {
@@ -86,19 +86,19 @@ enum TipoCategoria {
 }
 
 model Categoria {
-  id        String        @id @default(cuid())
-  empresaId String
-  nombre    String
-  tipo      TipoCategoria
-  padreId   String? // hierarchy, max 2 levels
-  activa    Boolean       @default(true)
+  id              String        @id @default(cuid())
+  empresaId       String
+  nombre          String
+  tipo            TipoCategoria
+  padreId         String? // hierarchy, max 2 levels
+  activa          Boolean       @default(true)
   // Sus movimientos computan dentro del bloque "Costos de personal" del libro
   // (ej. Prepagas) y salen del resumen general — sin doble conteo.
-  esCostoPersonal Boolean @default(false)
-  empresa   Empresa       @relation(fields: [empresaId], references: [id])
-  padre     Categoria?    @relation("jerarquia", fields: [padreId], references: [id])
-  hijas     Categoria[]   @relation("jerarquia")
-  movimientos Movimiento[]
+  esCostoPersonal Boolean       @default(false)
+  empresa         Empresa       @relation(fields: [empresaId], references: [id])
+  padre           Categoria?    @relation("jerarquia", fields: [padreId], references: [id])
+  hijas           Categoria[]   @relation("jerarquia")
+  movimientos     Movimiento[]
 
   @@unique([empresaId, nombre])
 }
@@ -109,57 +109,57 @@ enum TipoCentroCosto {
 }
 
 model CentroCosto {
-  id        String          @id @default(cuid())
-  empresaId String
-  nombre    String
-  tipo      TipoCentroCosto
-  activo    Boolean         @default(true)
-  clientesHijos Cliente[]   @relation("clientesDelCentro")
-  empresa   Empresa         @relation(fields: [empresaId], references: [id])
-  lineas    MovimientoLinea[]
+  id              String                       @id @default(cuid())
+  empresaId       String
+  nombre          String
+  tipo            TipoCentroCosto
+  activo          Boolean                      @default(true)
+  clientesHijos   Cliente[]                    @relation("clientesDelCentro")
+  empresa         Empresa                      @relation(fields: [empresaId], references: [id])
+  lineas          MovimientoLinea[]
   plantillaLineas PlantillaDistribucionLinea[]
-  empleadoLineas EmpleadoDistribucionLinea[] @relation("empleadoLineas")
-  reciboLineas ReciboDistribucionLinea[] @relation("reciboLineas")
+  empleadoLineas  EmpleadoDistribucionLinea[]  @relation("empleadoLineas")
+  reciboLineas    ReciboDistribucionLinea[]    @relation("reciboLineas")
 
   @@unique([empresaId, nombre])
 }
 
 // Second analysis dimension (optional per line)
 model Cliente {
-  id        String  @id @default(cuid())
-  empresaId String
-  nombre    String
-  codigo    String?
-  activo    Boolean @default(true)
+  id              String                       @id @default(cuid())
+  empresaId       String
+  nombre          String
+  codigo          String?
+  activo          Boolean                      @default(true)
   // Árbol de asignación: un cliente clasificado sólo vale bajo su centro de
   // costo; sin clasificar (null) vale bajo cualquiera.
-  centroCostoId String?
-  centroCosto   CentroCosto? @relation("clientesDelCentro", fields: [centroCostoId], references: [id])
-  proyectosHijos Proyecto[]  @relation("proyectosDelCliente")
-  empresa   Empresa @relation(fields: [empresaId], references: [id])
-  lineas    MovimientoLinea[]
+  centroCostoId   String?
+  centroCosto     CentroCosto?                 @relation("clientesDelCentro", fields: [centroCostoId], references: [id])
+  proyectosHijos  Proyecto[]                   @relation("proyectosDelCliente")
+  empresa         Empresa                      @relation(fields: [empresaId], references: [id])
+  lineas          MovimientoLinea[]
   plantillaLineas PlantillaDistribucionLinea[]
-  empleadoLineas EmpleadoDistribucionLinea[] @relation("empleadoLineas")
-  reciboLineas ReciboDistribucionLinea[] @relation("reciboLineas")
+  empleadoLineas  EmpleadoDistribucionLinea[]  @relation("empleadoLineas")
+  reciboLineas    ReciboDistribucionLinea[]    @relation("reciboLineas")
 
   @@unique([empresaId, nombre])
 }
 
 // Third analysis dimension (optional per line)
 model Proyecto {
-  id        String  @id @default(cuid())
-  empresaId String
-  nombre    String
-  codigo    String?
-  activo    Boolean @default(true)
+  id              String                       @id @default(cuid())
+  empresaId       String
+  nombre          String
+  codigo          String?
+  activo          Boolean                      @default(true)
   // Árbol de asignación: un proyecto clasificado sólo vale bajo su cliente.
-  clienteId String?
-  cliente   Cliente? @relation("proyectosDelCliente", fields: [clienteId], references: [id])
-  empresa   Empresa @relation(fields: [empresaId], references: [id])
-  lineas    MovimientoLinea[]
+  clienteId       String?
+  cliente         Cliente?                     @relation("proyectosDelCliente", fields: [clienteId], references: [id])
+  empresa         Empresa                      @relation(fields: [empresaId], references: [id])
+  lineas          MovimientoLinea[]
   plantillaLineas PlantillaDistribucionLinea[]
-  empleadoLineas EmpleadoDistribucionLinea[] @relation("empleadoLineas")
-  reciboLineas ReciboDistribucionLinea[] @relation("reciboLineas")
+  empleadoLineas  EmpleadoDistribucionLinea[]  @relation("empleadoLineas")
+  reciboLineas    ReciboDistribucionLinea[]    @relation("reciboLineas")
 
   @@unique([empresaId, nombre])
 }
@@ -200,32 +200,32 @@ model PlantillaDistribucion {
 }
 
 model PlantillaDistribucionLinea {
-  id                String                @id @default(cuid())
-  plantillaId       String
-  centroCostoId     String
-  clienteId         String?
-  proyectoId        String?
-  porcentaje        Decimal               @db.Decimal(7, 4) // lines must sum 100
-  plantilla         PlantillaDistribucion @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
-  centroCosto       CentroCosto           @relation(fields: [centroCostoId], references: [id])
-  cliente           Cliente?              @relation(fields: [clienteId], references: [id])
-  proyecto          Proyecto?             @relation(fields: [proyectoId], references: [id])
+  id            String                @id @default(cuid())
+  plantillaId   String
+  centroCostoId String
+  clienteId     String?
+  proyectoId    String?
+  porcentaje    Decimal               @db.Decimal(7, 4) // lines must sum 100
+  plantilla     PlantillaDistribucion @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
+  centroCosto   CentroCosto           @relation(fields: [centroCostoId], references: [id])
+  cliente       Cliente?              @relation(fields: [clienteId], references: [id])
+  proyecto      Proyecto?             @relation(fields: [proyectoId], references: [id])
 }
 
 // Recurring template (repeated monthly entry: legal fees, salaries, ...)
 model PlantillaRecurrente {
-  id              String   @id @default(cuid())
-  empresaId       String
-  nombre          String
-  categoriaId     String
-  importeSugerido Decimal  @db.Decimal(18, 2)
-  descripcion     String?
-  diaDelMes       Int      @default(1)
-  distribucionId  String? // associated distribution template
+  id                     String  @id @default(cuid())
+  empresaId              String
+  nombre                 String
+  categoriaId            String
+  importeSugerido        Decimal @db.Decimal(18, 2)
+  descripcion            String?
+  diaDelMes              Int     @default(1)
+  distribucionId         String? // associated distribution template
   // If true, "generate month" copies the amount validated for this template the previous month
   usarImporteMesAnterior Boolean @default(false)
-  activa          Boolean  @default(true)
-  empresa         Empresa  @relation(fields: [empresaId], references: [id])
+  activa                 Boolean @default(true)
+  empresa                Empresa @relation(fields: [empresaId], references: [id])
 
   @@unique([empresaId, nombre])
 }
@@ -340,8 +340,8 @@ model Movimiento {
   qrEstado            String? // QR AFIP/ARCA: OK | ILEGIBLE | SIN_QR | null (no aplica / imagen)
 
   // Assignment (double dimension, percentage split)
-  lineas MovimientoLinea[]
-  lineasResumen  ResumenLinea[]
+  lineas        MovimientoLinea[]
+  lineasResumen ResumenLinea[]
 
   flags           Json? // future metadata (e.g. recurring template id, pending "I/O" flag)
   periodoId       String?
@@ -353,14 +353,14 @@ model Movimiento {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  empresa     Empresa      @relation(fields: [empresaId], references: [id])
-  categoria   Categoria?   @relation(fields: [categoriaId], references: [id])
-  contraparte Contraparte? @relation(fields: [contraparteId], references: [id])
-  periodo     Periodo?     @relation(fields: [periodoId], references: [id])
-  creadoPor   Usuario      @relation("creadoPor", fields: [creadoPorId], references: [id])
-  validadoPor Usuario?     @relation("validadoPor", fields: [validadoPorId], references: [id])
+  empresa           Empresa              @relation(fields: [empresaId], references: [id])
+  categoria         Categoria?           @relation(fields: [categoriaId], references: [id])
+  contraparte       Contraparte?         @relation(fields: [contraparteId], references: [id])
+  periodo           Periodo?             @relation(fields: [periodoId], references: [id])
+  creadoPor         Usuario              @relation("creadoPor", fields: [creadoPorId], references: [id])
+  validadoPor       Usuario?             @relation("validadoPor", fields: [validadoPorId], references: [id])
   vinculosEmpleados MovimientoEmpleado[]
-  lote        LoteIngesta? @relation(fields: [loteId], references: [id])
+  lote              LoteIngesta?         @relation(fields: [loteId], references: [id])
 
   @@index([empresaId, estado])
   @@index([empresaId, fechaDevengamiento])
@@ -371,16 +371,16 @@ model Movimiento {
 // para mostrar progreso y resultados en /carga. Sin contadores materializados:
 // el resumen se deriva de los movimientos del lote (resumirLote).
 model LoteIngesta {
-  id            String   @id @default(cuid())
+  id            String       @id @default(cuid())
   empresaId     String
   canal         String // WEB | FOTO | EMAIL | TELEGRAM
   creadoPorId   String?
   origenDetalle String? // remitente del email / usuario de telegram
-  archivos      Int      @default(0) // cantidad esperada de comprobantes
-  empresa       Empresa  @relation(fields: [empresaId], references: [id])
-  creadoPor     Usuario? @relation(fields: [creadoPorId], references: [id])
+  archivos      Int          @default(0) // cantidad esperada de comprobantes
+  empresa       Empresa      @relation(fields: [empresaId], references: [id])
+  creadoPor     Usuario?     @relation(fields: [creadoPorId], references: [id])
   movimientos   Movimiento[]
-  createdAt     DateTime @default(now())
+  createdAt     DateTime     @default(now())
 
   @@index([empresaId, createdAt])
 }
@@ -391,17 +391,17 @@ enum OrigenLinea {
 }
 
 model MovimientoLinea {
-  id                String      @id @default(cuid())
-  movimientoId      String
-  centroCostoId     String
-  clienteId         String? // second dimension, optional
-  proyectoId        String? // third dimension, optional
-  porcentaje        Decimal     @db.Decimal(7, 4) // sum per movement = 100.0000
-  origen            OrigenLinea @default(MANUAL)
-  movimiento        Movimiento  @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
-  centroCosto       CentroCosto @relation(fields: [centroCostoId], references: [id])
-  cliente           Cliente?    @relation(fields: [clienteId], references: [id])
-  proyecto          Proyecto?   @relation(fields: [proyectoId], references: [id])
+  id            String      @id @default(cuid())
+  movimientoId  String
+  centroCostoId String
+  clienteId     String? // second dimension, optional
+  proyectoId    String? // third dimension, optional
+  porcentaje    Decimal     @db.Decimal(7, 4) // sum per movement = 100.0000
+  origen        OrigenLinea @default(MANUAL)
+  movimiento    Movimiento  @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
+  centroCosto   CentroCosto @relation(fields: [centroCostoId], references: [id])
+  cliente       Cliente?    @relation(fields: [clienteId], references: [id])
+  proyecto      Proyecto?   @relation(fields: [proyectoId], references: [id])
 }
 
 // ---------- Periods ----------
@@ -412,17 +412,17 @@ enum EstadoPeriodo {
 }
 
 model Periodo {
-  id           String        @id @default(cuid())
-  empresaId    String
-  anio         Int
-  mes          Int
-  estado       EstadoPeriodo @default(ABIERTO)
-  cerradoPorId String?
-  cerradoAt    DateTime?
-  empresa      Empresa       @relation(fields: [empresaId], references: [id])
-  movimientos  Movimiento[]
-  resumenes    Resumen[]
-  recibosSueldo ReciboSueldo[]
+  id                      String                @id @default(cuid())
+  empresaId               String
+  anio                    Int
+  mes                     Int
+  estado                  EstadoPeriodo         @default(ABIERTO)
+  cerradoPorId            String?
+  cerradoAt               DateTime?
+  empresa                 Empresa               @relation(fields: [empresaId], references: [id])
+  movimientos             Movimiento[]
+  resumenes               Resumen[]
+  recibosSueldo           ReciboSueldo[]
   costosManualesEmpleados CostoManualEmpleado[]
   prepagasEmpleados       PrepagaEmpleado[]
 
@@ -473,34 +473,37 @@ model Resumen {
   tokensCacheLectura  Int?
   modeloExtractor     String?
 
-  empresa  Empresa        @relation(fields: [empresaId], references: [id])
-  periodo  Periodo        @relation(fields: [periodoId], references: [id])
-  lineas   ResumenLinea[]
-  createdAt DateTime      @default(now())
+  empresa   Empresa        @relation(fields: [empresaId], references: [id])
+  periodo   Periodo        @relation(fields: [periodoId], references: [id])
+  lineas    ResumenLinea[]
+  createdAt DateTime       @default(now())
 
   @@index([empresaId, createdAt])
 }
 
 model ResumenLinea {
-  id          String             @id @default(cuid())
-  resumenId   String
-  orden       Int
-  fecha       DateTime?
-  descriptor  String // tal como viene en el resumen
-  monto       Decimal?           @db.Decimal(18, 2) // FIRMADO en ARS; null = consumo USD sin pesificar
-  moneda      Moneda             @default(ARS)
-  montoOrigen Decimal?           @db.Decimal(18, 2) // importe en moneda origen (TC implícito)
-  cuotas      String? // "3/6"
-  cuenta      String? // cuenta/tarjeta dentro del PDF (BBVA consolida varias)
-  titular     String? // resúmenes de tarjeta agrupan por titular
-  estado      EstadoLineaResumen @default(PENDIENTE)
-  movimientoId String? // conciliado (existente) o imputado (creado)
-  candidatos  Json? // [{movimientoId, score, motivo}] del matching
+  id             String             @id @default(cuid())
+  resumenId      String
+  orden          Int
+  fecha          DateTime?
+  descriptor     String // tal como viene en el resumen
+  monto          Decimal?           @db.Decimal(18, 2) // FIRMADO en ARS; null = consumo USD sin pesificar
+  moneda         Moneda             @default(ARS)
+  montoOrigen    Decimal?           @db.Decimal(18, 2) // importe en moneda origen (TC implícito)
+  cuotas         String? // "3/6"
+  cuenta         String? // cuenta/tarjeta dentro del PDF (BBVA consolida varias)
+  titular        String? // resúmenes de tarjeta agrupan por titular
+  estado         EstadoLineaResumen @default(PENDIENTE)
+  movimientoId   String? // conciliado (existente) o imputado (creado)
+  candidatos     Json? // [{movimientoId, score, motivo}] del matching
   motivoIgnorada String?
 
   resumen    Resumen     @relation(fields: [resumenId], references: [id], onDelete: Cascade)
   movimiento Movimiento? @relation(fields: [movimientoId], references: [id])
   createdAt  DateTime    @default(now())
+
+  @@index([resumenId])
+  @@index([movimientoId])
 }
 
 // ---------- Empleados (Spec D: costos de personal) ----------
@@ -520,23 +523,23 @@ enum EstadoRecibo {
 }
 
 model Empleado {
-  id           String    @id @default(cuid())
-  empresaId    String
-  nombre       String
-  cuil         String // 11 dígitos normalizados; clave de matching en la ingesta
-  legajo       String?
-  categoria    String?
-  sector       String?
-  fechaIngreso DateTime?
-  fechaEgreso  DateTime?
-  activo       Boolean   @default(true)
-  empresa      Empresa   @relation(fields: [empresaId], references: [id])
-  distribucion EmpleadoDistribucionLinea[]
-  recibos      ReciboSueldo[]
+  id             String                      @id @default(cuid())
+  empresaId      String
+  nombre         String
+  cuil           String // 11 dígitos normalizados; clave de matching en la ingesta
+  legajo         String?
+  categoria      String?
+  sector         String?
+  fechaIngreso   DateTime?
+  fechaEgreso    DateTime?
+  activo         Boolean                     @default(true)
+  empresa        Empresa                     @relation(fields: [empresaId], references: [id])
+  distribucion   EmpleadoDistribucionLinea[]
+  recibos        ReciboSueldo[]
   costosManuales CostoManualEmpleado[]
   prepagas       PrepagaEmpleado[]
-  vinculos     MovimientoEmpleado[]
-  createdAt    DateTime  @default(now())
+  vinculos       MovimientoEmpleado[]
+  createdAt      DateTime                    @default(now())
 
   @@unique([empresaId, cuil])
 }
@@ -591,11 +594,11 @@ model ReciboSueldo {
   tokensCacheLectura  Int?
   modeloExtractor     String?
 
-  empresa      Empresa   @relation(fields: [empresaId], references: [id])
-  empleado     Empleado  @relation(fields: [empleadoId], references: [id])
-  periodo      Periodo   @relation(fields: [periodoId], references: [id])
+  empresa      Empresa                   @relation(fields: [empresaId], references: [id])
+  empleado     Empleado                  @relation(fields: [empleadoId], references: [id])
+  periodo      Periodo                   @relation(fields: [periodoId], references: [id])
   lineas       ReciboDistribucionLinea[]
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime                  @default(now())
   confirmadoAt DateTime?
 
   // La guarda anti-duplicado (empleado, período, tipo) es de código, no @@unique:
@@ -641,9 +644,9 @@ model PrepagaEmpleado {
   periodoId      String
   prepaga        String // plan asignado (ej. "OSDE 210", "Swiss SMG02")
   costoPlan      Decimal  @db.Decimal(18, 2)
-  aportes        Decimal  @db.Decimal(18, 2) @default(0)
-  contribuciones Decimal  @db.Decimal(18, 2) @default(0)
-  fsrPct         Decimal  @db.Decimal(5, 2) @default(85) // % que llega a la prepaga
+  aportes        Decimal  @default(0) @db.Decimal(18, 2)
+  contribuciones Decimal  @default(0) @db.Decimal(18, 2)
+  fsrPct         Decimal  @default(85) @db.Decimal(5, 2) // % que llega a la prepaga
   empleado       Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
   periodo        Periodo  @relation(fields: [periodoId], references: [id])
   updatedAt      DateTime @updatedAt
