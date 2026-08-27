@@ -48,6 +48,7 @@ export default async function EmpresaLayout({
         { href: `${base}/comprobantes`, label: 'Comprobantes', icono: 'comprobante' },
         { href: `${base}/ventas`, label: 'Ventas', icono: 'venta' },
         { href: `${base}/asientos`, label: 'Asientos manuales', icono: 'asiento' },
+        { href: `${base}/resumenes`, label: 'Resúmenes', icono: 'comprobante' },
       ],
     },
     ...(esAdmin
