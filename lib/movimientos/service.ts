@@ -431,6 +431,12 @@ export async function eliminarDuplicado(ctx: EmpresaContext, id: string): Promis
   if (mov.estado !== 'DUPLICADO') throw new DomainError('Sólo se puede borrar un comprobante en estado Duplicado.');
   await ctx.db.resumenLinea.updateMany({ where: { movimientoId: id }, data: { movimientoId: null } });
   await ctx.db.movimiento.delete({ where: { id } });
+  // El lote de ingesta esperaba ese archivo: descontarlo, si no la pantalla de
+  // Carga lo mostraría "procesando" para siempre (total < archivos esperados).
+  if (mov.loteId) {
+    const lote = await ctx.db.loteIngesta.findFirst({ where: { id: mov.loteId } });
+    if (lote && lote.archivos > 0) await ctx.db.loteIngesta.update({ where: { id: lote.id }, data: { archivos: lote.archivos - 1 } });
+  }
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,
     entidad: 'Movimiento',

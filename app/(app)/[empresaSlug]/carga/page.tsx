@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { rolAlcanza } from '@/lib/roles';
 import { resumirLote, RESULTADO_LABEL } from '@/lib/movimientos/lotes';
+
+const LOTE_RECIENTE_MS = 30 * 60 * 1000;
 import { formatFechaHora } from '@/lib/format';
 import { UploadZone } from '@/components/upload-zone';
 import { PageHeader } from '@/components/page-header';
@@ -45,8 +47,13 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
     take: 20,
   });
   const conResumen = lotes.map((l) => ({ lote: l, resumen: resumirLote(l.movimientos) }));
+  // Faltan comprobantes respecto de lo esperado sólo cuenta como "en curso"
+  // mientras el lote es reciente: más tarde, lo que falta no va a aparecer
+  // (p. ej. duplicados borrados) y la barra quedaría procesando para siempre.
+  const loteEnCurso = (lote: { archivos: number; createdAt: Date }, resumen: { total: number; enProceso: number }) =>
+    resumen.enProceso > 0 || (resumen.total < lote.archivos && Date.now() - lote.createdAt.getTime() < LOTE_RECIENTE_MS);
   const hayEnCurso = conResumen.some(
-    ({ lote, resumen }) => resumen.enProceso > 0 || resumen.total < lote.archivos,
+    ({ lote, resumen }) => loteEnCurso(lote, resumen),
   );
 
   const destino = (estado: string) =>
@@ -94,9 +101,9 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
         ) : (
           <div className="card divide-y divide-line/60">
             {conResumen.map(({ lote, resumen }) => {
-              const esperado = Math.max(lote.archivos, resumen.total, 1);
+              const enCurso = loteEnCurso(lote, resumen);
+              const esperado = Math.max(enCurso ? lote.archivos : resumen.total, resumen.total, 1);
               const completados = resumen.total - resumen.enProceso;
-              const enCurso = completados < esperado;
               const pct = Math.round((completados / esperado) * 100);
               return (
                 <div key={lote.id} className="px-4 py-3">

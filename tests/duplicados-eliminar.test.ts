@@ -44,6 +44,7 @@ describe('eliminar duplicados (integración)', () => {
     for (const e of [empresaId, otraEmpresaId]) {
       await prisma.movimientoLinea.deleteMany({ where: { movimiento: { empresaId: e } } });
       await prisma.movimiento.deleteMany({ where: { empresaId: e } });
+      await prisma.loteIngesta.deleteMany({ where: { empresaId: e } });
       await prisma.centroCosto.deleteMany({ where: { empresaId: e } });
       await prisma.auditLog.deleteMany({ where: { empresaId: e } });
       await prisma.empresa.delete({ where: { id: e } });
@@ -51,9 +52,11 @@ describe('eliminar duplicados (integración)', () => {
     await prisma.usuario.deleteMany({ where: { email: `${sufijo}@test.local` } });
   });
 
-  it('borra un DUPLICADO con sus líneas y deja el original intacto', async () => {
+  it('borra un DUPLICADO con sus líneas, descuenta el archivo del lote y deja el original intacto', async () => {
     const original = await mov(empresaId, 'ASIGNADO');
+    const lote = await prisma.loteIngesta.create({ data: { empresaId, canal: 'WEB', archivos: 2 } });
     const dup = await mov(empresaId, 'DUPLICADO', { duplicadoArchivo: original.id });
+    await prisma.movimiento.update({ where: { id: dup.id }, data: { loteId: lote.id } });
     await prisma.movimientoLinea.create({ data: { movimientoId: dup.id, centroCostoId: centroId, porcentaje: 100 } });
 
     await eliminarDuplicado(ctx, dup.id);
@@ -64,6 +67,7 @@ describe('eliminar duplicados (integración)', () => {
     const audit = await prisma.auditLog.findFirst({ where: { empresaId, entidadId: dup.id, accion: 'ELIMINAR_DUPLICADO' } });
     expect(audit).not.toBeNull();
     expect((audit!.antes as { original?: string }).original).toBe(original.id);
+    expect((await prisma.loteIngesta.findUnique({ where: { id: lote.id } }))!.archivos).toBe(1);
   });
 
   it('no borra nada que no sea DUPLICADO', async () => {
@@ -85,5 +89,12 @@ describe('eliminar duplicados (integración)', () => {
     expect(n).toBe(2);
     expect(await prisma.movimiento.count({ where: { empresaId, estado: 'DUPLICADO' } })).toBe(0);
     expect(await prisma.movimiento.count({ where: { empresaId: otraEmpresaId, estado: 'DUPLICADO' } })).toBe(1);
+  });
+});
+
+describe('formatFechaHora', () => {
+  it('muestra hora de Buenos Aires en 24 h sin depender del TZ del server', async () => {
+    const { formatFechaHora } = await import('@/lib/format');
+    expect(formatFechaHora(new Date('2026-08-27T19:01:38Z'))).toBe('27/08/2026, 16:01');
   });
 });

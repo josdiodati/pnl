@@ -40,7 +40,12 @@ export function formatFecha(fecha: Date | string | null | undefined): string {
 export function formatFechaHora(fecha: Date | string | null | undefined): string {
   if (!fecha) return '—';
   const d = typeof fecha === 'string' ? new Date(fecha) : fecha;
-  return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  // Zona horaria y ciclo de 24 h explícitos: sin `timeZone` la salida depende
+  // del TZ del servidor, y el locale es-AR trae 12 h por defecto ("04:01" por 16:01).
+  return d.toLocaleString('es-AR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    hour12: false, timeZone: 'America/Argentina/Buenos_Aires',
+  });
 }
 
 export function fechaInputValue(fecha: Date | null | undefined): string {
