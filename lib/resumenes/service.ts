@@ -174,7 +174,7 @@ export async function deshacerLinea(ctx: EmpresaContext, params: { lineaId: stri
   }
   await ctx.db.resumenLinea.update({
     where: { id: linea.id },
-    data: { estado: 'PENDIENTE', movimientoId: null, motivoIgnorada: null },
+    data: { estado: 'PENDIENTE', movimientoId: null, motivoIgnorada: null, reglaAplicada: null },
   });
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,

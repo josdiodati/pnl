@@ -47,6 +47,7 @@ model Empresa {
   empleados              Empleado[]
   recibosSueldo          ReciboSueldo[]
   resumenes              Resumen[]
+  reglasResumen          ReglaResumen[]
   createdAt              DateTime                @default(now())
 }
 
@@ -495,8 +496,9 @@ model ResumenLinea {
   titular        String? // resúmenes de tarjeta agrupan por titular
   estado         EstadoLineaResumen @default(PENDIENTE)
   movimientoId   String? // conciliado (existente) o imputado (creado)
-  candidatos     Json? // [{movimientoId, score, motivo}] del matching
+  candidatos     Json? // [{movimientoId, score, motivo, rechazado?}] del matching
   motivoIgnorada String?
+  reglaAplicada  String? // nombre de la ReglaResumen que la resolvió automáticamente
 
   resumen    Resumen     @relation(fields: [resumenId], references: [id], onDelete: Cascade)
   movimiento Movimiento? @relation(fields: [movimientoId], references: [id])
@@ -504,6 +506,38 @@ model ResumenLinea {
 
   @@index([resumenId])
   @@index([movimientoId])
+}
+
+enum AccionReglaResumen {
+  IGNORAR
+  IMPUTAR
+}
+
+// Regla de auto-resolución de líneas de resumen: si el descriptor (normalizado)
+// contiene la condición, la línea se ignora o se imputa automáticamente al
+// extraer un resumen (o con el botón "Aplicar reglas"). IMPUTAR sólo aplica a
+// líneas SIN sugerencia de conciliación (la sugerencia gana: evita duplicar).
+model ReglaResumen {
+  id                 String             @id @default(cuid())
+  empresaId          String
+  nombre             String
+  activa             Boolean            @default(true)
+  descriptorContiene String // condición: contenido en el descriptor, normalizado
+  emisor             String? // limitar a un emisor de resumen (opcional)
+  tipo               TipoResumen? // limitar a tarjeta/banco (opcional)
+  accion             AccionReglaResumen
+  motivoIgnorar      String? // para IGNORAR
+  // Para IMPUTAR (sin FK, como ReglaAsignacion: se valida al guardar):
+  categoriaId        String?
+  distribucionId     String? // plantilla de distribución
+  centroCostoId      String? // línea única 100%
+  clienteId          String?
+  proyectoId         String?
+  empresa            Empresa            @relation(fields: [empresaId], references: [id])
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([empresaId, nombre])
 }
 
 // ---------- Empleados (Spec D: costos de personal) ----------

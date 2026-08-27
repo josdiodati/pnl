@@ -356,6 +356,93 @@ export async function toggleRegla(formData: FormData): Promise<void> {
   volver(slug, 'reglas');
 }
 
+// ---------- Reglas de resúmenes ----------
+
+export async function guardarReglaResumen(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    const id = String(formData.get('id') ?? '');
+    const nombre = String(formData.get('nombre') ?? '').trim();
+    if (!nombre) throw new DomainError('El nombre es obligatorio.');
+    const v = (k: string) => { const s = String(formData.get(k) ?? '').trim(); return s || null; };
+    const descriptorContiene = String(formData.get('descriptorContiene') ?? '').trim();
+    if (!descriptorContiene) throw new DomainError('La condición (texto contenido en el descriptor) es obligatoria.');
+    const accion = String(formData.get('accion') ?? 'IGNORAR') === 'IMPUTAR' ? 'IMPUTAR' : 'IGNORAR';
+    const tipoRaw = v('tipo');
+    const data = {
+      nombre,
+      descriptorContiene,
+      emisor: v('emisor'),
+      tipo: (tipoRaw === 'TARJETA' || tipoRaw === 'BANCO' ? tipoRaw : null) as never,
+      accion: accion as never,
+      motivoIgnorar: accion === 'IGNORAR' ? v('motivoIgnorar') : null,
+      categoriaId: accion === 'IMPUTAR' ? v('categoriaId') : null,
+      distribucionId: accion === 'IMPUTAR' ? v('distribucionId') : null,
+      centroCostoId: accion === 'IMPUTAR' ? v('centroCostoId') : null,
+      clienteId: accion === 'IMPUTAR' ? v('clienteId') : null,
+      proyectoId: accion === 'IMPUTAR' ? v('proyectoId') : null,
+    };
+    if (accion === 'IMPUTAR' && (!data.categoriaId || !(data.distribucionId || data.centroCostoId))) {
+      throw new DomainError('La acción Imputar necesita categoría y (plantilla de distribución o centro de costo).');
+    }
+    if ((data.clienteId || data.proyectoId) && !data.centroCostoId) {
+      throw new DomainError('Cliente/proyecto requieren un centro de costo (línea única).');
+    }
+    // Sin FK (como ReglaAsignacion): validar existencia y árbol acá.
+    if (data.categoriaId && !(await ctx.db.categoria.findFirst({ where: { id: data.categoriaId } }))) {
+      throw new DomainError('Categoría inexistente.');
+    }
+    if (data.distribucionId && !(await ctx.db.plantillaDistribucion.findFirst({ where: { id: data.distribucionId } }))) {
+      throw new DomainError('Plantilla de distribución inexistente.');
+    }
+    if (data.centroCostoId && !(await ctx.db.centroCosto.findFirst({ where: { id: data.centroCostoId } }))) {
+      throw new DomainError('Centro de costo inexistente.');
+    }
+    if (data.clienteId) {
+      const cli = await ctx.db.cliente.findFirst({ where: { id: data.clienteId } });
+      if (!cli) throw new DomainError('Cliente inexistente.');
+      if (cli.centroCostoId && cli.centroCostoId !== data.centroCostoId) {
+        throw new DomainError(`El cliente «${cli.nombre}» pertenece a otro centro de costo.`);
+      }
+    }
+    if (data.proyectoId) {
+      const pr = await ctx.db.proyecto.findFirst({ where: { id: data.proyectoId } });
+      if (!pr) throw new DomainError('Proyecto inexistente.');
+      if (pr.clienteId && pr.clienteId !== data.clienteId) {
+        throw new DomainError(`El proyecto «${pr.nombre}» pertenece a otro cliente.`);
+      }
+    }
+    if (id) {
+      const antes = await ctx.db.reglaResumen.findFirst({ where: { id } });
+      if (!antes) throw new DomainError('Regla inexistente.');
+      await ctx.db.reglaResumen.update({ where: { id }, data });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'ReglaResumen', entidadId: id, accion: 'EDITAR', antes, despues: data });
+    } else {
+      const nueva = await ctx.db.reglaResumen.create({ data: data as never });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'ReglaResumen', entidadId: nueva.id, accion: 'CREAR', despues: data });
+    }
+  } catch (err) {
+    volver(slug, 'reglas-resumen', mensaje(err));
+  }
+  volver(slug, 'reglas-resumen');
+}
+
+export async function toggleReglaResumen(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    const id = String(formData.get('id'));
+    const r = await ctx.db.reglaResumen.findFirst({ where: { id } });
+    if (!r) throw new DomainError('Regla inexistente.');
+    await ctx.db.reglaResumen.update({ where: { id }, data: { activa: !r.activa } });
+    await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'ReglaResumen', entidadId: id, accion: r.activa ? 'DESACTIVAR' : 'ACTIVAR' });
+  } catch (err) {
+    volver(slug, 'reglas-resumen', mensaje(err));
+  }
+  volver(slug, 'reglas-resumen');
+}
+
 // ---------- Plantillas de distribución ----------
 
 export async function guardarPlantillaDistribucion(formData: FormData): Promise<void> {

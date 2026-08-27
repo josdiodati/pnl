@@ -6,6 +6,7 @@ import { isDomainError, isForbidden } from '@/lib/errors';
 import { parsearImporteAr } from '@/lib/format';
 import { ingestarResumen, rematchearResumen } from '@/lib/resumenes/ingesta';
 import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea, rechazarCandidato } from '@/lib/resumenes/service';
+import { aplicarReglasResumen, crearReglaDesdeLinea } from '@/lib/resumenes/reglas';
 
 // Actions de Resúmenes: exigen VALIDADOR (misma frontera que Validación /
 // Asignación). Contrato de FormData documentado en el brief — Task 7 (bandeja
@@ -81,34 +82,59 @@ export async function conciliarAction(formData: FormData): Promise<void> {
 export async function imputarAction(formData: FormData): Promise<void> {
   const slug = String(formData.get('empresaSlug'));
   const resumenId = String(formData.get('resumenId'));
+  let mensaje = 'Línea imputada';
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    const lineaId = String(formData.get('lineaId'));
+    const categoriaId = String(formData.get('categoriaId'));
+    const lineas = leerLineas(formData);
     await imputarLinea(ctx, {
-      lineaId: String(formData.get('lineaId')),
-      categoriaId: String(formData.get('categoriaId')),
-      lineas: leerLineas(formData),
+      lineaId,
+      categoriaId,
+      lineas,
       contraparteId: String(formData.get('contraparteId') ?? '') || null,
       montoArs: numeroOpcional(formData, 'montoArs') ?? null,
     });
+    if (formData.get('crearRegla')) {
+      // La regla guarda un centro único (línea 100%): con distribución múltiple no se crea.
+      if (lineas.length === 1 && lineas[0].porcentaje === 100) {
+        const r = await crearReglaDesdeLinea(ctx.db, {
+          lineaId,
+          accion: 'IMPUTAR',
+          categoriaId,
+          centroCostoId: lineas[0].centroCostoId,
+          clienteId: lineas[0].clienteId,
+          proyectoId: lineas[0].proyectoId,
+        });
+        mensaje += r.creada ? ` · regla «${r.nombre}» creada` : ` · ya existía una regla «${r.nombre}»`;
+      } else {
+        mensaje += ' · la regla no se creó (distribución múltiple: creala en Maestros con una plantilla)';
+      }
+    }
   } catch (err) {
     volverConError(slug, `resumenes/${resumenId}`, err);
   }
-  redirect(`/${slug}/resumenes/${resumenId}?ok=${encodeURIComponent('Línea imputada')}`);
+  redirect(`/${slug}/resumenes/${resumenId}?ok=${encodeURIComponent(mensaje)}`);
 }
 
 export async function ignorarAction(formData: FormData): Promise<void> {
   const slug = String(formData.get('empresaSlug'));
   const resumenId = String(formData.get('resumenId'));
+  let mensaje = 'Línea ignorada';
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
-    await ignorarLinea(ctx, {
-      lineaId: String(formData.get('lineaId')),
-      motivo: String(formData.get('motivo') ?? ''),
-    });
+    const lineaId = String(formData.get('lineaId'));
+    // Los chips de motivo rápido mandan `motivoRapido` (botones con value); el texto libre, `motivo`.
+    const motivo = String(formData.get('motivoRapido') ?? '') || String(formData.get('motivo') ?? '');
+    await ignorarLinea(ctx, { lineaId, motivo });
+    if (formData.get('crearRegla')) {
+      const r = await crearReglaDesdeLinea(ctx.db, { lineaId, accion: 'IGNORAR', motivo: motivo.trim() });
+      mensaje += r.creada ? ` · regla «${r.nombre}» creada` : ` · ya existía una regla «${r.nombre}»`;
+    }
   } catch (err) {
     volverConError(slug, `resumenes/${resumenId}`, err);
   }
-  redirect(`/${slug}/resumenes/${resumenId}?ok=${encodeURIComponent('Línea ignorada')}`);
+  redirect(`/${slug}/resumenes/${resumenId}?ok=${encodeURIComponent(mensaje)}`);
 }
 
 export async function deshacerAction(formData: FormData): Promise<void> {
@@ -147,6 +173,21 @@ export async function rematchearAction(formData: FormData): Promise<void> {
     volverConError(slug, `resumenes/${resumenId}`, err);
   }
   redirect(`/${slug}/resumenes/${resumenId}?ok=${encodeURIComponent('Matching recalculado')}`);
+}
+
+/** Aplica las reglas de resumen a las líneas no resueltas (botón "Aplicar reglas"). */
+export async function aplicarReglasAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const resumenId = String(formData.get('resumenId'));
+  let mensaje = '';
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    const r = await aplicarReglasResumen(ctx.db, resumenId, ctx.usuario.id);
+    mensaje = `Reglas aplicadas: ${r.ignoradas} ignorada${r.ignoradas !== 1 ? 's' : ''}, ${r.imputadas} imputada${r.imputadas !== 1 ? 's' : ''}`;
+  } catch (err) {
+    volverConError(slug, `resumenes/${resumenId}`, err);
+  }
+  redirect(`/${slug}/resumenes/${resumenId}?ok=${encodeURIComponent(mensaje)}`);
 }
 
 /** Concilia de un saque todas las líneas SUGERIDA con su primer candidato. Tolera fallos por línea. */

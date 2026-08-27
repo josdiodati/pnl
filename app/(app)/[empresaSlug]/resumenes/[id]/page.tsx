@@ -17,6 +17,7 @@ import {
   rematchearAction,
   confirmarSugeridasAction,
   rechazarCandidatoAction,
+  aplicarReglasAction,
 } from '../actions';
 
 // Bandeja de conciliación de un resumen: lista de líneas con su estado de
@@ -86,6 +87,7 @@ export default async function ResumenDetallePage({
   ]);
 
   const fileUrl = await getFileStorage().getSignedUrl(resumen.archivoKey);
+  const reglasActivas = await ctx.db.reglaResumen.count({ where: { activa: true } });
 
   const total = resumen.lineas.length;
   const resueltas = resumen.lineas.filter((l) => ESTADOS_RESUELTOS.has(l.estado)).length;
@@ -236,18 +238,41 @@ export default async function ResumenDetallePage({
                     moneda={linea.moneda}
                   />
                 )}
+                <label className="flex items-center gap-2 text-xs text-slate-600">
+                  <input type="checkbox" name="crearRegla" value="1" />
+                  Crear regla: imputar así automáticamente las líneas con este descriptor en futuros resúmenes
+                </label>
                 <button className="btn-primary text-sm">Imputar</button>
               </form>
 
-              <form action={ignorarAction} className="flex items-end gap-2 border-t border-slate-100 pt-3">
+              <form action={ignorarAction} className="space-y-2 border-t border-slate-100 pt-3">
                 <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                 <input type="hidden" name="resumenId" value={resumen.id} />
                 <input type="hidden" name="lineaId" value={linea.id} />
-                <div className="flex-1">
-                  <label className="label">Motivo para ignorar</label>
-                  <input name="motivo" required className="input" placeholder="p.ej. gasto personal, ya cargado a mano" />
+                <p className="text-xs font-semibold text-slate-500">Ignorar (no requiere imputación)</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {['Pago del resumen', 'Saldo/subtotal', 'Ya cargado a mano'].map((m) => (
+                    <button
+                      key={m}
+                      name="motivoRapido"
+                      value={m}
+                      className="rounded-full border border-slate-300 px-2.5 py-0.5 text-xs text-slate-600 hover:bg-slate-100"
+                    >
+                      {m}
+                    </button>
+                  ))}
                 </div>
-                <button className="btn-secondary text-sm">Ignorar</button>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="label">Otro motivo</label>
+                    <input name="motivo" className="input" placeholder="p.ej. gasto personal" />
+                  </div>
+                  <button className="btn-secondary text-sm">Ignorar</button>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-600">
+                  <input type="checkbox" name="crearRegla" value="1" />
+                  Crear regla: ignorar automáticamente las líneas con este descriptor en futuros resúmenes
+                </label>
               </form>
             </>
           ) : (
@@ -394,6 +419,15 @@ export default async function ResumenDetallePage({
               <input type="hidden" name="resumenId" value={resumen.id} />
               <button className="btn-secondary text-sm">Re-matchear</button>
             </form>
+            {reglasActivas > 0 && (
+              <form action={aplicarReglasAction}>
+                <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                <input type="hidden" name="resumenId" value={resumen.id} />
+                <button className="btn-secondary text-sm" title="Ignora/imputa las líneas no resueltas según las reglas de resúmenes">
+                  ⚡ Aplicar reglas ({reglasActivas})
+                </button>
+              </form>
+            )}
           </div>
         </div>
 
@@ -447,6 +481,11 @@ export default async function ResumenDetallePage({
                 <span className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${ESTADO_COLOR[l.estado]}`}>
                   {ESTADO_LABEL[l.estado]}
                 </span>
+                {l.reglaAplicada && (
+                  <span className="ml-1 text-[11px] text-violet-700" title={`Resuelta automáticamente por la regla «${l.reglaAplicada}»`}>
+                    ⚡ regla
+                  </span>
+                )}
 
                 {l.estado === 'SUGERIDA' && top && (
                   <div className="mt-1 flex items-center gap-2 text-xs">

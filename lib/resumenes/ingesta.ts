@@ -52,7 +52,7 @@ export async function ingestarResumen(params: {
     accion: 'CREAR',
     despues: { tipo: params.tipo, emisor: params.emisor, archivo: params.filename, hash },
   });
-  await enqueueJob('EXTRACCION_RESUMEN', { resumenId: resumen.id, empresaId: params.empresaId }, params.empresaId);
+  await enqueueJob('EXTRACCION_RESUMEN', { resumenId: resumen.id, empresaId: params.empresaId, usuarioId: params.usuarioId }, params.empresaId);
   return { resumenId: resumen.id };
 }
 

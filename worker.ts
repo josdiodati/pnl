@@ -7,6 +7,8 @@ import { procesarEmailEntrante } from '@/lib/canales/email';
 import { procesarUpdateTelegram } from '@/lib/canales/telegram';
 import { procesarExtraccionRecibo } from '@/lib/empleados/ingesta';
 import { procesarExtraccionResumen, marcarErrorProcesamientoResumen } from '@/lib/resumenes/ingesta';
+import { aplicarReglasResumen } from '@/lib/resumenes/reglas';
+import { scopedDb } from '@/lib/empresa/scope';
 
 const POLL_MS = 2000;
 let corriendo = true;
@@ -27,9 +29,13 @@ async function procesarJob(): Promise<boolean> {
       case 'EXTRACCION_RECIBO':
         await procesarExtraccionRecibo(payload as never);
         break;
-      case 'EXTRACCION_RESUMEN':
-        await procesarExtraccionResumen(payload as { resumenId: string; empresaId: string });
+      case 'EXTRACCION_RESUMEN': {
+        const p = payload as { resumenId: string; empresaId: string; usuarioId?: string };
+        await procesarExtraccionResumen(p);
+        // Auto-resolución por reglas de resumen (a nombre de quien lo subió).
+        await aplicarReglasResumen(scopedDb(p.empresaId), p.resumenId, p.usuarioId);
         break;
+      }
       case 'EMAIL_IN':
         await procesarEmailEntrante(payload as never);
         break;
