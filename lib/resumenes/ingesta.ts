@@ -56,14 +56,37 @@ export async function ingestarResumen(params: {
   return { resumenId: resumen.id };
 }
 
-/** Candidatos de matching para una fecha dada (ventana ±45 días). */
-async function candidatosDeMatching(db: ScopedDb): Promise<MovimientoCandidato[]> {
+const DIA_MS = 24 * 60 * 60 * 1000;
+const VENTANA_MATCHING_DIAS = 45;
+
+/**
+ * Ventana [min−45d, max+45d] a partir de las fechas de las líneas del
+ * resumen (el mismo dato que compara `señalFecha`). Si ninguna línea trae
+ * fecha, se ancla al mes del período del resumen.
+ */
+function ventanaMatching(fechas: (Date | null | undefined)[], ancla: Date): { desde: Date; hasta: Date } {
+  const validas = fechas.filter((f): f is Date => f != null);
+  const base = validas.length ? validas : [ancla];
+  const min = Math.min(...base.map((f) => f.getTime()));
+  const max = Math.max(...base.map((f) => f.getTime()));
+  return { desde: new Date(min - VENTANA_MATCHING_DIAS * DIA_MS), hasta: new Date(max + VENTANA_MATCHING_DIAS * DIA_MS) };
+}
+
+/** Candidatos de matching dentro de la ventana ±45 días de las líneas del resumen. */
+async function candidatosDeMatching(db: ScopedDb, ventana: { desde: Date; hasta: Date }): Promise<MovimientoCandidato[]> {
   const movs = await db.movimiento.findMany({
-    where: { estado: { notIn: ['ANULADO', 'DUPLICADO'] } },
-    include: { contraparte: true, lineasResumen: { where: { estado: 'CONCILIADA' }, select: { id: true } } },
+    where: {
+      estado: { notIn: ['ANULADO', 'DUPLICADO'] },
+      // Misma fecha que compara señalFecha: fechaDevengamiento, o createdAt si no la tiene.
+      OR: [
+        { fechaDevengamiento: { gte: ventana.desde, lte: ventana.hasta } },
+        { AND: [{ fechaDevengamiento: null }, { createdAt: { gte: ventana.desde, lte: ventana.hasta } }] },
+      ],
+    },
+    include: { contraparte: true, lineasResumen: { where: { estado: { in: ['CONCILIADA', 'IMPUTADA'] } }, select: { id: true } } },
   });
   return movs
-    .filter((m) => m.lineasResumen.length === 0) // un movimiento admite una sola línea conciliada
+    .filter((m) => m.lineasResumen.length === 0) // un movimiento admite una sola línea ocupante (conciliada o imputada)
     .map((m) => ({
       id: m.id,
       total: m.total != null ? Number(m.total) : null,
@@ -92,15 +115,18 @@ export async function procesarExtraccionResumen(payload: { resumenId: string; em
 
   const { extraccion, uso } = await getResumenExtractor().extract({ texto, buffer, mime: resumen.archivoMime });
 
-  const periodo = await getOrCreatePeriodo(db, new Date(Date.UTC(extraccion.periodoAnio, extraccion.periodoMes - 1, 1)));
-  const candidatos = await candidatosDeMatching(db);
+  const anclaPeriodo = new Date(Date.UTC(extraccion.periodoAnio, extraccion.periodoMes - 1, 1));
+  const periodo = await getOrCreatePeriodo(db, anclaPeriodo);
+  const fechasLineas = extraccion.lineas.map((l) => (l.fecha ? new Date(`${l.fecha}T00:00:00Z`) : null));
+  const candidatos = await candidatosDeMatching(db, ventanaMatching(fechasLineas, anclaPeriodo));
 
   // Reemplaza líneas previas (reintento de extracción): sólo las no resueltas.
   await prisma.resumenLinea.deleteMany({ where: { resumenId: resumen.id, estado: { in: ['PENDIENTE', 'SUGERIDA'] } } });
 
   let orden = 0;
-  for (const linea of extraccion.lineas) {
-    const fecha = linea.fecha ? new Date(`${linea.fecha}T00:00:00Z`) : null;
+  for (let i = 0; i < extraccion.lineas.length; i++) {
+    const linea = extraccion.lineas[i];
+    const fecha = fechasLineas[i];
     const evaluacion = evaluarLinea(
       { fecha, descriptor: linea.descriptor, monto: linea.monto, montoOrigen: linea.montoOrigen, moneda: linea.moneda },
       candidatos,
@@ -158,8 +184,11 @@ export async function marcarErrorProcesamientoResumen(payload: { resumenId: stri
 
 /** Recalcula el matching de las líneas no resueltas (botón "Re-matchear"). */
 export async function rematchearResumen(db: ScopedDb, resumenId: string): Promise<void> {
+  const resumen = await db.resumen.findFirst({ where: { id: resumenId }, include: { periodo: true } });
+  if (!resumen) throw new DomainError('Resumen inexistente.');
   const lineas = await db.resumenLinea.findMany({ where: { resumenId, estado: { in: ['PENDIENTE', 'SUGERIDA'] } } });
-  const candidatos = await candidatosDeMatching(db);
+  const anclaPeriodo = new Date(Date.UTC(resumen.periodo.anio, resumen.periodo.mes - 1, 1));
+  const candidatos = await candidatosDeMatching(db, ventanaMatching(lineas.map((l) => l.fecha), anclaPeriodo));
   for (const l of lineas) {
     const evaluacion = evaluarLinea(
       { fecha: l.fecha, descriptor: l.descriptor, monto: l.monto != null ? Number(l.monto) : null, montoOrigen: l.montoOrigen != null ? Number(l.montoOrigen) : null, moneda: l.moneda },
