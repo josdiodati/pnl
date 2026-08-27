@@ -6,7 +6,7 @@ import { procesarExtraccion, procesarArca, marcarErrorProcesamiento } from '@/li
 import { procesarEmailEntrante } from '@/lib/canales/email';
 import { procesarUpdateTelegram } from '@/lib/canales/telegram';
 import { procesarExtraccionRecibo } from '@/lib/empleados/ingesta';
-import { procesarExtraccionResumen } from '@/lib/resumenes/ingesta';
+import { procesarExtraccionResumen, marcarErrorProcesamientoResumen } from '@/lib/resumenes/ingesta';
 
 const POLL_MS = 2000;
 let corriendo = true;
@@ -46,6 +46,12 @@ async function procesarJob(): Promise<boolean> {
     if (final && job.tipo === 'EXTRACCION' && payload.movimientoId && payload.empresaId) {
       await marcarErrorProcesamiento(
         { movimientoId: payload.movimientoId, empresaId: payload.empresaId },
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    if (final && job.tipo === 'EXTRACCION_RESUMEN' && payload.resumenId && payload.empresaId) {
+      await marcarErrorProcesamientoResumen(
+        { resumenId: payload.resumenId, empresaId: payload.empresaId },
         err instanceof Error ? err.message : String(err),
       );
     }

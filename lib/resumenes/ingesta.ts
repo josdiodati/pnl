@@ -147,6 +147,15 @@ export async function procesarExtraccionResumen(payload: { resumenId: string; em
   });
 }
 
+/** Hook de fallo final: el worker marca el resumen como ERROR_PROCESAMIENTO. */
+export async function marcarErrorProcesamientoResumen(payload: { resumenId: string; empresaId: string }, error: string): Promise<void> {
+  const db = scopedDb(payload.empresaId);
+  const resumen = await db.resumen.findFirst({ where: { id: payload.resumenId } });
+  if (!resumen || resumen.estado === 'ERROR_PROCESAMIENTO') return;
+  await db.resumen.update({ where: { id: resumen.id }, data: { estado: 'ERROR_PROCESAMIENTO', nota: error } });
+  await writeAudit(db, { entidad: 'Resumen', entidadId: resumen.id, accion: 'ERROR_PROCESAMIENTO', despues: { error } });
+}
+
 /** Recalcula el matching de las líneas no resueltas (botón "Re-matchear"). */
 export async function rematchearResumen(db: ScopedDb, resumenId: string): Promise<void> {
   const lineas = await db.resumenLinea.findMany({ where: { resumenId, estado: { in: ['PENDIENTE', 'SUGERIDA'] } } });
