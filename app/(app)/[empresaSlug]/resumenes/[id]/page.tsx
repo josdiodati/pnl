@@ -105,7 +105,7 @@ export default async function ResumenDetallePage({
       const movimientosManual = editable
         ? await ctx.db.movimiento.findMany({
             where: { estado: { in: [...MOVIMIENTOS_CONCILIABLES] } },
-            include: { contraparte: true, lineasResumen: { where: { estado: 'CONCILIADA' }, select: { id: true } } },
+            include: { contraparte: true, lineasResumen: { where: { estado: { in: ['CONCILIADA', 'IMPUTADA'] } }, select: { id: true } } },
             orderBy: [{ fechaDevengamiento: 'desc' }, { createdAt: 'desc' }],
             take: 100,
           })
