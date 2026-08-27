@@ -182,7 +182,13 @@ export async function marcarErrorProcesamientoResumen(payload: { resumenId: stri
   await writeAudit(db, { entidad: 'Resumen', entidadId: resumen.id, accion: 'ERROR_PROCESAMIENTO', despues: { error } });
 }
 
-/** Recalcula el matching de las líneas no resueltas (botón "Re-matchear"). */
+type CandidatoGuardado = { movimientoId: string; score: number; motivo: string; rechazado?: boolean };
+
+/**
+ * Recalcula el matching de las líneas no resueltas (botón "Re-matchear").
+ * Los candidatos RECHAZADOS por el usuario se preservan al final de la lista
+ * y quedan excluidos de la evaluación: un rechazo no se vuelve a sugerir.
+ */
 export async function rematchearResumen(db: ScopedDb, resumenId: string): Promise<void> {
   const resumen = await db.resumen.findFirst({ where: { id: resumenId }, include: { periodo: true } });
   if (!resumen) throw new DomainError('Resumen inexistente.');
@@ -190,13 +196,15 @@ export async function rematchearResumen(db: ScopedDb, resumenId: string): Promis
   const anclaPeriodo = new Date(Date.UTC(resumen.periodo.anio, resumen.periodo.mes - 1, 1));
   const candidatos = await candidatosDeMatching(db, ventanaMatching(lineas.map((l) => l.fecha), anclaPeriodo));
   for (const l of lineas) {
+    const rechazados = (((l.candidatos as CandidatoGuardado[] | null) ?? [])).filter((c) => c.rechazado);
+    const rechazadoIds = new Set(rechazados.map((c) => c.movimientoId));
     const evaluacion = evaluarLinea(
       { fecha: l.fecha, descriptor: l.descriptor, monto: l.monto != null ? Number(l.monto) : null, montoOrigen: l.montoOrigen != null ? Number(l.montoOrigen) : null, moneda: l.moneda },
-      candidatos,
+      candidatos.filter((c) => !rechazadoIds.has(c.id)),
     );
     await db.resumenLinea.update({
       where: { id: l.id },
-      data: { estado: evaluacion.estado as never, candidatos: evaluacion.candidatos as never },
+      data: { estado: evaluacion.estado as never, candidatos: [...evaluacion.candidatos, ...rechazados] as never },
     });
   }
 }

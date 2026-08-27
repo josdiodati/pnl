@@ -5,7 +5,7 @@ import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isDomainError, isForbidden } from '@/lib/errors';
 import { parsearImporteAr } from '@/lib/format';
 import { ingestarResumen, rematchearResumen } from '@/lib/resumenes/ingesta';
-import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea } from '@/lib/resumenes/service';
+import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea, rechazarCandidato } from '@/lib/resumenes/service';
 
 // Actions de Resúmenes: exigen VALIDADOR (misma frontera que Validación /
 // Asignación). Contrato de FormData documentado en el brief — Task 7 (bandeja
@@ -123,6 +123,20 @@ export async function deshacerAction(formData: FormData): Promise<void> {
   redirect(`/${slug}/resumenes/${resumenId}?ok=${encodeURIComponent('Deshecho')}`);
 }
 
+/** Rechaza una sugerencia (candidato) de una línea: no se vuelve a proponer. */
+export async function rechazarCandidatoAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const resumenId = String(formData.get('resumenId'));
+  const lineaId = String(formData.get('lineaId'));
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    await rechazarCandidato(ctx, { lineaId, movimientoId: String(formData.get('movimientoId')) });
+  } catch (err) {
+    volverConError(slug, `resumenes/${resumenId}?linea=${lineaId}`, err);
+  }
+  redirect(`/${slug}/resumenes/${resumenId}?linea=${lineaId}&ok=${encodeURIComponent('Sugerencia rechazada')}`);
+}
+
 export async function rematchearAction(formData: FormData): Promise<void> {
   const slug = String(formData.get('empresaSlug'));
   const resumenId = String(formData.get('resumenId'));
@@ -146,8 +160,8 @@ export async function confirmarSugeridasAction(formData: FormData): Promise<void
     let ok = 0;
     let fallidas = 0;
     for (const l of lineas) {
-      const candidatos = (l.candidatos as { movimientoId: string }[] | null) ?? [];
-      const primero = candidatos[0];
+      const candidatos = (l.candidatos as { movimientoId: string; rechazado?: boolean }[] | null) ?? [];
+      const primero = candidatos.find((c) => !c.rechazado);
       if (!primero) {
         fallidas++;
         continue;

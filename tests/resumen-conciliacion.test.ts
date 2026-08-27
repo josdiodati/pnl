@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
 import { scopedDb } from '@/lib/empresa/scope';
-import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea } from '@/lib/resumenes/service';
+import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea, rechazarCandidato } from '@/lib/resumenes/service';
 import { rematchearResumen } from '@/lib/resumenes/ingesta';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import { DomainError } from '@/lib/errors';
@@ -142,6 +142,68 @@ describe('conciliación de líneas de resumen (integración)', () => {
     expect(actualB!.estado).toBe('PENDIENTE');
     const candidatosB = (actualB!.candidatos as { movimientoId: string }[] | null) ?? [];
     expect(candidatosB.some((c) => c.movimientoId === movId)).toBe(false);
+  });
+
+  it('rechazar una sugerencia la memoriza: el re-match no la vuelve a proponer', async () => {
+    const usuario = await prisma.usuario.findFirstOrThrow({ where: { email: `${sufijo}@test.local` } });
+    const movNuevo = (await prisma.movimiento.create({
+      data: { empresaId, origen: 'COMPROBANTE', estado: 'ASIGNADO', total: 4321, creadoPorId: usuario.id, fechaDevengamiento: new Date('2031-05-12T00:00:00Z') },
+    })).id;
+    const l = await linea({
+      descriptor: 'RECHAZO TEST',
+      monto: -4321,
+      fecha: new Date('2031-05-11T00:00:00Z'),
+      estado: 'SUGERIDA',
+      candidatos: [{ movimientoId: movNuevo, score: 0.9, motivo: 'monto exacto + fecha cercana' }],
+    });
+
+    await rechazarCandidato(ctx, { lineaId: l.id, movimientoId: movNuevo });
+
+    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
+    expect(actual!.estado).toBe('PENDIENTE');
+    const candidatos = actual!.candidatos as { movimientoId: string; rechazado?: boolean }[];
+    expect(candidatos.find((c) => c.movimientoId === movNuevo)?.rechazado).toBe(true);
+    expect(candidatos.some((c) => c.movimientoId === movNuevo && !c.rechazado)).toBe(false);
+
+    // Re-matchear explícito: el rechazo persiste y no vuelve a sugerir.
+    await rematchearResumen(ctx.db, resumenId);
+    const despues = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
+    expect(despues!.estado).toBe('PENDIENTE');
+    const cand2 = despues!.candidatos as { movimientoId: string; rechazado?: boolean }[];
+    expect(cand2.some((c) => c.movimientoId === movNuevo && !c.rechazado)).toBe(false);
+    expect(cand2.find((c) => c.movimientoId === movNuevo)?.rechazado).toBe(true);
+
+    // Rechazar de nuevo (ya no es candidato activo) falla.
+    await expect(rechazarCandidato(ctx, { lineaId: l.id, movimientoId: movNuevo })).rejects.toThrow(DomainError);
+  });
+
+  it('rechazado el primero, la línea queda SUGERIDA con el siguiente candidato que califica', async () => {
+    const usuario = await prisma.usuario.findFirstOrThrow({ where: { email: `${sufijo}@test.local` } });
+    const movA = (await prisma.movimiento.create({
+      data: { empresaId, origen: 'COMPROBANTE', estado: 'ASIGNADO', total: 777, creadoPorId: usuario.id, fechaDevengamiento: new Date('2031-05-12T00:00:00Z') },
+    })).id;
+    const movB = (await prisma.movimiento.create({
+      data: { empresaId, origen: 'COMPROBANTE', estado: 'ASIGNADO', total: 777, creadoPorId: usuario.id, fechaDevengamiento: new Date('2031-05-14T00:00:00Z') },
+    })).id;
+    const l = await linea({ descriptor: 'DOBLE CANDIDATO', monto: -777, fecha: new Date('2031-05-12T00:00:00Z') });
+
+    await rematchearResumen(ctx.db, resumenId);
+    let actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
+    expect(actual!.estado).toBe('SUGERIDA');
+    let candidatos = actual!.candidatos as { movimientoId: string; rechazado?: boolean }[];
+    expect(candidatos.filter((c) => !c.rechazado)[0]?.movimientoId).toBe(movA); // fecha más cercana gana
+
+    await rechazarCandidato(ctx, { lineaId: l.id, movimientoId: movA });
+    actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
+    expect(actual!.estado).toBe('SUGERIDA'); // el siguiente también califica
+    candidatos = actual!.candidatos as { movimientoId: string; rechazado?: boolean }[];
+    expect(candidatos.filter((c) => !c.rechazado)[0]?.movimientoId).toBe(movB);
+    expect(candidatos.find((c) => c.movimientoId === movA)?.rechazado).toBe(true);
+  });
+
+  it('rechazar un movimiento que no es candidato activo falla', async () => {
+    const l = await linea({ descriptor: 'SIN CANDIDATOS' });
+    await expect(rechazarCandidato(ctx, { lineaId: l.id, movimientoId: movExistente })).rejects.toThrow(DomainError);
   });
 
   it('rechaza imputar con período cerrado', async () => {

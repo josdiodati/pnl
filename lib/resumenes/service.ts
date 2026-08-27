@@ -6,6 +6,7 @@ import { validarPertenenciaLineas } from '@/lib/movimientos/service';
 import { getOrCreatePeriodo } from '@/lib/periodos';
 import { assertTransicion } from '@/lib/movimientos/estados';
 import { normalizarDescriptor } from './matching';
+import { rematchearResumen } from './ingesta';
 
 // Acciones sobre líneas de resumen. Conciliar NO crea gasto (el movimiento ya
 // está en el libro): acá muere el doble conteo. Imputar crea el gasto tomando
@@ -112,6 +113,33 @@ export async function imputarLinea(
     entidadId: linea.resumenId,
     accion: 'RESUMEN_IMPUTAR',
     despues: { lineaId: linea.id, descriptor: linea.descriptor, movimientoId: mov.id, total: montoBase, categoria: categoria.nombre },
+  });
+}
+
+type CandidatoGuardado = { movimientoId: string; score: number; motivo: string; rechazado?: boolean };
+
+/**
+ * Rechaza una sugerencia: marca el candidato como rechazado en la línea (el
+ * re-match lo preserva y no lo vuelve a proponer) y recalcula el matching del
+ * resumen, así la línea queda SUGERIDA con el siguiente candidato si también
+ * calificaba, o PENDIENTE si no.
+ */
+export async function rechazarCandidato(ctx: EmpresaContext, params: { lineaId: string; movimientoId: string }): Promise<void> {
+  const linea = await lineaOrThrow(ctx, params.lineaId);
+  if (linea.estado !== 'PENDIENTE' && linea.estado !== 'SUGERIDA') throw new DomainError('La línea ya está resuelta: deshacela primero.');
+  const candidatos = ((linea.candidatos as CandidatoGuardado[] | null) ?? []);
+  const candidato = candidatos.find((c) => c.movimientoId === params.movimientoId && !c.rechazado);
+  if (!candidato) throw new DomainError('Ese movimiento no es un candidato activo de la línea.');
+
+  const nuevos = [...candidatos.filter((c) => c.movimientoId !== params.movimientoId), { ...candidato, rechazado: true }];
+  await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { candidatos: nuevos as never } });
+  await rematchearResumen(ctx.db, linea.resumenId);
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'Resumen',
+    entidadId: linea.resumenId,
+    accion: 'RESUMEN_RECHAZAR_SUGERENCIA',
+    despues: { lineaId: linea.id, descriptor: linea.descriptor, movimientoId: params.movimientoId },
   });
 }
 

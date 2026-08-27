@@ -16,6 +16,7 @@ import {
   deshacerAction,
   rematchearAction,
   confirmarSugeridasAction,
+  rechazarCandidatoAction,
 } from '../actions';
 
 // Bandeja de conciliación de un resumen: lista de líneas con su estado de
@@ -42,14 +43,14 @@ const ESTADO_COLOR: Record<string, string> = {
 const ESTADOS_RESUELTOS = new Set(['CONCILIADA', 'IMPUTADA', 'IGNORADA']);
 const MOVIMIENTOS_CONCILIABLES = ['ASIGNADO', 'VALIDADO', 'PENDIENTE_VALIDACION'] as const;
 
-type Candidato = { movimientoId: string; score: number; motivo: string };
+type Candidato = { movimientoId: string; score: number; motivo: string; rechazado?: boolean };
 
 export default async function ResumenDetallePage({
   params,
   searchParams,
 }: {
   params: { empresaSlug: string; id: string };
-  searchParams: { linea?: string; ok?: string; error?: string };
+  searchParams: { linea?: string; ver?: string; ok?: string; error?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const base = `/${params.empresaSlug}/resumenes/${params.id}`;
@@ -96,6 +97,7 @@ export default async function ResumenDetallePage({
 
   // ---------- Panel de línea (querystring ?linea=) ----------
   let panel: React.ReactNode = null;
+  let popup: React.ReactNode = null;
   if (searchParams.linea) {
     const linea = resumen.lineas.find((l) => l.id === searchParams.linea);
     if (linea) {
@@ -123,20 +125,30 @@ export default async function ResumenDetallePage({
 
           <div>
             <p className="text-xs font-semibold text-slate-500 mb-1">Candidatos sugeridos</p>
-            {candidatosLinea.length === 0 && <p className="text-xs text-slate-400">Sin candidatos de matching.</p>}
+            {candidatosLinea.filter((c) => !c.rechazado).length === 0 && (
+              <p className="text-xs text-slate-400">Sin candidatos de matching.</p>
+            )}
             <div className="space-y-1">
-              {candidatosLinea.map((c) => {
+              {candidatosLinea.filter((c) => !c.rechazado).map((c) => {
                 const mov = movPorId.get(c.movimientoId);
                 return (
                   <div key={c.movimientoId} className="flex items-center gap-2 text-sm border border-slate-100 rounded px-2 py-1">
-                    <span className="flex-1 truncate">{mov ? nombreContraparte(mov).nombre ?? 'Sin identificar' : c.movimientoId}</span>
-                    <span className="text-xs text-slate-500 w-24 text-right tabular-nums">
-                      {mov?.total != null ? formatMoney(Number(mov.total)) : '—'}
-                    </span>
-                    <span className="text-xs text-slate-500 w-20 whitespace-nowrap">
-                      {mov ? formatFecha(mov.fechaDevengamiento ?? mov.createdAt) : ''}
-                    </span>
-                    <span className="text-xs text-slate-400 w-40 truncate" title={c.motivo}>{c.motivo} · {c.score}</span>
+                    <Link
+                      href={`${base}?linea=${linea.id}&ver=${c.movimientoId}`}
+                      className="flex-1 flex items-center gap-2 min-w-0 group"
+                      title="Ver el comprobante propuesto"
+                    >
+                      <span className="flex-1 truncate group-hover:underline text-sky-700">
+                        {mov ? nombreContraparte(mov).nombre ?? 'Sin identificar' : c.movimientoId}
+                      </span>
+                      <span className="text-xs text-slate-500 w-24 text-right tabular-nums">
+                        {mov?.total != null ? formatMoney(Number(mov.total)) : '—'}
+                      </span>
+                      <span className="text-xs text-slate-500 w-20 whitespace-nowrap">
+                        {mov ? formatFecha(mov.fechaDevengamiento ?? mov.createdAt) : ''}
+                      </span>
+                      <span className="text-xs text-slate-400 w-40 truncate" title={c.motivo}>{c.motivo} · {c.score}</span>
+                    </Link>
                     {editable && (
                       <form action={conciliarAction}>
                         <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
@@ -146,6 +158,18 @@ export default async function ResumenDetallePage({
                         <button className="btn-secondary text-xs">Conciliar</button>
                       </form>
                     )}
+                  </div>
+                );
+              })}
+              {candidatosLinea.filter((c) => c.rechazado).map((c) => {
+                const mov = movPorId.get(c.movimientoId);
+                return (
+                  <div key={c.movimientoId} className="flex items-center gap-2 text-xs text-slate-400 px-2 py-1">
+                    <span className="flex-1 truncate line-through">
+                      {mov ? nombreContraparte(mov).nombre ?? 'Sin identificar' : c.movimientoId}
+                    </span>
+                    <span className="w-24 text-right tabular-nums">{mov?.total != null ? formatMoney(Number(mov.total)) : '—'}</span>
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 font-semibold">rechazada</span>
                   </div>
                 );
               })}
@@ -235,6 +259,100 @@ export default async function ResumenDetallePage({
           )}
         </div>
       );
+
+      // ---------- Pop-up de verificación (?ver=<movimientoId>) ----------
+      if (searchParams.ver) {
+        const mov = await ctx.db.movimiento.findFirst({
+          where: { id: searchParams.ver },
+          include: { contraparte: true, categoria: true },
+        });
+        if (mov) {
+          const candidato = candidatosLinea.find((c) => c.movimientoId === mov.id);
+          const pdfUrl = mov.archivoKey ? await getFileStorage().getSignedUrl(mov.archivoKey) : null;
+          const numeroComprobante = [mov.puntoVenta, mov.numero].filter(Boolean).join('-');
+          const cerrar = `${base}?linea=${linea.id}`;
+          popup = (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <Link href={cerrar} className="absolute inset-0 bg-black/40" aria-label="Cerrar" />
+              <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold">¿Es este el comprobante de la línea?</p>
+                  <Link href={cerrar} className="text-xs text-slate-500 underline">Cerrar ✕</Link>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  <div className="rounded border border-amber-200 bg-amber-50/50 p-3 space-y-1">
+                    <p className="text-xs font-semibold text-amber-800">Línea del resumen</p>
+                    <p className="font-medium">{linea.descriptor}</p>
+                    <p className="text-slate-600">{formatFecha(linea.fecha)}</p>
+                    <p className="tabular-nums">
+                      {linea.monto != null
+                        ? formatMoney(Number(linea.monto))
+                        : linea.montoOrigen != null
+                          ? `${linea.moneda} ${Math.abs(Number(linea.montoOrigen)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+                          : '—'}
+                    </p>
+                    {(linea.cuenta || linea.titular) && (
+                      <p className="text-xs text-slate-500">{[linea.cuenta, linea.titular].filter(Boolean).join(' · ')}</p>
+                    )}
+                  </div>
+                  <div className="rounded border border-sky-200 bg-sky-50/50 p-3 space-y-1">
+                    <p className="text-xs font-semibold text-sky-800">Movimiento propuesto</p>
+                    <p className="font-medium">{nombreContraparte(mov).nombre ?? 'Sin identificar'}</p>
+                    <p className="text-slate-600">
+                      {[mov.tipoComprobante, numeroComprobante].filter(Boolean).join(' ') || 'Sin datos de comprobante'} ·{' '}
+                      {formatFecha(mov.fechaDevengamiento ?? mov.createdAt)}
+                    </p>
+                    <p className="tabular-nums">
+                      {mov.total != null ? `${mov.moneda !== 'ARS' ? `${mov.moneda} ` : ''}${formatMoney(Number(mov.total))}` : '—'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {[mov.categoria?.nombre, mov.estado].filter(Boolean).join(' · ')}
+                      {mov.descripcion ? ` · ${mov.descripcion}` : ''}
+                    </p>
+                  </div>
+                </div>
+
+                {candidato && (
+                  <p className="text-xs text-slate-500">
+                    Por qué se sugiere: <span className="font-medium">{candidato.motivo}</span> · score {candidato.score}
+                  </p>
+                )}
+
+                {editable && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <form action={conciliarAction}>
+                      <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                      <input type="hidden" name="resumenId" value={resumen.id} />
+                      <input type="hidden" name="lineaId" value={linea.id} />
+                      <input type="hidden" name="movimientoId" value={mov.id} />
+                      <button className="btn-primary text-sm">Aceptar y conciliar</button>
+                    </form>
+                    {candidato && !candidato.rechazado && (
+                      <form action={rechazarCandidatoAction}>
+                        <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                        <input type="hidden" name="resumenId" value={resumen.id} />
+                        <input type="hidden" name="lineaId" value={linea.id} />
+                        <input type="hidden" name="movimientoId" value={mov.id} />
+                        <button className="btn-secondary text-sm">Rechazar sugerencia</button>
+                      </form>
+                    )}
+                    <Link href={cerrar} className="text-sm text-slate-500 underline">Volver</Link>
+                  </div>
+                )}
+
+                {pdfUrl ? (
+                  <DocViewer url={pdfUrl} mime={mov.archivoMime ?? 'application/pdf'} nombre={mov.archivoNombre ?? 'comprobante'} />
+                ) : (
+                  <p className="text-sm text-slate-500 border border-dashed border-slate-200 rounded p-4 text-center">
+                    Este movimiento no tiene archivo adjunto (carga manual): compará con los datos de arriba.
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        }
+      }
     }
   }
 
@@ -295,11 +413,12 @@ export default async function ResumenDetallePage({
       </div>
 
       {panel}
+      {popup}
 
       <div className="card divide-y divide-slate-100">
         {resumen.lineas.map((l) => {
           const candidatos = (l.candidatos as Candidato[] | null) ?? [];
-          const top = l.estado === 'SUGERIDA' ? candidatos[0] : undefined;
+          const top = l.estado === 'SUGERIDA' ? candidatos.find((c) => !c.rechazado) : undefined;
           const topMov = top ? movPorId.get(top.movimientoId) : null;
           return (
             <div key={l.id} className="py-2 px-3 flex flex-wrap items-start gap-3 hover:bg-slate-50">
@@ -331,9 +450,13 @@ export default async function ResumenDetallePage({
 
                 {l.estado === 'SUGERIDA' && top && (
                   <div className="mt-1 flex items-center gap-2 text-xs">
-                    <span className="text-amber-800 truncate">
+                    <Link
+                      href={`${base}?linea=${l.id}&ver=${top.movimientoId}`}
+                      className="text-amber-800 truncate underline decoration-amber-400 hover:decoration-amber-800"
+                      title="Ver el comprobante propuesto"
+                    >
                       → {topMov ? nombreContraparte(topMov).nombre ?? 'Sin identificar' : '—'} · {top.score}
-                    </span>
+                    </Link>
                     <form action={conciliarAction}>
                       <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                       <input type="hidden" name="resumenId" value={resumen.id} />
