@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
 import { scopedDb } from '@/lib/empresa/scope';
 import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea } from '@/lib/resumenes/service';
+import { rematchearResumen } from '@/lib/resumenes/ingesta';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import { DomainError } from '@/lib/errors';
 
@@ -126,5 +127,32 @@ describe('conciliación de líneas de resumen (integración)', () => {
     expect(mov!.estado).toBe('ANULADO');
     expect(mov!.motivoAnulacion).toBe('anulado manualmente antes');
     expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
+  });
+
+  it('un movimiento IMPUTADA no es conciliable ni candidato para otra línea', async () => {
+    const lA = await linea({ descriptor: 'OCUPA TEST', monto: -5000, fecha: new Date('2031-05-15T00:00:00Z') });
+    await imputarLinea(ctx, { lineaId: lA.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] });
+    const movId = (await prisma.resumenLinea.findUnique({ where: { id: lA.id } }))!.movimientoId!;
+
+    const lB = await linea({ descriptor: 'OCUPA TEST', monto: -5000, fecha: new Date('2031-05-15T00:00:00Z') });
+    await expect(conciliarLinea(ctx, { lineaId: lB.id, movimientoId: movId })).rejects.toThrow(DomainError);
+
+    await rematchearResumen(ctx.db, resumenId);
+    const actualB = await prisma.resumenLinea.findUnique({ where: { id: lB.id } });
+    expect(actualB!.estado).toBe('PENDIENTE');
+    const candidatosB = (actualB!.candidatos as { movimientoId: string }[] | null) ?? [];
+    expect(candidatosB.some((c) => c.movimientoId === movId)).toBe(false);
+  });
+
+  it('rechaza imputar con período cerrado', async () => {
+    await prisma.periodo.updateMany({ where: { empresaId }, data: { estado: 'CERRADO' } });
+    const l = await linea({ descriptor: 'PERIODO CERRADO', monto: -700 });
+    await expect(
+      imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] }),
+    ).rejects.toThrow(/cerrado/);
+    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
+    expect(actual!.estado).toBe('PENDIENTE');
+    expect(actual!.movimientoId).toBeNull();
+    await prisma.periodo.updateMany({ where: { empresaId }, data: { estado: 'ABIERTO' } });
   });
 });
