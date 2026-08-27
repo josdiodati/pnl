@@ -5,6 +5,7 @@ import { writeAudit } from '@/lib/audit';
 import { validarDistribucion, type LineaDistribucion } from '@/lib/movimientos/distribucion';
 import { validarPertenenciaLineas } from '@/lib/movimientos/service';
 import { getOrCreatePeriodo } from '@/lib/periodos';
+import { assertTransicion } from '@/lib/movimientos/estados';
 import { normalizarDescriptor } from './matching';
 
 // Acciones sobre líneas de resumen. Conciliar NO crea gasto (el movimiento ya
@@ -32,7 +33,7 @@ async function aprenderDescriptor(ctx: EmpresaContext, contraparteId: string | n
 
 export async function conciliarLinea(ctx: EmpresaContext, params: { lineaId: string; movimientoId: string }): Promise<void> {
   const linea = await lineaOrThrow(ctx, params.lineaId);
-  if (linea.estado === 'CONCILIADA' || linea.estado === 'IMPUTADA') throw new DomainError('La línea ya está resuelta: deshacela primero.');
+  if (linea.estado !== 'PENDIENTE' && linea.estado !== 'SUGERIDA') throw new DomainError('La línea ya está resuelta: deshacela primero.');
   const mov = await ctx.db.movimiento.findFirst({ where: { id: params.movimientoId } });
   if (!mov) throw new DomainError('Movimiento inexistente.');
   if (mov.estado === 'ANULADO' || mov.estado === 'DUPLICADO') throw new DomainError('Ese movimiento está anulado o duplicado.');
@@ -41,7 +42,7 @@ export async function conciliarLinea(ctx: EmpresaContext, params: { lineaId: str
   });
   if (yaConciliado) throw new DomainError('Ese movimiento ya está conciliado con otra línea.');
 
-  await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'CONCILIADA', movimientoId: mov.id } });
+  await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'CONCILIADA', movimientoId: mov.id, motivoIgnorada: null } });
   await aprenderDescriptor(ctx, mov.contraparteId, linea.descriptor);
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,
@@ -57,7 +58,7 @@ export async function imputarLinea(
   params: { lineaId: string; categoriaId: string; lineas: LineaDistribucion[]; contraparteId?: string | null; montoArs?: number | null },
 ): Promise<void> {
   const linea = await lineaOrThrow(ctx, params.lineaId);
-  if (linea.estado === 'CONCILIADA' || linea.estado === 'IMPUTADA') throw new DomainError('La línea ya está resuelta: deshacela primero.');
+  if (linea.estado !== 'PENDIENTE' && linea.estado !== 'SUGERIDA') throw new DomainError('La línea ya está resuelta: deshacela primero.');
 
   const montoBase = linea.monto != null ? Math.abs(Number(linea.monto)) : params.montoArs != null && params.montoArs > 0 ? params.montoArs : null;
   if (montoBase == null) throw new DomainError('La línea no tiene importe en pesos: ingresá el monto final en pesos para imputarla.');
@@ -101,7 +102,7 @@ export async function imputarLinea(
       porcentaje: l.porcentaje,
     })),
   });
-  await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'IMPUTADA', movimientoId: mov.id } });
+  await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'IMPUTADA', movimientoId: mov.id, motivoIgnorada: null } });
   await aprenderDescriptor(ctx, params.contraparteId ?? null, linea.descriptor);
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,
@@ -114,7 +115,7 @@ export async function imputarLinea(
 
 export async function ignorarLinea(ctx: EmpresaContext, params: { lineaId: string; motivo: string }): Promise<void> {
   const linea = await lineaOrThrow(ctx, params.lineaId);
-  if (linea.estado === 'CONCILIADA' || linea.estado === 'IMPUTADA') throw new DomainError('La línea ya está resuelta: deshacela primero.');
+  if (linea.estado !== 'PENDIENTE' && linea.estado !== 'SUGERIDA') throw new DomainError('La línea ya está resuelta: deshacela primero.');
   if (!params.motivo.trim()) throw new DomainError('Indicá el motivo para ignorar la línea.');
   await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'IGNORADA', motivoIgnorada: params.motivo.trim() } });
   await writeAudit(ctx.db, {
@@ -132,8 +133,9 @@ export async function deshacerLinea(ctx: EmpresaContext, params: { lineaId: stri
   // Imputación deshecha: el movimiento creado desde la línea se anula.
   if (linea.estado === 'IMPUTADA' && linea.movimientoId) {
     const mov = await ctx.db.movimiento.findFirst({ where: { id: linea.movimientoId }, include: { periodo: true } });
-    if (mov) {
+    if (mov && mov.estado !== 'ANULADO') {
       if (mov.periodo?.estado === 'CERRADO') throw new DomainError('El período del movimiento imputado está cerrado.');
+      assertTransicion(mov.estado, 'ANULADO');
       await ctx.db.movimiento.update({
         where: { id: mov.id },
         data: { estado: 'ANULADO', motivoAnulacion: 'Imputación de resumen deshecha' },

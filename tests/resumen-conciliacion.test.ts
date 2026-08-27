@@ -101,4 +101,30 @@ describe('conciliación de líneas de resumen (integración)', () => {
     expect((await prisma.movimiento.findUnique({ where: { id: movId } }))!.estado).toBe('ANULADO');
     expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
   });
+
+  it('una línea IGNORADA rechaza conciliar e imputar hasta deshacerla', async () => {
+    const l = await linea({ descriptor: 'PAGO ANTERIOR' });
+    await ignorarLinea(ctx, { lineaId: l.id, motivo: 'ya pagado en el resumen anterior' });
+    await expect(conciliarLinea(ctx, { lineaId: l.id, movimientoId: movExistente })).rejects.toThrow(DomainError);
+    await expect(
+      imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] }),
+    ).rejects.toThrow(DomainError);
+    expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('IGNORADA');
+    await deshacerLinea(ctx, { lineaId: l.id });
+    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
+    expect(actual!.estado).toBe('PENDIENTE');
+    expect(actual!.motivoIgnorada).toBeNull();
+  });
+
+  it('deshacer una imputación cuyo movimiento ya estaba ANULADO no re-anula (no-op) y libera la línea', async () => {
+    const l = await linea({ descriptor: 'YA ANULADO', monto: -300 });
+    await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] });
+    const movId = (await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.movimientoId!;
+    await prisma.movimiento.update({ where: { id: movId }, data: { estado: 'ANULADO', motivoAnulacion: 'anulado manualmente antes' } });
+    await expect(deshacerLinea(ctx, { lineaId: l.id })).resolves.toBeUndefined();
+    const mov = await prisma.movimiento.findUnique({ where: { id: movId } });
+    expect(mov!.estado).toBe('ANULADO');
+    expect(mov!.motivoAnulacion).toBe('anulado manualmente antes');
+    expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
+  });
 });
