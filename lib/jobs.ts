@@ -4,7 +4,7 @@ import type { Job } from '@prisma/client';
 // DB-backed job queue (no Redis). A single worker polls the Job table; claims
 // are atomic via conditional updateMany, retries use exponential backoff.
 
-export type TipoJob = 'EXTRACCION' | 'ARCA' | 'RECURRENTES' | 'EMAIL_IN' | 'TELEGRAM_IN' | 'EXTRACCION_RECIBO';
+export type TipoJob = 'EXTRACCION' | 'ARCA' | 'RECURRENTES' | 'EMAIL_IN' | 'TELEGRAM_IN' | 'EXTRACCION_RECIBO' | 'EXTRACCION_RESUMEN';
 
 const BACKOFF_BASE_MS = 30_000; // 30s, 60s, 120s...
 

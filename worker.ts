@@ -6,6 +6,7 @@ import { procesarExtraccion, procesarArca, marcarErrorProcesamiento } from '@/li
 import { procesarEmailEntrante } from '@/lib/canales/email';
 import { procesarUpdateTelegram } from '@/lib/canales/telegram';
 import { procesarExtraccionRecibo } from '@/lib/empleados/ingesta';
+import { procesarExtraccionResumen } from '@/lib/resumenes/ingesta';
 
 const POLL_MS = 2000;
 let corriendo = true;
@@ -25,6 +26,9 @@ async function procesarJob(): Promise<boolean> {
         break;
       case 'EXTRACCION_RECIBO':
         await procesarExtraccionRecibo(payload as never);
+        break;
+      case 'EXTRACCION_RESUMEN':
+        await procesarExtraccionResumen(payload as { resumenId: string; empresaId: string });
         break;
       case 'EMAIL_IN':
         await procesarEmailEntrante(payload as never);
