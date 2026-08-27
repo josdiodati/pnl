@@ -5,6 +5,9 @@ import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
+import { originalDeDuplicado } from '@/lib/movimientos/service';
+import { rolAlcanza } from '@/lib/roles';
+import { eliminarDuplicadosAction } from './actions';
 
 // Validation queue: filterable list with counters, ordered "most doubtful
 // first" (lowest extraction confidence, then oldest).
@@ -63,6 +66,19 @@ export default async function ValidacionPage({
       <h1 className="text-lg font-semibold">Cola de validación</h1>
       <ErrorBanner mensaje={searchParams.error} />
       <OkBanner mensaje={searchParams.ok} />
+
+      {estadoFiltro === 'DUPLICADO' && (conteo.DUPLICADO ?? 0) > 0 && rolAlcanza(ctx.rol, 'ADMINISTRADOR') && (
+        <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700 flex items-center justify-between gap-3 flex-wrap">
+          <span>
+            Los duplicados no aportan nada al libro: el original ya está cargado. Podés borrarlos de a uno desde cada
+            comprobante o todos juntos.
+          </span>
+          <form action={eliminarDuplicadosAction}>
+            <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+            <button className="btn-danger text-xs">Borrar todos los duplicados ({conteo.DUPLICADO})</button>
+          </form>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         {tabs.map((t) => (
@@ -163,7 +179,16 @@ export default async function ValidacionPage({
                     )}
                   </td>
                   <td><CanalBadge canal={m.canalIngreso} /></td>
-                  <td className="text-right">
+                  <td className="text-right whitespace-nowrap space-x-2">
+                    {m.estado === 'DUPLICADO' && originalDeDuplicado(m.flags) && (
+                      <Link
+                        href={`/${params.empresaSlug}/validacion/${originalDeDuplicado(m.flags)}`}
+                        className="btn-secondary text-xs"
+                        title="Ver el comprobante que este duplica"
+                      >
+                        Ver original
+                      </Link>
+                    )}
                     <Link href={`/${params.empresaSlug}/validacion/${m.id}`} className="btn-primary text-xs">
                       Revisar
                     </Link>

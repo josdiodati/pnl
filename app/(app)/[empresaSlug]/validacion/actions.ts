@@ -11,6 +11,8 @@ import {
   volverAPendiente,
   reintentarExtraccion,
   cargarAManoDesdeError,
+  eliminarDuplicado,
+  eliminarDuplicados,
 } from '@/lib/movimientos/service';
 import { procesarArca } from '@/lib/pipeline';
 import { guardarReglaDesdeAsignacion } from '@/lib/reglas/guardar-desde-asignacion';
@@ -232,4 +234,33 @@ export async function reArcaAction(formData: FormData): Promise<void> {
     volverConError(slug, movimientoId, err);
   }
   redirect(`/${slug}/validacion/${movimientoId}`);
+}
+
+/** Borra físicamente un comprobante DUPLICADO (sólo ADMINISTRADOR). */
+export async function eliminarDuplicadoAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const movimientoId = String(formData.get('movimientoId'));
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    await eliminarDuplicado(ctx, movimientoId);
+  } catch (err) {
+    volverConError(slug, movimientoId, err);
+  }
+  redirect(`/${slug}/validacion?estado=DUPLICADO&ok=${encodeURIComponent('Duplicado borrado')}`);
+}
+
+/** Borra todos los DUPLICADO de la empresa (sólo ADMINISTRADOR). */
+export async function eliminarDuplicadosAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  let n = 0;
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    n = await eliminarDuplicados(ctx);
+  } catch (err) {
+    if (isDomainError(err) || isForbidden(err)) {
+      redirect(`/${slug}/validacion?estado=DUPLICADO&error=${encodeURIComponent(err.message)}`);
+    }
+    throw err;
+  }
+  redirect(`/${slug}/validacion?estado=DUPLICADO&ok=${encodeURIComponent(`${n} duplicado${n !== 1 ? 's' : ''} borrado${n !== 1 ? 's' : ''}`)}`);
 }

@@ -412,6 +412,50 @@ export async function volverAPendiente(ctx: EmpresaContext, id: string, nota?: s
   });
 }
 
+// ---------- Duplicados ----------
+
+/** Id del comprobante original que un DUPLICADO está duplicando (por hash de archivo o por QR/ARCA). */
+export function originalDeDuplicado(flags: unknown): string | null {
+  const f = (flags as { duplicadoArchivo?: string; duplicados?: string[] } | null) ?? null;
+  return f?.duplicadoArchivo ?? f?.duplicados?.[0] ?? null;
+}
+
+/**
+ * Borra físicamente un comprobante DUPLICADO (única excepción al "nada se
+ * borra": el original sigue en el libro y el duplicado no aporta nada). Las
+ * líneas de distribución y vínculos a empleados caen en cascada; el archivo
+ * queda en el almacén inmutable. Auditado con los datos identificatorios.
+ */
+export async function eliminarDuplicado(ctx: EmpresaContext, id: string): Promise<void> {
+  const mov = await getMovimientoOrThrow(ctx, id);
+  if (mov.estado !== 'DUPLICADO') throw new DomainError('Sólo se puede borrar un comprobante en estado Duplicado.');
+  await ctx.db.resumenLinea.updateMany({ where: { movimientoId: id }, data: { movimientoId: null } });
+  await ctx.db.movimiento.delete({ where: { id } });
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'Movimiento',
+    entidadId: id,
+    accion: 'ELIMINAR_DUPLICADO',
+    antes: {
+      estado: mov.estado,
+      archivoNombre: mov.archivoNombre,
+      cuitEmisor: mov.cuitEmisor,
+      tipoComprobante: mov.tipoComprobante,
+      puntoVenta: mov.puntoVenta,
+      numero: mov.numero,
+      total: mov.total != null ? Number(mov.total) : null,
+      original: originalDeDuplicado(mov.flags),
+    },
+  });
+}
+
+/** Borra todos los DUPLICADO de la empresa. Devuelve cuántos borró. */
+export async function eliminarDuplicados(ctx: EmpresaContext): Promise<number> {
+  const dups = await ctx.db.movimiento.findMany({ where: { estado: 'DUPLICADO' }, select: { id: true } });
+  for (const d of dups) await eliminarDuplicado(ctx, d.id);
+  return dups.length;
+}
+
 export async function anularMovimiento(ctx: EmpresaContext, id: string, motivo: string): Promise<void> {
   if (!motivo?.trim()) throw new DomainError('El motivo de anulación es obligatorio.');
   const mov = await getMovimientoOrThrow(ctx, id);

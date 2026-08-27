@@ -20,7 +20,10 @@ import {
   reintentarAction,
   cargarAManoAction,
   reArcaAction,
+  eliminarDuplicadoAction,
 } from '../actions';
+import { originalDeDuplicado } from '@/lib/movimientos/service';
+import { rolAlcanza } from '@/lib/roles';
 
 const EDITABLES = new Set(['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO']);
 // Estados desde los que se puede devolver el comprobante a la cola de Validación.
@@ -168,7 +171,7 @@ export default async function ValidacionDetallePage({
         </div>
       )}
       {mov.estado === 'DUPLICADO' && (
-        <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+        <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700 space-y-2">
           {flags.duplicadoArchivo ? (
             <>
               <strong>Archivo duplicado</strong>: es exactamente el mismo archivo (mismo hash) que otro comprobante ya
@@ -182,6 +185,22 @@ export default async function ValidacionDetallePage({
               pendiente».
             </>
           )}
+          <div className="flex items-center gap-3 flex-wrap">
+            {originalDeDuplicado(mov.flags) && (
+              <Link href={`/${params.empresaSlug}/validacion/${originalDeDuplicado(mov.flags)}`} className="btn-primary text-xs">
+                Ver el comprobante original →
+              </Link>
+            )}
+            {rolAlcanza(ctx.rol, 'ADMINISTRADOR') && (
+              <form action={eliminarDuplicadoAction}>
+                <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                <input type="hidden" name="movimientoId" value={mov.id} />
+                <button className="btn-danger text-xs" title="Borra físicamente este duplicado; el original queda intacto">
+                  Borrar duplicado
+                </button>
+              </form>
+            )}
+          </div>
         </div>
       )}
 
