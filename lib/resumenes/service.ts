@@ -1,5 +1,4 @@
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
-import { prisma } from '@/lib/db';
 import { DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import { validarDistribucion, type LineaDistribucion } from '@/lib/movimientos/distribucion';
@@ -77,6 +76,8 @@ export async function imputarLinea(
   if (periodo.estado === 'CERRADO') throw new DomainError('El período de la línea está cerrado: reabrilo para imputar.');
 
   // El signo lo define la categoría (INGRESO/EGRESO), como en todo el libro.
+  // Movimiento + líneas de distribución en una sola escritura anidada: Prisma
+  // la ejecuta atómicamente, así que nunca queda un ASIGNADO sin distribución.
   const mov = await ctx.db.movimiento.create({
     data: {
       origen: 'RESUMEN',
@@ -91,16 +92,17 @@ export async function imputarLinea(
       canalIngreso: 'MANUAL',
       creadoPorId: ctx.usuario.id,
       validadoPorId: ctx.usuario.id,
+      lineas: {
+        createMany: {
+          data: params.lineas.map((l) => ({
+            centroCostoId: l.centroCostoId,
+            clienteId: l.clienteId ?? null,
+            proyectoId: l.proyectoId ?? null,
+            porcentaje: l.porcentaje,
+          })),
+        },
+      },
     } as never,
-  });
-  await prisma.movimientoLinea.createMany({
-    data: params.lineas.map((l) => ({
-      movimientoId: mov.id,
-      centroCostoId: l.centroCostoId,
-      clienteId: l.clienteId ?? null,
-      proyectoId: l.proyectoId ?? null,
-      porcentaje: l.porcentaje,
-    })),
   });
   await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'IMPUTADA', movimientoId: mov.id, motivoIgnorada: null } });
   await aprenderDescriptor(ctx, params.contraparteId ?? null, linea.descriptor);
