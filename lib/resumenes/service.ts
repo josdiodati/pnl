@@ -38,7 +38,7 @@ export async function conciliarLinea(ctx: EmpresaContext, params: { lineaId: str
   if (!mov) throw new DomainError('Movimiento inexistente.');
   if (mov.estado === 'ANULADO' || mov.estado === 'DUPLICADO') throw new DomainError('Ese movimiento está anulado o duplicado.');
   const yaConciliado = await ctx.db.resumenLinea.findFirst({
-    where: { movimientoId: mov.id, estado: 'CONCILIADA', id: { not: linea.id } },
+    where: { movimientoId: mov.id, estado: { in: ['CONCILIADA', 'IMPUTADA'] }, id: { not: linea.id } },
   });
   if (yaConciliado) throw new DomainError('Ese movimiento ya está conciliado con otra línea.');
 
