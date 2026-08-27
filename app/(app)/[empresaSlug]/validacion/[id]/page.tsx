@@ -8,6 +8,7 @@ import { ComprobanteDetalle } from '@/components/comprobante-detalle';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { formatFechaHora, fechaInputValue } from '@/lib/format';
+import { MES_LABEL } from '@/lib/periodos';
 import { elegirRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { reglaVigenteParaCuit } from '@/lib/reglas/desde-asignacion';
@@ -36,9 +37,20 @@ export default async function ValidacionDetallePage({
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const mov = await ctx.db.movimiento.findFirst({
     where: { id: params.id },
-    include: { contraparte: true, categoria: true, lineas: true, creadoPor: true, validadoPor: true },
+    include: {
+      contraparte: true,
+      categoria: true,
+      lineas: true,
+      creadoPor: true,
+      validadoPor: true,
+      lineasResumen: {
+        where: { estado: { in: ['CONCILIADA', 'IMPUTADA'] } },
+        include: { resumen: { include: { periodo: true } } },
+      },
+    },
   });
   if (!mov) notFound();
+  const lineaResumen = mov.lineasResumen[0] ?? null;
 
   const [contrapartes, categorias, centros, clientes, proyectos, plantillas, reglas, historial] = await Promise.all([
     ctx.db.contraparte.findMany({ where: { activa: true }, orderBy: { razonSocial: 'asc' } }),
@@ -136,6 +148,15 @@ export default async function ValidacionDetallePage({
       <ErrorBanner mensaje={searchParams.error} />
       <OkBanner mensaje={searchParams.ok} />
 
+      {lineaResumen && (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          Conciliado con la línea &quot;{lineaResumen.descriptor}&quot; del resumen {lineaResumen.resumen.emisor} (
+          {MES_LABEL[lineaResumen.resumen.periodo.mes]} {lineaResumen.resumen.periodo.anio}) —{' '}
+          <Link href={`/${params.empresaSlug}/resumenes/${lineaResumen.resumenId}?linea=${lineaResumen.id}`} className="underline">
+            ver en la bandeja
+          </Link>
+        </div>
+      )}
       {Boolean(flags.errorProcesamiento) && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
           El procesamiento OCR falló: {String(flags.errorProcesamiento)}.
