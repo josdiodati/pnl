@@ -28,15 +28,26 @@ export async function GET(_req: NextRequest, { params }: { params: { key: string
       return new NextResponse('403 Forbidden', { status: 403 });
     }
   } else {
-    // Recibos de sueldo comparten el mismo storage; son datos sensibles, sólo
-    // ADMINISTRADOR los ve (misma restricción que las páginas de Empleados).
-    const recibo = await prisma.reciboSueldo.findFirst({
+    // Resúmenes de tarjeta/banco comparten el mismo storage; misma restricción
+    // que la bandeja de conciliación (VALIDADOR+).
+    const resumen = await prisma.resumen.findFirst({
       where: { empresaId, archivoKey: key },
       select: { archivoMime: true, archivoNombre: true },
     });
-    if (!recibo) return new NextResponse('Archivo inexistente', { status: 404 });
-    if (!rolAlcanza(membresia.rol, 'ADMINISTRADOR')) return new NextResponse('403 Forbidden', { status: 403 });
-    archivo = recibo;
+    if (resumen) {
+      if (!rolAlcanza(membresia.rol, 'VALIDADOR')) return new NextResponse('403 Forbidden', { status: 403 });
+      archivo = resumen;
+    } else {
+      // Recibos de sueldo comparten el mismo storage; son datos sensibles, sólo
+      // ADMINISTRADOR los ve (misma restricción que las páginas de Empleados).
+      const recibo = await prisma.reciboSueldo.findFirst({
+        where: { empresaId, archivoKey: key },
+        select: { archivoMime: true, archivoNombre: true },
+      });
+      if (!recibo) return new NextResponse('Archivo inexistente', { status: 404 });
+      if (!rolAlcanza(membresia.rol, 'ADMINISTRADOR')) return new NextResponse('403 Forbidden', { status: 403 });
+      archivo = recibo;
+    }
   }
 
   const storage = getFileStorage();
