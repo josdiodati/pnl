@@ -43,10 +43,15 @@ Modelos scoped por empresa (`SCOPED_MODELS` / `RELATION_SCOPE` como el resto).
   (`PROCESANDO | EXTRAIDO | ERROR_PROCESAMIENTO`), metadatos de extracción
   (`extraccionRaw, tokens*, modeloExtractor`), `createdAt`.
 - **`ResumenLinea`**: `id, resumenId, orden Int, fecha DateTime?, descriptor
-  String` (tal como viene), `monto Decimal(18,2)` (FIRMADO: gastos negativos,
-  créditos positivos), `moneda` (`ARS|USD|EUR|OTRA`), `montoOrigen Decimal?`
-  (el importe en moneda origen cuando el resumen muestra ambos; TC implícito
-  = |monto| / |montoOrigen|), `cuotas String?` ("3/6"),
+  String` (tal como viene), `monto Decimal(18,2)?` (FIRMADO: gastos negativos,
+  créditos positivos, en ARS; **nullable**: los consumos de tarjeta en USD no
+  traen importe en pesos hasta el pago), `moneda` (`ARS|USD|EUR|OTRA`),
+  `montoOrigen Decimal?` (el importe en moneda origen cuando el resumen
+  muestra ambos; TC implícito = |monto| / |montoOrigen|), `cuotas String?`
+  ("3/6"), `cuenta String?` (la cuenta/tarjeta DENTRO del PDF a la que
+  pertenece la línea — un PDF de banco puede consolidar varias cuentas, ej.
+  BBVA con CC $ ×2 + CC U$S), `titular String?` (los resúmenes de tarjeta
+  agrupan consumos por titular — sirve para vincular al empleado a futuro),
   `estado` (enum `EstadoLineaResumen: PENDIENTE | SUGERIDA | CONCILIADA |
   IMPUTADA | IGNORADA`), `movimientoId String?` (el movimiento conciliado o
   el creado al imputar), `candidatos Json?` (ids+score del matching, para el
@@ -71,7 +76,13 @@ Pipeline calcado del de recibos: subida → `Resumen` PROCESANDO → un `Job`
 Extractor (`lib/extractor/resumen*.ts`, tool forzado, `EXTRACTOR_MODE`):
 - Devuelve: `tipo` (tarjeta/banco si es reconocible), `emisor`, `periodo`
   (anio/mes), `fechaCierre?`, `totalDeclarado?`, `lineas[]` con `{fecha,
-  descriptor, monto firmado, moneda, montoOrigen?, cuotas?}`.
+  descriptor, monto firmado (ARS, null si es consumo USD sin pesificar),
+  moneda, montoOrigen?, cuotas?, cuenta?, titular?}`.
+- Casos reales cubiertos por los ejemplos de `Docs/Resumenes Ejemplo/`
+  (gitignorados, datos sensibles): PDF multi-cuenta (BBVA), tarjeta con
+  consumos por titular (Visa Business), columnas duales $/U$S (Visa
+  Santander), cuenta CVU con rendimientos positivos (Mercado Pago), resumen
+  sin movimientos (0 líneas).
 - Prompt agnóstico del formato (cada banco/tarjeta emite distinto), con
   reglas: los consumos/débitos son NEGATIVOS y los pagos/créditos POSITIVOS;
   excluir líneas de encabezado/subtotal; en consumos en moneda extranjera
@@ -104,7 +115,8 @@ después de cargar comprobantes atrasados).
   doble conteo. Un movimiento admite UNA línea conciliada (guard). Aprende el
   descriptor en la contraparte del movimiento.
 - **Imputar** (`RESUMEN_IMPUTAR`): crea un `Movimiento` origen `RESUMEN` con
-  total = |monto| de la línea **siempre en ARS** (la tarjeta/cuenta debitó
+  total = |monto| de la línea **siempre en ARS** (si la línea es USD sin
+  importe en pesos, el mini-form pide el importe final en pesos) (la tarjeta/cuenta debitó
   pesos; si la línea era USD, el movimiento nace en ARS y el TC implícito
   queda como referencia en la línea), fechaDevengamiento = fecha de línea,
   descripcion = descriptor, contraparte opcional
