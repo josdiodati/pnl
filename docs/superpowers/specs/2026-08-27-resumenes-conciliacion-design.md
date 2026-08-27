@@ -186,3 +186,17 @@ después de cargar comprobantes atrasados).
 - Matching contra líneas de OTROS resúmenes (transferencias entre cuentas).
 - Auto-imputación por reglas de líneas sin comprobante (v2: reglas por
   descriptor).
+
+### Recortes de alcance v1 (registrados en la review final)
+
+Tres puntos del diseño quedaron fuera de la implementación v1 y pasan al
+roadmap; se registran acá para que el spec refleje lo construido:
+
+- **Contraparte nueva vía EXT- al imputar**: el mini-form de imputación sólo
+  ofrece contrapartes existentes; no hay alta de contraparte sin CUIT desde
+  la bandeja.
+- **Regla de asignación como sugerencia** en el mini-form de imputación: no
+  implementada.
+- **Camino VALIDADO sin distribución**: inalcanzable en la práctica
+  (`validarDistribucion` exige líneas); todo movimiento imputado nace
+  ASIGNADO con distribución completa.
