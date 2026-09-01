@@ -106,6 +106,7 @@ export async function validarAction(formData: FormData): Promise<void> {
       numero: String(formData.get('numero') ?? '').trim() || null,
       cae: String(formData.get('cae') ?? '').trim() || null,
       cuitEmisor: normalizarCuit(String(formData.get('cuitEmisor') ?? '')) || null,
+      esVenta: formData.get('direccion') ? String(formData.get('direccion')) === 'VENTA' : undefined,
       importes: {
         netoGravado: aNumero(formData.get('netoGravado')),
         iva21: aNumero(formData.get('iva21')),

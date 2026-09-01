@@ -10,7 +10,7 @@ import { writeAudit } from '@/lib/audit';
 import { enqueueJob } from '@/lib/jobs';
 import { leerQrAfip } from '@/lib/extractor/qr';
 import { evaluarAutovalidacion, decidirAutovalidacion } from '@/lib/autovalidacion';
-import { decidirAltaContraparte } from '@/lib/contrapartes/alta-automatica';
+import { decidirAltaContraparte, claveNombre } from '@/lib/contrapartes/alta-automatica';
 import { elegirRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { tieneAsignacionCompleta } from '@/lib/movimientos/service';
@@ -23,14 +23,35 @@ import type { EstadoMovimiento } from '@prisma/client';
 // PENDIENTE_VALIDACION (or RETENIDO if the accrual period is closed).
 
 /** Determina si un comprobante es una compra (emisor tercero) o una venta
- *  emitida por la propia empresa (emisor === CUIT de la empresa). */
-export function clasificarDireccion(
-  cuitEmisor: string | null,
-  _cuitReceptor: string | null,
-  cuitEmpresa: string | null,
-): 'COMPRA' | 'VENTA' {
-  if (cuitEmisor && cuitEmpresa && cuitEmisor === cuitEmpresa) return 'VENTA';
-  return 'COMPRA';
+ *  emitida por la propia empresa (emisor === CUIT de la empresa).
+ *
+ *  El CUIT emisor manda, pero con contra-señales: el OCR a veces toma el CUIT
+ *  del recuadro del cliente como si fuera del emisor, y eso armaría una "venta"
+ *  en la que la empresa se factura a sí misma. Si el receptor parece ser la
+ *  propia empresa, es una COMPRA (nadie se factura a sí mismo); si solo la
+ *  razón social emisora contradice al CUIT, queda VENTA pero marcada dudosa
+ *  para que el validador la mire (con QR legible esto no pasa: el CUIT emisor
+ *  sale del QR, que es autoritativo). */
+export function clasificarDireccion(e: {
+  cuitEmisor: string | null;
+  cuitReceptor: string | null;
+  cuitEmpresa: string | null;
+  razonSocialEmisor?: string | null;
+  razonSocialReceptor?: string | null;
+  razonSocialEmpresa?: string | null;
+}): { direccion: 'COMPRA' | 'VENTA'; dudosa: boolean } {
+  if (!(e.cuitEmisor && e.cuitEmpresa && e.cuitEmisor === e.cuitEmpresa)) {
+    return { direccion: 'COMPRA', dudosa: false };
+  }
+  const claveEmpresa = claveNombre(e.razonSocialEmpresa ?? null);
+  const receptorEsLaEmpresa =
+    (e.cuitReceptor != null && e.cuitReceptor === e.cuitEmpresa) ||
+    (claveEmpresa != null && claveNombre(e.razonSocialReceptor ?? null) === claveEmpresa);
+  if (receptorEsLaEmpresa) return { direccion: 'COMPRA', dudosa: true };
+
+  const claveEmisor = claveNombre(e.razonSocialEmisor ?? null);
+  const emisorContradice = claveEmisor != null && claveEmpresa != null && claveEmisor !== claveEmpresa;
+  return { direccion: 'VENTA', dudosa: emisorContradice };
 }
 
 export type CanalIngreso = 'WEB' | 'FOTO' | 'EMAIL' | 'TELEGRAM' | 'MANUAL';
@@ -176,7 +197,21 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     monedaFinal !== 'ARS' && qrAfip && qrAfip.ctz > 0 ? qrAfip.ctz : null;
   const numeroFinal = qrAfip ? String(qrAfip.nroCmp).padStart(8, '0') : extraccion.numero;
 
-  const direccion = clasificarDireccion(cuit, cuitReceptor, cuitEmpresa);
+  const clasificacion = clasificarDireccion({
+    cuitEmisor: cuit,
+    cuitReceptor,
+    cuitEmpresa,
+    razonSocialEmisor: extraccion.razonSocialEmisor,
+    razonSocialReceptor: extraccion.razonSocialReceptor,
+    razonSocialEmpresa: empresa?.razonSocial ?? null,
+  });
+  const direccion = clasificacion.direccion;
+  if (clasificacion.dudosa) {
+    camposRevisar.direccion =
+      direccion === 'COMPRA'
+        ? 'El CUIT emisor extraído era el de la propia empresa pero las razones sociales dicen que es una compra (probable CUIT del recuadro del cliente): revisá compra/venta y el CUIT del emisor'
+        : 'El CUIT emisor es el de la empresa pero la razón social emisora extraída es de un tercero: revisá compra/venta';
+  }
   const origenFinal: 'COMPROBANTE' | 'VENTA_COMPROBANTE' =
     direccion === 'VENTA' ? 'VENTA_COMPROBANTE' : 'COMPROBANTE';
 

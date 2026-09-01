@@ -118,6 +118,9 @@ export function ValidacionForm({
   // El CAE es estado porque decide en vivo si el comprobante es constatable:
   // con CAE, ARCA sólo está pendiente y no hace falta override.
   const [cae, setCae] = useState(mov.cae);
+  // Compra/venta es corregible: la clasificación automática depende del CUIT
+  // emisor extraído, que el OCR a veces confunde con el del recuadro del cliente.
+  const [esVenta, setEsVenta] = useState(mov.esVenta);
 
   const contraparteSel = contrapartes.find((c) => c.id === contraparteId);
   const categoriaSel = categorias.find((c) => c.id === categoriaId);
@@ -205,6 +208,12 @@ export function ValidacionForm({
         <Campo label="Fecha del comprobante (devengamiento)" revisar={r.fechaEmision}>
           <input type="date" name="fechaDevengamiento" defaultValue={mov.fechaDevengamiento} required className="input" />
         </Campo>
+        <Campo label="Compra / Venta" revisar={r.direccion}>
+          <select name="direccion" value={esVenta ? 'VENTA' : 'COMPRA'} onChange={(e) => setEsVenta(e.target.value === 'VENTA')} className="input">
+            <option value="COMPRA">Compra (nos facturan)</option>
+            <option value="VENTA">Venta (facturamos nosotros)</option>
+          </select>
+        </Campo>
         <Campo label="Tipo de comprobante" revisar={r.tipoComprobante}>
           <select name="tipoComprobante" value={tipoComprobante} onChange={(e) => setTipoComprobante(e.target.value)} className="input">
             <option value="">—</option>
@@ -219,10 +228,10 @@ export function ValidacionForm({
         <Campo label="Número" revisar={r.numero}>
           <input name="numero" defaultValue={mov.numero} className="input" />
         </Campo>
-        <Campo label={mov.esVenta ? 'CUIT del emisor (nuestro)' : 'CUIT del emisor'} revisar={r.cuitEmisor}>
+        <Campo label={esVenta ? 'CUIT del emisor (nuestro)' : 'CUIT del emisor'} revisar={r.cuitEmisor}>
           <input name="cuitEmisor" defaultValue={mov.cuitEmisor} className="input" />
         </Campo>
-        {mov.esVenta && (
+        {esVenta && (
           <Campo label="CUIT receptor (cliente)">
             <input value={mov.cuitReceptor || '—'} readOnly disabled className="input bg-slate-50 text-slate-600" />
           </Campo>
@@ -404,7 +413,7 @@ export function ValidacionForm({
         {categoriaId && (
           <div className="mt-3">
             <ReglaDesdeAsignacion
-              cuit={(mov.esVenta ? mov.cuitReceptor : mov.cuitEmisor) || null}
+              cuit={(esVenta ? mov.cuitReceptor : mov.cuitEmisor) || null}
               razonSocial={razonSocialContraparte ?? null}
               existente={reglaVigente ?? null}
               ocr={ocrRegla ?? null}

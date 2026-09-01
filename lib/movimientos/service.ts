@@ -142,6 +142,14 @@ async function getMovimientoOrThrow(ctx: EmpresaContext, id: string): Promise<Mo
 
 // ---------- Validation ----------
 
+/** Origen resultante de corregir compra/venta a mano en la validación: solo
+ *  los comprobantes ingeridos pueden cambiar de dirección (la clasificación
+ *  automática puede fallar); los orígenes manuales la tienen intrínseca. */
+export function origenConDireccion(origen: string, esVenta: boolean): string {
+  if (origen !== 'COMPROBANTE' && origen !== 'VENTA_COMPROBANTE') return origen;
+  return esVenta ? 'VENTA_COMPROBANTE' : 'COMPROBANTE';
+}
+
 export type DatosValidacion = {
   fechaDevengamiento: string; // YYYY-MM-DD
   contraparteId?: string | null;
@@ -162,6 +170,9 @@ export type DatosValidacion = {
   overrideNoFiscalMotivo?: string | null;
   /** Recurring correction note saved on the contraparte for future extractions. */
   instruccionesExtraccion?: string | null;
+  /** Corrección manual de compra/venta (la clasificación automática puede fallar).
+   *  Solo afecta a comprobantes ingeridos; en orígenes manuales se ignora. */
+  esVenta?: boolean;
   /** Imputación opcional hecha en la misma pantalla de validación (flujo manual:
    *  validar + asignar juntos). Si la imputación queda completa → ASIGNADO. */
   categoriaId?: string | null;
@@ -247,6 +258,7 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
       numero: datos.numero !== undefined ? datos.numero : mov.numero,
       cae: datos.cae !== undefined ? datos.cae : mov.cae,
       cuitEmisor: datos.cuitEmisor !== undefined ? datos.cuitEmisor : mov.cuitEmisor,
+      ...(datos.esVenta !== undefined ? { origen: origenConDireccion(mov.origen, datos.esVenta) as never } : {}),
       ...(datos.importes
         ? {
             netoGravado: datos.importes.netoGravado,
