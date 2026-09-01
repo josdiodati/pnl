@@ -46,3 +46,22 @@ export function aportesObraSocialDeConceptos(conceptos: ConceptoRecibo[] | null 
   }
   return { aportes, contribuciones };
 }
+
+/**
+ * Suma de obra social sobre varios recibos del mismo período (mensual + SAC +
+ * vacaciones + liquidación final): lo que se transfiere a la prepaga el mes
+ * siguiente y netea la factura de ese mes.
+ */
+export function aportesObraSocialDeRecibos(recibos: (ConceptoRecibo[] | null | undefined)[]): {
+  aportes: number;
+  contribuciones: number;
+} {
+  let aportes = 0;
+  let contribuciones = 0;
+  for (const conceptos of recibos) {
+    const r = aportesObraSocialDeConceptos(conceptos);
+    aportes += r.aportes;
+    contribuciones += r.contribuciones;
+  }
+  return { aportes, contribuciones };
+}

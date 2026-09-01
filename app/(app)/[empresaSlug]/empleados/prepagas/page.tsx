@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
-import { MES_LABEL, periodoDeFecha, ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
-import { netoPrepaga, aportesObraSocialDeConceptos, type ConceptoRecibo } from '@/lib/empleados/prepaga';
+import { MES_LABEL, periodoDeFecha, ejercicioDeMes, mesesDeEjercicio, periodoAnterior } from '@/lib/periodos';
+import { netoPrepaga, aportesObraSocialDeRecibos, type ConceptoRecibo } from '@/lib/empleados/prepaga';
 import { OkBanner } from '@/components/error-banner';
 import { guardarPrepagaAction, eliminarPrepagaAction } from '../actions';
 
@@ -59,13 +59,15 @@ export default async function PrepagasPage({
     if (empleado) {
       const existente = porEmpleadoMes.get(`${empleado.id}|${anio}-${mes}`) ?? null;
       // Arrastre: sin registro del mes, propone el del mes anterior del empleado.
-      const mesPrevio = mes === 1 ? { anio: anio - 1, mes: 12 } : { anio, mes: mes - 1 };
+      const mesPrevio = periodoAnterior(anio, mes);
       const anterior = porEmpleadoMes.get(`${empleado.id}|${mesPrevio.anio}-${mesPrevio.mes}`) ?? null;
-      // Precarga de aportes/contribuciones desde el recibo mensual del período.
-      const recibo = await ctx.db.reciboSueldo.findFirst({
-        where: { empleadoId: empleado.id, tipo: 'MENSUAL', estado: { in: ['CONFIRMADO', 'PENDIENTE_REVISION'] }, periodo: { anio, mes } },
+      // Precarga de aportes/contribuciones desde los recibos del PERÍODO
+      // ANTERIOR (mensual + SAC + vacaciones + liq. final): los aportes de
+      // junio se transfieren a la prepaga en julio y netean la factura de julio.
+      const recibos = await ctx.db.reciboSueldo.findMany({
+        where: { empleadoId: empleado.id, estado: { in: ['CONFIRMADO', 'PENDIENTE_REVISION'] }, periodo: { anio: mesPrevio.anio, mes: mesPrevio.mes } },
       });
-      const os = aportesObraSocialDeConceptos(recibo?.conceptos as ConceptoRecibo[] | null);
+      const os = aportesObraSocialDeRecibos(recibos.map((r) => r.conceptos as ConceptoRecibo[] | null));
       const val = (propio: unknown, fallback: number) => (propio != null ? Number(propio) : fallback);
 
       panelEdicion = (
@@ -73,7 +75,9 @@ export default async function PrepagasPage({
           <p className="text-sm font-medium mb-2">
             {empleado.nombre} · {MES_LABEL[mes]} {anio}
             {!existente && anterior && <span className="ml-2 text-xs text-slate-500">(propuesto del mes anterior)</span>}
-            {!existente && !anterior && recibo && <span className="ml-2 text-xs text-slate-500">(aportes precargados del recibo)</span>}
+            {!existente && !anterior && recibos.length > 0 && (
+              <span className="ml-2 text-xs text-slate-500">(aportes precargados del recibo de {MES_LABEL[mesPrevio.mes]})</span>
+            )}
           </p>
           <form action={guardarPrepagaAction} className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
@@ -89,11 +93,11 @@ export default async function PrepagasPage({
               <input name="costoPlan" required className="input text-sm text-right" inputMode="decimal" defaultValue={val(existente?.costoPlan, anterior ? Number(anterior.costoPlan) : 0) || ''} />
             </div>
             <div className="w-36">
-              <label className="label" title="Aporte del empleado a la obra social (3%), del recibo del período">Aportes OS ($)</label>
+              <label className="label" title="Aporte del empleado a la obra social (3%), de los recibos del período anterior (se transfieren a la prepaga este mes)">Aportes OS ($)</label>
               <input name="aportes" className="input text-sm text-right" inputMode="decimal" defaultValue={val(existente?.aportes, os.aportes) || ''} />
             </div>
             <div className="w-36">
-              <label className="label" title="Contribución patronal de obra social, del recibo del período">Contribuciones OS ($)</label>
+              <label className="label" title="Contribución patronal de obra social, de los recibos del período anterior (se transfieren a la prepaga este mes)">Contribuciones OS ($)</label>
               <input name="contribuciones" className="input text-sm text-right" inputMode="decimal" defaultValue={val(existente?.contribuciones, os.contribuciones) || ''} />
             </div>
             <div className="w-28">
@@ -111,10 +115,10 @@ export default async function PrepagasPage({
               <button className="text-xs text-red-600 underline">Eliminar el registro de este mes</button>
             </form>
           )}
-          {recibo == null && (
+          {recibos.length === 0 && (
             <p className="mt-2 text-xs text-amber-700">
-              Ojo: no hay recibo mensual de {MES_LABEL[mes]} para precargar aportes — si la factura viene desfasada,
-              cargá los aportes del período que corresponda.
+              Ojo: no hay recibos de {MES_LABEL[mesPrevio.mes]} {mesPrevio.anio} para precargar aportes — los aportes
+              que netean {MES_LABEL[mes]} son los del recibo del mes anterior (se transfieren con un mes de desfase).
             </p>
           )}
         </div>
@@ -197,8 +201,8 @@ export default async function PrepagasPage({
         </table>
         <p className="px-3 py-2 text-[11px] text-slate-500">
           Un neto en verde es negativo (los aportes derivados superan el plan): informativo, en las vistas de empleados
-          y proyectos computa 0. Los aportes/contribuciones se precargan del recibo del período y se pueden corregir a
-          mano si la facturación viene desfasada.
+          y proyectos computa 0. Los aportes/contribuciones se precargan de los recibos del período anterior (mensual +
+          SAC + vacaciones), porque se transfieren a la prepaga con un mes de desfase; se pueden corregir a mano.
         </p>
       </div>
     </div>

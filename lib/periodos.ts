@@ -30,6 +30,11 @@ export function nombrePeriodo(anio: number, mes: number): string {
   return `${MES_LABEL[mes]} ${anio}`;
 }
 
+/** The calendar month before {anio, mes}. */
+export function periodoAnterior(anio: number, mes: number): { anio: number; mes: number } {
+  return mes === 1 ? { anio: anio - 1, mes: 12 } : { anio, mes: mes - 1 };
+}
+
 /** Gets (or lazily creates, OPEN) the period of a date. db is empresa-scoped. */
 export async function getOrCreatePeriodo(db: ScopedDb, fecha: Date): Promise<Periodo> {
   const { anio, mes } = periodoDeFecha(fecha);

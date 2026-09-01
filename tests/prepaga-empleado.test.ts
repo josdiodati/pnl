@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { netoPrepaga, netoComputable, aportesObraSocialDeConceptos } from '@/lib/empleados/prepaga';
+import { netoPrepaga, netoComputable, aportesObraSocialDeConceptos, aportesObraSocialDeRecibos } from '@/lib/empleados/prepaga';
+import { periodoAnterior } from '@/lib/periodos';
 
 // Costo real de la prepaga por empleado: plan − FSR% × (aportes + contribuciones).
 // A la prepaga sólo llega el 85% de los aportes/contribuciones (el FSR retiene
@@ -49,5 +50,44 @@ describe('aportesObraSocialDeConceptos (precarga desde el recibo)', () => {
   it('sin conceptos de obra social devuelve ceros', () => {
     expect(aportesObraSocialDeConceptos([{ concepto: 'Sueldo', unidad: null, importe: 1, naturaleza: 'REMUNERATIVO' }])).toEqual({ aportes: 0, contribuciones: 0 });
     expect(aportesObraSocialDeConceptos(null)).toEqual({ aportes: 0, contribuciones: 0 });
+  });
+});
+
+// Los aportes del recibo del período N se transfieren a la prepaga en N+1 y
+// netean la factura de N+1: la precarga del mes toma TODOS los recibos del
+// período anterior (mensual + SAC + vacaciones + liquidación final).
+describe('aportesObraSocialDeRecibos (suma sobre varios recibos)', () => {
+  const mensual = [
+    { concepto: 'Obra Social 3%', unidad: null, importe: 137843.95, naturaleza: 'RETENCION' },
+    { concepto: 'Contribución de Obra Social', unidad: '5,10%', importe: 243270, naturaleza: 'CONTRIBUCION_EMPLEADOR' },
+  ];
+  const sac = [
+    { concepto: 'Obra Social 3% s/SAC', unidad: null, importe: 68921.97, naturaleza: 'RETENCION' },
+    { concepto: 'Contribución de Obra Social', unidad: '5,10%', importe: 121635, naturaleza: 'CONTRIBUCION_EMPLEADOR' },
+  ];
+
+  it('suma aportes y contribuciones del mensual y el SAC del mismo período', () => {
+    const r = aportesObraSocialDeRecibos([mensual, sac]);
+    expect(r.aportes).toBeCloseTo(137843.95 + 68921.97, 2);
+    expect(r.contribuciones).toBe(243270 + 121635);
+  });
+
+  it('con un solo recibo equivale a aportesObraSocialDeConceptos', () => {
+    expect(aportesObraSocialDeRecibos([mensual])).toEqual(aportesObraSocialDeConceptos(mensual));
+  });
+
+  it('sin recibos devuelve ceros e ignora conceptos nulos', () => {
+    expect(aportesObraSocialDeRecibos([])).toEqual({ aportes: 0, contribuciones: 0 });
+    expect(aportesObraSocialDeRecibos([null, mensual])).toEqual(aportesObraSocialDeConceptos(mensual));
+  });
+});
+
+describe('periodoAnterior', () => {
+  it('mes anterior dentro del mismo año', () => {
+    expect(periodoAnterior(2026, 7)).toEqual({ anio: 2026, mes: 6 });
+  });
+
+  it('enero retrocede a diciembre del año anterior', () => {
+    expect(periodoAnterior(2026, 1)).toEqual({ anio: 2025, mes: 12 });
   });
 });
