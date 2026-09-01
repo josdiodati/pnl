@@ -66,7 +66,7 @@ export default async function AsignacionDetallePage({
 
   // Regla ya vigente para este CUIT: se resuelve al renderizar (depende sólo del
   // CUIT), así el conflicto se decide en el mismo submit que la asignación.
-  const reglaVigente = await buscarReglaPorCuit(ctx, mov.cuitEmisor);
+  const reglaVigente = await buscarReglaPorCuit(ctx, cuitContraparteDe(mov));
   const imputacionDe = (r: NonNullable<typeof reglaVigente>) => {
     const cat = categorias.find((c) => c.id === r.categoriaId)?.nombre ?? 'sin categoría';
     const dist = r.distribucionId
@@ -184,7 +184,7 @@ export default async function AsignacionDetallePage({
             />
 
             <ReglaDesdeAsignacion
-              cuit={mov.cuitEmisor}
+              cuit={cuitContraparteDe(mov)}
               razonSocial={nombreContraparte(mov).nombre}
               existente={reglaVigente ? { nombre: reglaVigente.nombre, imputacion: imputacionDe(reglaVigente) } : null}
               ocr={ocrParaRegla({ extraccionRaw: mov.extraccionRaw, descripcion: mov.descripcion, razonSocialContraparte: nombreContraparte(mov).nombre })}

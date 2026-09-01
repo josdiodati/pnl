@@ -26,7 +26,7 @@ export type EntradaReglaDesdeAsignacion = {
 
 export type ReglaNueva = {
   nombre: string;
-  cuit: string;
+  cuit: string | null;
   palabraClave: string | null;
   categoriaId: string;
   distribucionId: string | null;
@@ -65,6 +65,22 @@ export function reglaVigenteParaCuit<T extends Pick<ReglaAsignacion, 'cuit' | 'a
   return reglas.find((r) => r.accion === 'ASIGNAR' && r.cuit && normalizarCuit(r.cuit) === objetivo) ?? null;
 }
 
+/** Regla de imputación sin CUIT con la misma palabra clave, o null. Es la que
+ *  se pisa al crear una regla desde un comprobante sin CUIT; las que además
+ *  tienen CUIT se pisan por CUIT y quedan afuera. */
+export function reglaVigenteParaPalabraClave<T extends Pick<ReglaAsignacion, 'cuit' | 'palabraClave' | 'accion'>>(
+  reglas: T[],
+  palabraClave: string | null,
+): T | null {
+  const objetivo = limpiar(palabraClave)?.toLowerCase();
+  if (!objetivo) return null;
+  return (
+    reglas.find(
+      (r) => r.accion === 'ASIGNAR' && !r.cuit && r.palabraClave?.trim().toLowerCase() === objetivo,
+    ) ?? null
+  );
+}
+
 /** Id de la plantilla cuyas líneas son exactamente este reparto, o null. */
 export function plantillaQueCoincide(lineas: LineaDistribucion[], plantillas: PlantillaConLineas[]): string | null {
   const objetivo = claveReparto(lineas);
@@ -73,16 +89,20 @@ export function plantillaQueCoincide(lineas: LineaDistribucion[], plantillas: Pl
 
 export function construirReglaDesdeAsignacion(e: EntradaReglaDesdeAsignacion): DecisionReglaDesdeAsignacion {
   const cuit = limpiar(e.cuit);
-  if (!cuit) return { crear: false, motivo: 'el comprobante no tiene CUIT: no hay condición para la regla' };
+  const palabraClave = limpiar(e.palabraClave);
+  // Sin CUIT la palabra clave es la única condición posible (el matching ya la
+  // soporta sola; una regla sin ninguna condición no matchea nunca).
+  if (!cuit && !palabraClave)
+    return { crear: false, motivo: 'el comprobante no tiene CUIT: cargá una palabra clave, es la única condición posible' };
   if (e.lineas.length === 0) return { crear: false, motivo: 'la asignación no tiene líneas' };
 
   const nombre =
-    limpiar(e.nombrePropuesto) ?? `${limpiar(e.razonSocial) ?? cuit} → ${e.categoriaNombre}`;
+    limpiar(e.nombrePropuesto) ?? `${limpiar(e.razonSocial) ?? cuit ?? palabraClave} → ${e.categoriaNombre}`;
 
   const comun = {
     nombre,
     cuit,
-    palabraClave: limpiar(e.palabraClave),
+    palabraClave,
     categoriaId: e.categoriaId,
   };
 

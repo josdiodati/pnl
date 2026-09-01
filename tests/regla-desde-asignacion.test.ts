@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { plantillaQueCoincide, construirReglaDesdeAsignacion, reglaVigenteParaCuit, type EntradaReglaDesdeAsignacion } from '@/lib/reglas/desde-asignacion';
+import { plantillaQueCoincide, construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaVigenteParaPalabraClave, type EntradaReglaDesdeAsignacion } from '@/lib/reglas/desde-asignacion';
 
 // Camino inverso al de lib/reglas/aplicar.ts: de una asignación concreta a una
 // regla reutilizable. La restricción del modelo manda: ReglaAsignacion guarda un
@@ -68,6 +68,31 @@ describe('reglaVigenteParaCuit', () => {
   });
 });
 
+describe('reglaVigenteParaPalabraClave (pisar reglas sin CUIT)', () => {
+  const reglas: { id: string; cuit: string | null; palabraClave: string | null; accion: string }[] = [
+    { id: 'r1', cuit: '30656631615', palabraClave: 'roaming', accion: 'ASIGNAR' },
+    { id: 'r2', cuit: null, palabraClave: 'Max plan', accion: 'ASIGNAR' },
+    { id: 'r3', cuit: null, palabraClave: 'spotify', accion: 'OBSERVAR' },
+  ];
+
+  it('encuentra la regla sin CUIT con la misma palabra clave, sin distinguir mayúsculas', () => {
+    expect(reglaVigenteParaPalabraClave(reglas, 'max PLAN')?.id).toBe('r2');
+  });
+
+  it('ignora las reglas que además tienen CUIT: esas se pisan por CUIT', () => {
+    expect(reglaVigenteParaPalabraClave(reglas, 'roaming')).toBeNull();
+  });
+
+  it('ignora las reglas de descarte', () => {
+    expect(reglaVigenteParaPalabraClave(reglas, 'spotify')).toBeNull();
+  });
+
+  it('sin palabra clave no hay regla vigente', () => {
+    expect(reglaVigenteParaPalabraClave(reglas, null)).toBeNull();
+    expect(reglaVigenteParaPalabraClave(reglas, '  ')).toBeNull();
+  });
+});
+
 describe('construirReglaDesdeAsignacion', () => {
   it('una sola línea al 100% se guarda como centro directo', () => {
     const r = construirReglaDesdeAsignacion(base);
@@ -107,9 +132,25 @@ describe('construirReglaDesdeAsignacion', () => {
     expect(r.motivo).toMatch(/plantilla/i);
   });
 
-  it('sin CUIT no hay condición posible', () => {
-    const r = construirReglaDesdeAsignacion({ ...base, cuit: null });
+  it('sin CUIT ni palabra clave no hay condición posible', () => {
+    const r = construirReglaDesdeAsignacion({ ...base, cuit: null, razonSocial: null });
     expect(r.crear).toBe(false);
+    if (r.crear) throw new Error('no debería crear');
+    expect(r.motivo).toMatch(/palabra clave/i);
+  });
+
+  // Comprobantes sin CUIT (suscripciones del exterior, tickets): la regla se
+  // define por palabra clave, que el motor de matching ya soporta.
+  it('sin CUIT pero con palabra clave crea la regla por palabra clave', () => {
+    const r = construirReglaDesdeAsignacion({ ...base, cuit: null, palabraClave: 'Max plan' });
+    if (!r.crear) throw new Error(r.motivo);
+    expect(r.regla).toMatchObject({ cuit: null, palabraClave: 'Max plan', categoriaId: 'cat-telefonia', centroCostoId: 'cc-admin' });
+  });
+
+  it('sin CUIT ni razón social, el nombre por defecto usa la palabra clave', () => {
+    const r = construirReglaDesdeAsignacion({ ...base, cuit: null, razonSocial: null, palabraClave: 'Max plan' });
+    if (!r.crear) throw new Error(r.motivo);
+    expect(r.regla.nombre).toBe('Max plan → Telefonía');
   });
 
   it('sin líneas no hay asignación que replicar', () => {

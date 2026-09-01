@@ -404,7 +404,7 @@ export function ValidacionForm({
         {categoriaId && (
           <div className="mt-3">
             <ReglaDesdeAsignacion
-              cuit={mov.cuitEmisor || null}
+              cuit={(mov.esVenta ? mov.cuitReceptor : mov.cuitEmisor) || null}
               razonSocial={razonSocialContraparte ?? null}
               existente={reglaVigente ?? null}
               ocr={ocrRegla ?? null}

@@ -7,7 +7,9 @@
 // queda sin marcar, la action ignora el resto de los campos.
 //
 // El conflicto con una regla previa se resuelve acá y no después del submit
-// porque depende solo del CUIT, que ya se conoce al renderizar.
+// porque depende solo del CUIT, que ya se conoce al renderizar. Sin CUIT la
+// regla se define por palabra clave (que se tipea recién acá), así que el
+// conflicto con otra regla de la misma palabra clave se resuelve al guardar.
 
 import { OcrPopup } from './ocr-popup';
 import type { OcrParaRegla } from '@/lib/reglas/ocr-para-regla';
@@ -29,9 +31,6 @@ export function ReglaDesdeAsignacion({
   /** Lo que leyó el OCR, para elegir la palabra clave desde un pop-up. */
   ocr?: OcrParaRegla | null;
 }) {
-  // Sin CUIT no hay condición que construir: la regla matchearía cualquier cosa.
-  if (!cuit) return null;
-
   return (
     <fieldset className="rounded-md border border-slate-200 p-3 space-y-2">
       <label className="flex items-start gap-2 text-sm font-medium">
@@ -39,7 +38,9 @@ export function ReglaDesdeAsignacion({
         <span>
           {existente ? 'Actualizar la regla de este emisor' : 'Crear regla para la próxima vez'}
           <span className="block text-xs font-normal text-slate-500">
-            Se aplicará a los comprobantes de {razonSocial ?? 'este emisor'} (CUIT {cuit}).
+            {cuit
+              ? `Se aplicará a los comprobantes de ${razonSocial ?? 'este emisor'} (CUIT ${cuit}).`
+              : 'Este comprobante no tiene CUIT: la regla se define por la palabra clave (obligatoria), y se aplicará a los comprobantes que la mencionen.'}
           </span>
         </span>
       </label>
@@ -54,7 +55,7 @@ export function ReglaDesdeAsignacion({
       <div className="grid sm:grid-cols-2 gap-2">
         <div>
           <div className="flex items-center justify-between gap-2">
-            <label className="label" htmlFor="reglaPalabraClave">…y además diga (opcional)</label>
+            <label className="label" htmlFor="reglaPalabraClave">{cuit ? '…y además diga (opcional)' : 'Palabra clave (obligatoria)'}</label>
             {ocr && <OcrPopup ocr={ocr} />}
           </div>
           <input
@@ -64,7 +65,9 @@ export function ReglaDesdeAsignacion({
             placeholder="ej. roaming"
           />
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Acota la regla a los comprobantes de este emisor que mencionen ese texto.
+            {cuit
+              ? 'Acota la regla a los comprobantes de este emisor que mencionen ese texto.'
+              : 'La regla matcheará los comprobantes cuya descripción o razón social mencione ese texto.'}
           </p>
         </div>
         <div>
@@ -74,7 +77,7 @@ export function ReglaDesdeAsignacion({
             name="reglaNombre"
             defaultValue={existente?.nombre ?? ''}
             className="input w-full text-xs"
-            placeholder={`${razonSocial ?? cuit} → (categoría elegida)`}
+            placeholder={`${razonSocial ?? cuit ?? 'palabra clave'} → (categoría elegida)`}
           />
         </div>
       </div>

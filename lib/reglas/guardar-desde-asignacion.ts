@@ -2,7 +2,7 @@ import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import type { LineaDistribucion } from '@/lib/movimientos/distribucion';
 import { normalizarCuit } from '@/lib/checks';
 import { writeAudit } from '@/lib/audit';
-import { construirReglaDesdeAsignacion, reglaVigenteParaCuit } from './desde-asignacion';
+import { construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaVigenteParaPalabraClave } from './desde-asignacion';
 
 // Guarda como regla la imputación que se acaba de cargar. Es best-effort por
 // diseño: la asignación del comprobante ya ocurrió y no se deshace porque la
@@ -56,7 +56,12 @@ export async function guardarReglaDesdeAsignacion(
 
     if (!decision.crear) return `no se creó la regla: ${decision.motivo}`;
 
-    const existente = await buscarReglaPorCuit(ctx, decision.regla.cuit);
+    // Con CUIT se pisa la regla de ese CUIT; sin CUIT, la regla sin CUIT que
+    // tenga la misma palabra clave (si no hay, se crea una nueva).
+    const reglas = await ctx.db.reglaAsignacion.findMany();
+    const existente = decision.regla.cuit
+      ? reglaVigenteParaCuit(reglas, decision.regla.cuit)
+      : reglaVigenteParaPalabraClave(reglas, decision.regla.palabraClave);
     const datos = { ...decision.regla, accion: 'ASIGNAR' };
 
     if (existente) {
