@@ -30,6 +30,40 @@ describe('evaluarAutovalidacion', () => {
   });
 });
 
+describe('evaluarAutovalidacion — chequeos aprobados (para el historial)', () => {
+  it('caso feliz: informa todos los chequeos que pasaron', () => {
+    const r = evaluarAutovalidacion(ok);
+    expect(r.aprobados).toEqual([
+      'QR legible',
+      'comprobante fiscal argentino',
+      'CAE presente',
+      'encabezado tomado del QR',
+      'sin duplicados',
+      'la aritmética cuadra',
+    ]);
+  });
+  it('un chequeo que falla no aparece entre los aprobados', () => {
+    const r = evaluarAutovalidacion({ ...ok, cae: null, hayDuplicados: true });
+    expect(r.aprobados).not.toContain('CAE presente');
+    expect(r.aprobados).not.toContain('sin duplicados');
+    expect(r.aprobados).toContain('QR legible');
+    expect(r.motivos).toEqual(['sin CAE', 'posible duplicado']);
+  });
+  it('moneda extranjera con TC aprueba el chequeo de moneda', () => {
+    const r = evaluarAutovalidacion({ ...ok, moneda: 'USD', tipoCambio: 1000 });
+    expect(r.aprobados).toContain('tipo de cambio presente');
+  });
+  it('contraparte vinculada aprueba el chequeo de contraparte', () => {
+    const r = evaluarAutovalidacion({ ...ok, tieneContraparte: true });
+    expect(r.aprobados).toContain('contraparte en el maestro');
+  });
+  it('sin total: la aritmética no aparece ni aprobada ni con doble motivo', () => {
+    const r = evaluarAutovalidacion({ ...ok, total: null });
+    expect(r.aprobados).not.toContain('la aritmética cuadra');
+    expect(r.motivos).toContain('sin total');
+  });
+});
+
 describe('decidirAutovalidacion', () => {
   it('período cerrado → RETENIDO siempre', () => {
     expect(decidirAutovalidacion({ apto: true, completa: true, estadoBase: 'RETENIDO' })).toBe('RETENIDO');

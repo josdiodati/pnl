@@ -6,6 +6,7 @@ import { DocViewer } from '@/components/doc-viewer';
 import { DistribucionEditor } from '@/components/distribucion-editor';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { ReglaDesdeAsignacion } from '@/components/regla-desde-asignacion';
+import { HistorialComprobante } from '@/components/historial-comprobante';
 import { buscarReglaPorCuit } from '@/lib/reglas/guardar-desde-asignacion';
 import { nombreContraparte, cuitContraparteDe, esVenta } from '@/lib/movimientos/nombre-contraparte';
 import { formatMoney, formatFecha } from '@/lib/format';
@@ -213,6 +214,12 @@ export default async function AsignacionDetallePage({
           </form>
         </div>
       </div>
+
+      <HistorialComprobante
+        db={ctx.db}
+        empresaId={ctx.empresa.id}
+        mov={{ id: mov.id, createdAt: mov.createdAt, canalIngreso: mov.canalIngreso, creadoPorId: mov.creadoPorId }}
+      />
     </div>
   );
 }

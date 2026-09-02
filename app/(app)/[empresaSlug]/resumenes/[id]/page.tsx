@@ -9,6 +9,7 @@ import { DocViewer } from '@/components/doc-viewer';
 import { DistribucionEditor } from '@/components/distribucion-editor';
 import { MontoArsHint } from '@/components/monto-ars-hint';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
+import { HistorialComprobante } from '@/components/historial-comprobante';
 import {
   conciliarAction,
   imputarAction,
@@ -373,6 +374,12 @@ export default async function ResumenDetallePage({
                     Este movimiento no tiene archivo adjunto (carga manual): compará con los datos de arriba.
                   </p>
                 )}
+
+                <HistorialComprobante
+                  db={ctx.db}
+                  empresaId={ctx.empresa.id}
+                  mov={{ id: mov.id, createdAt: mov.createdAt, canalIngreso: mov.canalIngreso, creadoPorId: mov.creadoPorId }}
+                />
               </div>
             </div>
           );

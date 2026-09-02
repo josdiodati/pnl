@@ -114,6 +114,21 @@ export async function imputarLinea(
     accion: 'RESUMEN_IMPUTAR',
     despues: { lineaId: linea.id, descriptor: linea.descriptor, movimientoId: mov.id, total: montoBase, categoria: categoria.nombre },
   });
+  // Espejo en el historial del movimiento: nace acá y sin este evento su
+  // historial quedaría vacío (el evento de arriba cuelga del Resumen).
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'Movimiento',
+    entidadId: mov.id,
+    accion: 'CREAR',
+    despues: {
+      origen: 'RESUMEN',
+      desdeResumen: { resumenId: linea.resumenId, lineaId: linea.id, descriptor: linea.descriptor },
+      total: montoBase,
+      categoria: categoria.nombre,
+      lineas: params.lineas,
+    },
+  });
 }
 
 type CandidatoGuardado = { movimientoId: string; score: number; motivo: string; rechazado?: boolean };
@@ -169,6 +184,19 @@ export async function deshacerLinea(ctx: EmpresaContext, params: { lineaId: stri
       await ctx.db.movimiento.update({
         where: { id: mov.id },
         data: { estado: 'ANULADO', motivoAnulacion: 'Imputación de resumen deshecha' },
+      });
+      // Espejo en el historial del movimiento (ver imputarLinea).
+      await writeAudit(ctx.db, {
+        usuarioId: ctx.usuario.id,
+        entidad: 'Movimiento',
+        entidadId: mov.id,
+        accion: 'ANULAR',
+        antes: { estado: mov.estado },
+        despues: {
+          estado: 'ANULADO',
+          motivo: 'Imputación de resumen deshecha',
+          desdeResumen: { resumenId: linea.resumenId, lineaId: linea.id },
+        },
       });
     }
   }

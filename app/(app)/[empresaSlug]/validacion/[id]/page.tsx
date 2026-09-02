@@ -5,9 +5,10 @@ import { getFileStorage } from '@/lib/storage';
 import { DocViewer } from '@/components/doc-viewer';
 import { ValidacionForm } from '@/components/validacion-form';
 import { ComprobanteDetalle } from '@/components/comprobante-detalle';
+import { HistorialComprobante } from '@/components/historial-comprobante';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
-import { formatFechaHora, fechaInputValue } from '@/lib/format';
+import { fechaInputValue } from '@/lib/format';
 import { MES_LABEL } from '@/lib/periodos';
 import { elegirRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
@@ -56,7 +57,7 @@ export default async function ValidacionDetallePage({
   if (!mov) notFound();
   const lineaResumen = mov.lineasResumen[0] ?? null;
 
-  const [contrapartes, categorias, centros, clientes, proyectos, plantillas, reglas, historial] = await Promise.all([
+  const [contrapartes, categorias, centros, clientes, proyectos, plantillas, reglas] = await Promise.all([
     ctx.db.contraparte.findMany({ where: { activa: true }, orderBy: { razonSocial: 'asc' } }),
     ctx.db.categoria.findMany({ where: { activa: true }, orderBy: [{ tipo: 'asc' }, { nombre: 'asc' }] }),
     ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
@@ -64,10 +65,6 @@ export default async function ValidacionDetallePage({
     ctx.db.proyecto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }] }),
-    ctx.db.auditLog.findMany({
-      where: { entidad: 'Movimiento', entidadId: mov.id },
-      orderBy: { createdAt: 'asc' },
-    }),
   ]);
   const fileUrl = mov.archivoKey ? await getFileStorage().getSignedUrl(mov.archivoKey) : null;
   const editable = EDITABLES.has(mov.estado);
@@ -371,26 +368,12 @@ export default async function ValidacionDetallePage({
         </div>
       </div>
 
-      {/* History panel (doc 08): full trace from upload to validation */}
-      <div className="card p-4">
-        <h2 className="text-sm font-semibold text-slate-600 mb-2">Historial</h2>
-        <ol className="space-y-1 text-sm">
-          <li className="text-slate-600">
-            <span className="text-slate-400">{formatFechaHora(mov.createdAt)}</span> — Cargado por{' '}
-            <strong>{mov.creadoPor.nombre}</strong> vía {mov.canalIngreso ?? '—'}
-          </li>
-          {historial.map((h) => (
-            <li key={h.id} className="text-slate-600">
-              <span className="text-slate-400">{formatFechaHora(h.createdAt)}</span> — {h.accion}
-              {h.despues != null && (
-                <span className="text-slate-400 text-xs ml-1 break-all">
-                  {JSON.stringify(h.despues).slice(0, 180)}
-                </span>
-              )}
-            </li>
-          ))}
-        </ol>
-      </div>
+      {/* Historial (doc 08): traza completa desde la carga, común a todas las vistas de detalle */}
+      <HistorialComprobante
+        db={ctx.db}
+        empresaId={ctx.empresa.id}
+        mov={{ id: mov.id, createdAt: mov.createdAt, canalIngreso: mov.canalIngreso, creadoPorId: mov.creadoPorId }}
+      />
     </div>
   );
 }

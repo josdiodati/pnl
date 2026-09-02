@@ -24,6 +24,22 @@ export function reglaMatchea(regla: ReglaAsignacion, e: EntradaRegla): boolean {
   return true;
 }
 
+export type CondicionRegla = {
+  tipo: 'CARGADO_POR' | 'CUIT' | 'CANAL' | 'PALABRA_CLAVE';
+  valor: string;
+};
+
+/** Condiciones seteadas de una regla, para registrar en el historial POR QUÉ
+ *  matcheó (el matching es AND: si la regla aplicó, aplicaron todas). */
+export function condicionesDeMatch(regla: ReglaAsignacion): CondicionRegla[] {
+  const out: CondicionRegla[] = [];
+  if (regla.cargadoPorId) out.push({ tipo: 'CARGADO_POR', valor: regla.cargadoPorId });
+  if (regla.cuit) out.push({ tipo: 'CUIT', valor: regla.cuit });
+  if (regla.canal) out.push({ tipo: 'CANAL', valor: regla.canal });
+  if (regla.palabraClave) out.push({ tipo: 'PALABRA_CLAVE', valor: regla.palabraClave });
+  return out;
+}
+
 export function elegirRegla(reglas: ReglaAsignacion[], e: EntradaRegla): ReglaAsignacion | null {
   const candidatas = reglas
     .filter((r) => r.activa && reglaMatchea(r, e))

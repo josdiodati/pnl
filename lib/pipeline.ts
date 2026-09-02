@@ -11,7 +11,7 @@ import { enqueueJob } from '@/lib/jobs';
 import { leerQrAfip } from '@/lib/extractor/qr';
 import { evaluarAutovalidacion, decidirAutovalidacion } from '@/lib/autovalidacion';
 import { decidirAltaContraparte, claveNombre } from '@/lib/contrapartes/alta-automatica';
-import { elegirRegla } from '@/lib/reglas/matching';
+import { elegirRegla, condicionesDeMatch, type CondicionRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { tieneAsignacionCompleta } from '@/lib/movimientos/service';
 import type { LineaDistribucion } from '@/lib/movimientos/distribucion';
@@ -328,7 +328,10 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
   }
   let categoriaEfectiva: string | null = contraparte?.categoriaDefaultId ?? null;
   let lineasEfectivas: LineaDistribucion[] = lineasContraparte;
-  let reglaAplicada: string | null = null;
+  // Para el historial: no alcanza con el nombre de la regla, se registra POR QUÉ
+  // matcheó (condiciones) y qué imputación resolvió.
+  type ReglaInfo = { id: string; nombre: string; condiciones: CondicionRegla[]; categoriaId?: string | null };
+  let reglaAplicada: ReglaInfo | null = null;
   const auto = evaluarAutovalidacion({
     qrEstado,
     esComprobanteFiscalArg: !!extraccion.esComprobanteFiscalArg,
@@ -350,7 +353,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     tipoCambio: tipoCambioFinal,
     tieneContraparte: contraparte != null,
   });
-  let observarPorRegla: string | null = null;
+  let observarPorRegla: ReglaInfo | null = null;
   if (estadoFinal !== 'RETENIDO') {
     const reglas = await db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }] });
     const regla = elegirRegla(reglas, {
@@ -362,12 +365,13 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       texto: `${(direccion === 'VENTA' ? extraccion.razonSocialReceptor : extraccion.razonSocialEmisor) ?? ''} ${descripcionFinal ?? ''}`,
     });
     if (regla?.accion === 'OBSERVAR') {
-      observarPorRegla = regla.nombre; // descarte automático
+      // descarte automático
+      observarPorRegla = { id: regla.id, nombre: regla.nombre, condiciones: condicionesDeMatch(regla) };
     } else if (regla) {
       const asign = await resolverAsignacionDeRegla(db, regla);
       categoriaEfectiva = asign.categoriaId;
       lineasEfectivas = asign.lineas;
-      reglaAplicada = regla.nombre;
+      reglaAplicada = { id: regla.id, nombre: regla.nombre, condiciones: condicionesDeMatch(regla), categoriaId: asign.categoriaId };
       flags.reglaPreasignacion = regla.nombre; // marcador para la vista de Validación
     }
   }
@@ -382,8 +386,8 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     estadoFinalReal = 'DUPLICADO';
   } else if (observarPorRegla) {
     estadoFinalReal = 'OBSERVADO';
-    flags.notaObservacion = `Observado automáticamente por la regla «${observarPorRegla}»`;
-    flags.observadoPorRegla = observarPorRegla;
+    flags.notaObservacion = `Observado automáticamente por la regla «${observarPorRegla.nombre}»`;
+    flags.observadoPorRegla = observarPorRegla.nombre;
   } else {
     estadoFinalReal = decidirAutovalidacion({ apto: auto.apto, completa, estadoBase: estadoFinal });
   }
@@ -447,7 +451,15 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     entidad: 'Movimiento',
     entidadId: mov.id,
     accion: 'EXTRAER',
-    despues: { estado: estadoFinalReal, camposRevisar, duplicados: duplicados.map((d) => d.id), contraparte: contraparte?.razonSocial ?? null },
+    despues: {
+      estado: estadoFinalReal,
+      camposRevisar,
+      duplicados: duplicados.map((d) => d.id),
+      contraparte: contraparte?.razonSocial ?? null,
+      // Resultado de la autovalidación aunque NO haya validado: antes los
+      // motivos del rechazo se perdían y el historial no podía explicarlo.
+      autovalidacion: { apto: auto.apto, motivos: auto.motivos, aprobados: auto.aprobados },
+    },
   });
 
   // Acción del sistema (sin usuarioId): autovalidación / auto-asignación / descarte / duplicado.
@@ -456,7 +468,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       entidad: 'Movimiento',
       entidadId: mov.id,
       accion: estadoFinalReal === 'ASIGNADO' ? 'AUTO_ASIGNAR' : 'AUTO_VALIDAR',
-      despues: { estado: estadoFinalReal, regla: reglaAplicada, motivos: auto.motivos },
+      despues: { estado: estadoFinalReal, regla: reglaAplicada, chequeos: auto.aprobados, lineas: lineasEfectivas },
     });
   } else if (estadoFinalReal === 'DUPLICADO') {
     await writeAudit(db, {

@@ -103,6 +103,34 @@ describe('conciliación de líneas de resumen (integración)', () => {
     expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
   });
 
+  it('imputar deja el evento de creación en el historial del MOVIMIENTO (no solo del resumen)', async () => {
+    const l = await linea({ descriptor: 'ESPEJO CREAR', monto: -800 });
+    await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] });
+    const movId = (await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.movimientoId!;
+    const evento = await prisma.auditLog.findFirst({
+      where: { empresaId, entidad: 'Movimiento', entidadId: movId, accion: 'CREAR' },
+    });
+    expect(evento).not.toBeNull();
+    expect(evento!.usuarioId).toBe(ctx.usuario.id);
+    const despues = evento!.despues as Record<string, unknown>;
+    expect(despues.origen).toBe('RESUMEN');
+    expect((despues.desdeResumen as Record<string, unknown>).descriptor).toBe('ESPEJO CREAR');
+  });
+
+  it('deshacer deja el evento ANULAR en el historial del MOVIMIENTO', async () => {
+    const l = await linea({ descriptor: 'ESPEJO ANULAR', monto: -900 });
+    await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] });
+    const movId = (await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.movimientoId!;
+    await deshacerLinea(ctx, { lineaId: l.id });
+    const evento = await prisma.auditLog.findFirst({
+      where: { empresaId, entidad: 'Movimiento', entidadId: movId, accion: 'ANULAR' },
+    });
+    expect(evento).not.toBeNull();
+    const despues = evento!.despues as Record<string, unknown>;
+    expect(despues.motivo).toMatch(/resumen/i);
+    expect((despues.desdeResumen as Record<string, unknown>).lineaId).toBe(l.id);
+  });
+
   it('una línea IGNORADA rechaza conciliar e imputar hasta deshacerla', async () => {
     const l = await linea({ descriptor: 'PAGO ANTERIOR' });
     await ignorarLinea(ctx, { lineaId: l.id, motivo: 'ya pagado en el resumen anterior' });

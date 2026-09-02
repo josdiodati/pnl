@@ -23,25 +23,33 @@ const COMPONENTES = [
   'percepcionesIva', 'percepcionesIibb', 'otrosTributos', 'noGravadoExento',
 ];
 
-export function evaluarAutovalidacion(e: EntradaAutoval): { apto: boolean; motivos: string[] } {
+export function evaluarAutovalidacion(e: EntradaAutoval): { apto: boolean; motivos: string[]; aprobados: string[] } {
   const motivos: string[] = [];
-  if (e.qrEstado !== 'OK') motivos.push('QR no legible');
-  if (!e.esComprobanteFiscalArg) motivos.push('no es comprobante fiscal argentino');
-  if (!e.cae) motivos.push('sin CAE');
-  if (!e.qrAporto) motivos.push('el QR no aportó el encabezado');
-  if (e.hayDuplicados) motivos.push('posible duplicado');
-  if (e.moneda && e.moneda !== 'ARS' && !(e.tipoCambio && e.tipoCambio > 0)) {
-    motivos.push('moneda extranjera sin tipo de cambio');
+  // `aprobados` alimenta el historial: qué chequeos concretos sostienen una
+  // autovalidación (o pasaron igual aunque otro haya fallado).
+  const aprobados: string[] = [];
+  const chequeo = (paso: boolean, aprobado: string, motivo: string) =>
+    paso ? aprobados.push(aprobado) : motivos.push(motivo);
+
+  chequeo(e.qrEstado === 'OK', 'QR legible', 'QR no legible');
+  chequeo(!!e.esComprobanteFiscalArg, 'comprobante fiscal argentino', 'no es comprobante fiscal argentino');
+  chequeo(!!e.cae, 'CAE presente', 'sin CAE');
+  chequeo(e.qrAporto, 'encabezado tomado del QR', 'el QR no aportó el encabezado');
+  chequeo(!e.hayDuplicados, 'sin duplicados', 'posible duplicado');
+  if (e.moneda && e.moneda !== 'ARS') {
+    chequeo(Boolean(e.tipoCambio && e.tipoCambio > 0), 'tipo de cambio presente', 'moneda extranjera sin tipo de cambio');
   }
-  if (e.tieneContraparte === false) motivos.push('sin contraparte en el maestro');
+  if (e.tieneContraparte !== undefined) {
+    chequeo(e.tieneContraparte, 'contraparte en el maestro', 'sin contraparte en el maestro');
+  }
   if (e.total == null) {
     motivos.push('sin total');
   } else {
     const suma = COMPONENTES.reduce((acc, k) => acc + (e.importes[k] ?? 0), 0);
     const tolerancia = Math.max(1, Math.abs(e.total) * 0.001);
-    if (Math.abs(suma - e.total) > tolerancia) motivos.push('la aritmética no cuadra');
+    chequeo(Math.abs(suma - e.total) <= tolerancia, 'la aritmética cuadra', 'la aritmética no cuadra');
   }
-  return { apto: motivos.length === 0, motivos };
+  return { apto: motivos.length === 0, motivos, aprobados };
 }
 
 /** Estado final a partir de la aptitud y si la asignación resuelta es completa.

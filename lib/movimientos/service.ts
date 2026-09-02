@@ -288,6 +288,9 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
     antes,
     despues: {
       ...snapshot(actualizado),
+      // La imputación hecha en la misma pantalla: sin esto el evento no decía
+      // con qué distribución quedó ASIGNADO (el snapshot no incluye las líneas).
+      ...(yaAsignado && datos.lineas !== undefined ? { lineas: datos.lineas } : {}),
       ...(mov.arcaEstado === 'INVALIDO' ? { arcaInvalidoConfirmadoPorValidador: true } : {}),
       ...(datos.overrideNoFiscal ? { overrideNoFiscal: true, overrideNoFiscalMotivo: datos.overrideNoFiscalMotivo ?? null } : {}),
     },
