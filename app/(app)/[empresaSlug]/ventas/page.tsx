@@ -99,7 +99,7 @@ export default async function VentasPage({
           <thead>
             <tr>
               <th>Fecha</th>
-              <th>Cliente</th>
+              <th>Descripción / cliente</th>
               <th>Comprobante</th>
               <th>Categoría</th>
               <th>Asignación</th>
@@ -112,7 +112,10 @@ export default async function VentasPage({
             {ventas.map((v) => (
               <tr key={v.id} className={v.estado === 'ANULADO' ? 'opacity-50' : ''}>
                 <td className="whitespace-nowrap font-mono text-[12.5px]">{formatFecha(v.fechaDevengamiento)}</td>
-                <td className="font-medium">{v.contraparte?.razonSocial ?? '—'}</td>
+                <td>
+                  <span className="font-medium">{v.contraparte?.razonSocial ?? v.descripcion ?? '—'}</span>
+                  {v.contraparte && v.descripcion && <span className="text-ink-mute"> — {v.descripcion}</span>}
+                </td>
                 <td className="whitespace-nowrap font-mono text-[12.5px]">
                   {v.tipoComprobante?.replace(/_/g, ' ') ?? '—'} {v.puntoVenta ? `${v.puntoVenta}-` : ''}{v.numero ?? ''}
                 </td>
