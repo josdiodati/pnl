@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ocrParaRegla } from '@/lib/reglas/ocr-para-regla';
+import { ocrParaRegla, opcionesPalabraClave } from '@/lib/reglas/ocr-para-regla';
 import { buildWhereMovimientos } from '@/lib/movimientos/query';
 
 describe('ocrParaRegla', () => {
@@ -17,6 +17,43 @@ describe('ocrParaRegla', () => {
 
   it('tolera extracción ausente', () => {
     expect(ocrParaRegla({ extraccionRaw: null, descripcion: null, razonSocialContraparte: null })).toEqual({ textoMatching: '', campos: [] });
+  });
+});
+
+describe('opcionesPalabraClave — chips del pop-up OCR', () => {
+  const texto = 'EWWO CONSULTING S.R.L. Servicios PM y Movilidad PM - Período 01/08/2026 al 31/08/2026';
+
+  it('ofrece frases de dos palabras adyacentes («Servicios PM», «Movilidad PM»)', () => {
+    const o = opcionesPalabraClave(texto);
+    expect(o).toContain('Servicios PM');
+    expect(o).toContain('Movilidad PM');
+    expect(o).toContain('EWWO CONSULTING');
+  });
+
+  it('las frases no cruzan palabras vacías ni incluyen números/fechas', () => {
+    const o = opcionesPalabraClave(texto);
+    expect(o).not.toContain('PM y');
+    expect(o).not.toContain('y Movilidad');
+    expect(o).not.toContain('al 31/08/2026');
+    expect(o).not.toContain('Período 01/08/2026');
+  });
+
+  it('palabras sueltas desde 2 caracteres («PM» aparece), sin palabras vacías', () => {
+    const o = opcionesPalabraClave(texto);
+    expect(o).toContain('PM');
+    expect(o).toContain('Servicios');
+    expect(o).not.toContain('y');
+    expect(o).not.toContain('al');
+  });
+
+  it('sin duplicados y las frases van antes que las palabras sueltas', () => {
+    const o = opcionesPalabraClave(texto);
+    expect(new Set(o).size).toBe(o.length);
+    expect(o.indexOf('Servicios PM')).toBeLessThan(o.indexOf('Servicios'));
+  });
+
+  it('texto vacío → sin opciones', () => {
+    expect(opcionesPalabraClave('')).toEqual([]);
   });
 });
 

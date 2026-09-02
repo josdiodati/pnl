@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { OcrParaRegla } from '@/lib/reglas/ocr-para-regla';
+import { opcionesPalabraClave, type OcrParaRegla } from '@/lib/reglas/ocr-para-regla';
 
 // Pop-up con lo que leyó el OCR, para elegir la palabra clave de una regla sin
 // adivinar: click en una palabra (o seleccionar texto y "Usar selección") la
@@ -24,14 +24,7 @@ export function OcrPopup({ ocr, inputId = 'reglaPalabraClave' }: { ocr: OcrParaR
   };
   const usarSeleccion = () => usar(window.getSelection()?.toString() ?? '');
 
-  const palabras = Array.from(
-    new Set(
-      ocr.textoMatching
-        .split(/\s+/)
-        .map((p) => p.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
-        .filter((p) => p.length >= 3),
-    ),
-  );
+  const palabras = opcionesPalabraClave(ocr.textoMatching);
 
   return (
     <>
