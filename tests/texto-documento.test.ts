@@ -18,6 +18,10 @@ describe('prepararTextoDocumento', () => {
     expect(prepararTextoDocumento('   \n  ')).toBeNull();
     expect(prepararTextoDocumento(null)).toBeNull();
   });
+  it('elimina caracteres de control (\\u0000 rompe el jsonb de Postgres)', () => {
+    expect(prepararTextoDocumento('hola\u0000mundo\u0001 chau\u007f')).toBe('holamundo chau');
+    expect(prepararTextoDocumento('\u0000')).toBeNull();
+  });
 });
 
 describe('textoDeMatching', () => {

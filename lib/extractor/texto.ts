@@ -11,6 +11,9 @@ const MAX_TEXTO = 4000;
 export function prepararTextoDocumento(texto: string | null | undefined): string | null {
   if (!texto) return null;
   const limpio = texto
+    // Caracteres de control (la capa de texto de algunos PDFs los trae):
+    // \u0000 ni siquiera entra en el jsonb de Postgres. Se preservan \n y \t.
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
     .split('\n')
     .map((l) => l.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
