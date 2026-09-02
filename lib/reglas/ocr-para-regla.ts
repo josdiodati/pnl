@@ -4,6 +4,8 @@
 
 export type OcrParaRegla = {
   textoMatching: string;
+  /** Texto plano del documento (también matchea; se muestra aparte en el pop-up). */
+  textoDocumento: string | null;
   campos: { label: string; valor: string }[];
 };
 
@@ -58,7 +60,9 @@ export function ocrParaRegla(input: {
   razonSocialContraparte: string | null;
 }): OcrParaRegla {
   const raw = input.extraccionRaw && typeof input.extraccionRaw === 'object' ? (input.extraccionRaw as Record<string, unknown>) : {};
-  const entradas = Object.entries(raw).filter(([, v]) => v != null && typeof v !== 'object' && typeof v !== 'boolean');
+  const entradas = Object.entries(raw).filter(
+    ([k, v]) => k !== 'textoDocumento' && v != null && typeof v !== 'object' && typeof v !== 'boolean',
+  );
   entradas.sort(([a], [b]) => {
     const ia = ORDEN_PRIMERO.indexOf(a);
     const ib = ORDEN_PRIMERO.indexOf(b);
@@ -68,5 +72,6 @@ export function ocrParaRegla(input: {
     .map(([k, v]) => ({ label: LABELS[k] ?? k, valor: String(v).trim() }))
     .filter((c) => c.valor);
   const textoMatching = `${input.razonSocialContraparte ?? ''} ${input.descripcion ?? ''}`.replace(/\s+/g, ' ').trim();
-  return { textoMatching, campos };
+  const textoDocumento = typeof raw.textoDocumento === 'string' && raw.textoDocumento ? raw.textoDocumento : null;
+  return { textoMatching, textoDocumento, campos };
 }

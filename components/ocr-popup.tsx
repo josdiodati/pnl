@@ -42,7 +42,8 @@ export function OcrPopup({ ocr, inputId = 'reglaPalabraClave' }: { ocr: OcrParaR
 
             <div className="rounded border border-sky-200 bg-sky-50/50 p-3 space-y-2">
               <p className="text-xs font-semibold text-sky-800">
-                Texto donde la regla busca la palabra clave (razón social + descripción)
+                Razón social + descripción (la regla busca la palabra clave acá
+                {ocr.textoDocumento ? ' y en el texto del documento de abajo' : ''})
               </p>
               <p className="text-slate-700 select-text">{ocr.textoMatching || '—'}</p>
               {palabras.length > 0 && (
@@ -65,6 +66,37 @@ export function OcrPopup({ ocr, inputId = 'reglaPalabraClave' }: { ocr: OcrParaR
                 Click en una palabra para usarla, o seleccioná una frase con el mouse y apretá «Usar selección».
               </p>
             </div>
+
+            {ocr.textoDocumento && (
+              <div className="rounded border border-slate-200 bg-slate-50/50 p-3 space-y-1">
+                <p className="text-xs font-semibold text-slate-600">
+                  Texto completo del documento (click en una palabra para usarla; también matchea)
+                </p>
+                <p className="text-[12px] leading-relaxed text-slate-700 select-text max-h-48 overflow-y-auto whitespace-pre-wrap">
+                  {ocr.textoDocumento.split('\n').map((linea, i) => (
+                    <span key={i}>
+                      {i > 0 && '\n'}
+                      {linea.split(/(\s+)/).map((parte, j) =>
+                        /^\s+$/.test(parte) || !parte ? (
+                          parte
+                        ) : (
+                          <button
+                            key={j}
+                            type="button"
+                            onClick={() => usar(parte.replace(/^[^\p{L}\p{N}@]+|[^\p{L}\p{N}]+$/gu, ''))}
+                            className={`hover:bg-sky-100 rounded px-0 ${
+                              elegida && parte.includes(elegida) ? 'bg-sky-100 text-sky-900' : ''
+                            }`}
+                          >
+                            {parte}
+                          </button>
+                        ),
+                      )}
+                    </span>
+                  ))}
+                </p>
+              </div>
+            )}
 
             {ocr.campos.length > 0 && (
               <div>

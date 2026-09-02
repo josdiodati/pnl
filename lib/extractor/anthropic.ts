@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { extraccionSchema, extraccionJsonSchema } from './schema';
+import { prepararTextoDocumento } from './texto';
 import type { DocumentExtractor, ExtractorInput, ExtractorResult } from './index';
 
 // Real extractor (EXTRACTOR_MODE=real + ANTHROPIC_API_KEY). Strategy per spec:
@@ -20,7 +21,8 @@ Reglas estrictas:
 - "puntoVenta" y "numero" como strings con sus ceros a la izquierda si los tiene.
 - Extraé también el RECEPTOR del comprobante (cuitReceptor, razonSocialReceptor): es a nombre de quién se emite.
 - OJO con los layouts donde emisor y receptor están en recuadros separados: el EMISOR es quien emite y cobra (su CUIT acompaña a su razón social, logo, IIBB e inicio de actividades, normalmente en el encabezado); el RECEPTOR/cliente aparece bajo etiquetas como "Señores", "Cliente", "Apellido y Nombre / Razón Social". Pareá cada CUIT con la razón social de SU MISMO recuadro — nunca cruces el CUIT de uno con el nombre del otro. En facturas de servicios (prepagas, telefonía, seguros) es común que el ÚNICO CUIT grande y etiquetado "C.U.I.T.:" sea el DEL CLIENTE, dentro de su recuadro junto a su nombre y domicilio: ese va en cuitReceptor, y si el CUIT del emisor no aparece o no se lee, cuitEmisor va null (NUNCA le prestes el del cliente). Verificación: si la razón social que pusiste como emisora no es la del membrete/logo del comprobante, lo tenés cruzado.
-- Marcá "esComprobanteFiscalArg" en true SOLO si es un comprobante fiscal argentino (factura/nota de crédito/débito/ticket con CAE). Para invoices de servicios extranjeros que no emiten comprobante fiscal argentino (AWS, Anthropic/Claude, Google, etc.), poné false.`;
+- Marcá "esComprobanteFiscalArg" en true SOLO si es un comprobante fiscal argentino (factura/nota de crédito/débito/ticket con CAE). Para invoices de servicios extranjeros que no emiten comprobante fiscal argentino (AWS, Anthropic/Claude, Google, etc.), poné false.
+- "textoDocumento": SOLO cuando el documento te llega como imagen o PDF escaneado, transcribí el texto visible (compacto, línea por línea, con emails/referencias/direcciones). Si te llega el texto del PDF ya extraído, dejalo en null.`;
 
 export class AnthropicExtractor implements DocumentExtractor {
   private client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -29,9 +31,13 @@ export class AnthropicExtractor implements DocumentExtractor {
   async extract(input: ExtractorInput): Promise<ExtractorResult> {
     const content: Anthropic.ContentBlockParam[] = [];
 
+    // Capa de texto del PDF: además de alimentar al LLM, se guarda como
+    // textoDocumento (base del matching de reglas) sin gastar tokens de salida.
+    let textoCapa: string | null = null;
     if (input.mime === 'application/pdf') {
       const texto = await this.tryPdfText(input.buffer);
       if (texto && texto.trim().length > 100) {
+        textoCapa = texto;
         content.push({ type: 'text', text: `Texto extraído del PDF del comprobante:\n\n${texto.slice(0, 50000)}` });
       } else {
         content.push({
@@ -78,8 +84,12 @@ export class AnthropicExtractor implements DocumentExtractor {
     }
 
     const u = response.usage;
+    const extraccion = extraccionSchema.parse(toolUse.input);
+    // La capa de texto del PDF manda sobre lo que haya transcripto el LLM
+    // (exacta y gratis); la transcripción del LLM queda para visión.
+    extraccion.textoDocumento = prepararTextoDocumento(textoCapa) ?? prepararTextoDocumento(extraccion.textoDocumento);
     return {
-      extraccion: extraccionSchema.parse(toolUse.input),
+      extraccion,
       uso: {
         entrada: u.input_tokens ?? 0,
         salida: u.output_tokens ?? 0,

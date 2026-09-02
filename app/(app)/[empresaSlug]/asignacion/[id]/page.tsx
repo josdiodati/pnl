@@ -11,7 +11,7 @@ import { buscarReglaPorCuit } from '@/lib/reglas/guardar-desde-asignacion';
 import { nombreContraparte, cuitContraparteDe, esVenta } from '@/lib/movimientos/nombre-contraparte';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { totalFirmadoDe } from '@/lib/movimientos/query';
-import { elegirRegla } from '@/lib/reglas/matching';
+import { elegirRegla, textoDeMatching, textoDocumentoDe } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { ocrParaRegla } from '@/lib/reglas/ocr-para-regla';
 import { asignarAction } from '../actions';
@@ -57,7 +57,7 @@ export default async function AsignacionDetallePage({
       creadoPorId: mov.creadoPorId,
       cuitContraparte: cuitContraparteDe(mov),
       canalIngreso: mov.canalIngreso,
-      texto: `${razonSocial} ${mov.descripcion ?? ''}`,
+      texto: textoDeMatching({ razonSocial, descripcion: mov.descripcion, textoDocumento: textoDocumentoDe(mov.extraccionRaw) }),
     });
     if (regla) {
       sugerida = await resolverAsignacionDeRegla(ctx.db, regla);

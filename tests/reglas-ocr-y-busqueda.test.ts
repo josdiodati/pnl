@@ -16,7 +16,7 @@ describe('ocrParaRegla', () => {
   });
 
   it('tolera extracción ausente', () => {
-    expect(ocrParaRegla({ extraccionRaw: null, descripcion: null, razonSocialContraparte: null })).toEqual({ textoMatching: '', campos: [] });
+    expect(ocrParaRegla({ extraccionRaw: null, descripcion: null, razonSocialContraparte: null })).toEqual({ textoMatching: '', textoDocumento: null, campos: [] });
   });
 });
 

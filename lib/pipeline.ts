@@ -11,7 +11,7 @@ import { enqueueJob } from '@/lib/jobs';
 import { leerQrAfip } from '@/lib/extractor/qr';
 import { evaluarAutovalidacion, decidirAutovalidacion } from '@/lib/autovalidacion';
 import { decidirAltaContraparte, claveNombre } from '@/lib/contrapartes/alta-automatica';
-import { elegirRegla, condicionesDeMatch, type CondicionRegla } from '@/lib/reglas/matching';
+import { elegirRegla, condicionesDeMatch, textoDeMatching, type CondicionRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { tieneAsignacionCompleta } from '@/lib/movimientos/service';
 import type { LineaDistribucion } from '@/lib/movimientos/distribucion';
@@ -362,7 +362,11 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       // empresa y una regla por CUIT matchearía TODAS las ventas.
       cuitContraparte,
       canalIngreso: mov.canalIngreso,
-      texto: `${(direccion === 'VENTA' ? extraccion.razonSocialReceptor : extraccion.razonSocialEmisor) ?? ''} ${descripcionFinal ?? ''}`,
+      texto: textoDeMatching({
+        razonSocial: direccion === 'VENTA' ? extraccion.razonSocialReceptor : extraccion.razonSocialEmisor,
+        descripcion: descripcionFinal,
+        textoDocumento: extraccion.textoDocumento,
+      }),
     });
     if (regla?.accion === 'OBSERVAR') {
       // descarte automático

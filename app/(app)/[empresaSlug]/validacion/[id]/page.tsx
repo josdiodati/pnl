@@ -10,7 +10,7 @@ import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { fechaInputValue } from '@/lib/format';
 import { MES_LABEL } from '@/lib/periodos';
-import { elegirRegla } from '@/lib/reglas/matching';
+import { elegirRegla, textoDeMatching, textoDocumentoDe } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { reglaVigenteParaCuit } from '@/lib/reglas/desde-asignacion';
 import { ocrParaRegla } from '@/lib/reglas/ocr-para-regla';
@@ -95,7 +95,7 @@ export default async function ValidacionDetallePage({
       creadoPorId: mov.creadoPorId,
       cuitContraparte: cuitContraparteDe(mov),
       canalIngreso: mov.canalIngreso,
-      texto: `${razonSocial} ${mov.descripcion ?? ''}`,
+      texto: textoDeMatching({ razonSocial, descripcion: mov.descripcion, textoDocumento: textoDocumentoDe(mov.extraccionRaw) }),
     });
     if (regla) {
       sugerida = await resolverAsignacionDeRegla(ctx.db, regla);

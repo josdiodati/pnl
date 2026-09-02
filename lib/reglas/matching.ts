@@ -14,6 +14,30 @@ export type EntradaRegla = {
   texto: string; // descripción + razón social de la contraparte, en minúsculas
 };
 
+/** Texto contra el que matchea la palabra clave de una regla: razón social +
+ *  descripción + texto plano del documento. Un solo armado para el pipeline,
+ *  las vistas y el pop-up OCR — si divergen, una regla "aplica" distinto según
+ *  quién la evalúe. */
+export function textoDeMatching(e: {
+  razonSocial: string | null | undefined;
+  descripcion: string | null | undefined;
+  textoDocumento?: string | null;
+}): string {
+  return [e.razonSocial, e.descripcion, e.textoDocumento]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** El texto plano del documento guardado en extraccionRaw (null en
+ *  extracciones anteriores al campo). */
+export function textoDocumentoDe(extraccionRaw: unknown): string | null {
+  if (!extraccionRaw || typeof extraccionRaw !== 'object') return null;
+  const t = (extraccionRaw as Record<string, unknown>).textoDocumento;
+  return typeof t === 'string' && t ? t : null;
+}
+
 export function reglaMatchea(regla: ReglaAsignacion, e: EntradaRegla): boolean {
   const cond = [regla.cargadoPorId, regla.cuit, regla.canal, regla.palabraClave];
   if (cond.every((c) => c == null || c === '')) return false; // sin condiciones: no matchea

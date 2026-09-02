@@ -9,7 +9,7 @@ import { cuitContraparteDe } from '@/lib/movimientos/nombre-contraparte';
  */
 import { prisma } from '@/lib/db';
 import { scopedDb } from '@/lib/empresa/scope';
-import { reglaMatchea, elegirRegla, type EntradaRegla } from '@/lib/reglas/matching';
+import { reglaMatchea, elegirRegla, textoDeMatching, textoDocumentoDe, type EntradaRegla } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { evaluarAutovalidacion, decidirAutovalidacion } from '@/lib/autovalidacion';
 import { tieneAsignacionCompleta } from '@/lib/movimientos/service';
@@ -30,7 +30,7 @@ async function main() {
     creadoPorId: mov.creadoPorId,
     cuitContraparte: cuitContraparteDe(mov),
     canalIngreso: mov.canalIngreso,
-    texto: `${razonSocial} ${mov.descripcion ?? ''}`,
+    texto: textoDeMatching({ razonSocial, descripcion: mov.descripcion, textoDocumento: textoDocumentoDe(mov.extraccionRaw) }),
   };
 
   console.log('=== Comprobante ===');

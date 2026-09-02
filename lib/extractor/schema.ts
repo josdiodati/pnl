@@ -36,6 +36,10 @@ export const extraccionSchema = z.object({
   concepto: z.string().nullable().default(null),
   confianza: z.record(z.number()).default({}),
   observaciones: z.string().nullable().default(null),
+  // Transcripción del texto visible del documento. Para PDFs con capa de texto
+  // la completa el extractor con unpdf (sin gastar tokens); el LLM solo la
+  // aporta cuando el documento entra por visión (foto / escaneo).
+  textoDocumento: z.string().nullable().default(null),
 });
 
 export type Extraccion = z.infer<typeof extraccionSchema>;
@@ -75,6 +79,11 @@ export const extraccionJsonSchema = {
     },
     confianza: { type: 'object', additionalProperties: { type: 'number' } },
     observaciones: { type: ['string', 'null'] },
+    textoDocumento: {
+      type: ['string', 'null'],
+      description:
+        'SOLO si el documento llegó como imagen/PDF escaneado: transcripción literal y compacta del texto visible (máx ~4000 caracteres), línea por línea, incluyendo emails, referencias y direcciones. Si recibiste el texto del PDF ya extraído, dejá null.',
+    },
   },
   required: ['tipoComprobante', 'total', 'moneda', 'esComprobanteFiscalArg'],
 } as const;
