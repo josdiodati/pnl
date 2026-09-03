@@ -16,7 +16,7 @@ export default async function ReportesPage({
   searchParams,
 }: {
   params: { empresaSlug: string };
-  searchParams: { ejercicio?: string };
+  searchParams: { ejercicio?: string; proyecto?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const base = `/${params.empresaSlug}`;
@@ -24,6 +24,9 @@ export default async function ReportesPage({
   const inicio = ctx.empresa.inicioEjercicioFiscal;
   const ejercicio = Number(searchParams.ejercicio ?? ejercicioDeMes(hoy.anio, hoy.mes, inicio));
   const meses = mesesDeEjercicio(ejercicio, inicio);
+  // Vista por proyecto: 'sin' = porción sin proyecto; ausente = P&L completo.
+  const proyectoParam = searchParams.proyecto || undefined;
+  const filtroProyecto = proyectoParam ? { proyectoId: proyectoParam === 'sin' ? null : proyectoParam } : undefined;
 
   const periodos = await ctx.db.periodo.findMany({
     where: { OR: meses.map((m) => ({ anio: m.anio, mes: m.mes })) },
@@ -31,16 +34,17 @@ export default async function ReportesPage({
   const periodoIds = periodos.map((p) => p.id);
   const periodoPorId = new Map(periodos.map((p) => [p.id, p]));
 
-  const [movimientos, recibos, categorias] = await Promise.all([
+  const [movimientos, recibos, categorias, proyectos] = await Promise.all([
     ctx.db.movimiento.findMany({
       where: { estado: 'ASIGNADO', periodoId: { in: periodoIds } },
-      include: { categoria: true },
+      include: { categoria: true, lineas: true },
     }),
     ctx.db.reciboSueldo.findMany({
       where: { estado: 'CONFIRMADO', periodoId: { in: periodoIds } },
-      include: { periodo: true },
+      include: { periodo: true, lineas: true },
     }),
     ctx.db.categoria.findMany({ orderBy: { nombre: 'asc' } }),
+    ctx.db.proyecto.findMany({ orderBy: { nombre: 'asc' } }),
   ]);
 
   const pnl = armarPnl({
@@ -63,13 +67,24 @@ export default async function ReportesPage({
         percepcionesIva: m.percepcionesIva != null ? Number(m.percepcionesIva) : null,
         percepcionesIibb: m.percepcionesIibb != null ? Number(m.percepcionesIibb) : null,
         otrosTributos: m.otrosTributos != null ? Number(m.otrosTributos) : null,
+        lineas: m.lineas.map((l) => ({
+          centroCostoId: l.centroCostoId,
+          proyectoId: l.proyectoId ?? null,
+          porcentaje: Number(l.porcentaje),
+        })),
       };
     }),
     recibos: recibos.map((r) => ({
       anio: r.periodo.anio,
       mes: r.periodo.mes,
       costoTotalEmpleador: r.costoTotalEmpleador != null ? Number(r.costoTotalEmpleador) : null,
+      lineas: r.lineas.map((l) => ({
+        centroCostoId: l.centroCostoId,
+        proyectoId: l.proyectoId ?? null,
+        porcentaje: Number(l.porcentaje),
+      })),
     })),
+    proyecto: filtroProyecto,
   });
 
   // Orden de filas por sección: categorías padre y sus hijas indentadas.
@@ -95,8 +110,13 @@ export default async function ReportesPage({
     const desde = `${m.anio}-${String(m.mes).padStart(2, '0')}-01`;
     const ultimo = new Date(Date.UTC(m.anio, m.mes, 0)).getUTCDate();
     const hasta = `${m.anio}-${String(m.mes).padStart(2, '0')}-${String(ultimo).padStart(2, '0')}`;
-    return `${base}/movimientos?desde=${desde}&hasta=${hasta}${categoriaId ? `&categoriaId=${categoriaId}` : ''}`;
+    return `${base}/movimientos?desde=${desde}&hasta=${hasta}${categoriaId ? `&categoriaId=${categoriaId}` : ''}${
+      proyectoParam ? `&proyectoId=${proyectoParam}` : ''
+    }`;
   };
+  const linkEjercicio = (e: number) => `${base}/reportes?ejercicio=${e}${proyectoParam ? `&proyecto=${proyectoParam}` : ''}`;
+  const nombreProyecto =
+    proyectoParam === 'sin' ? 'Sin proyecto' : proyectos.find((p) => p.id === proyectoParam)?.nombre;
 
   const total = (valores: number[]) => valores.reduce((a, v) => a + v, 0);
   const Celdas = ({ valores, categoriaId, negrita }: { valores: number[]; categoriaId?: string; negrita?: boolean }) => (
@@ -124,16 +144,32 @@ export default async function ReportesPage({
   return (
     <div>
       <PageHeader
-        titulo="Reporte P&L"
-        descripcion="Resultado por categoría y mes, en pesos y a valores netos. Los impuestos indirectos van como memo debajo del resultado."
+        titulo={nombreProyecto ? `Reporte P&L — ${nombreProyecto}` : 'Reporte P&L'}
+        descripcion={
+          nombreProyecto
+            ? 'Porción del proyecto según las líneas de asignación, en pesos y a valores netos.'
+            : 'Resultado por categoría y mes, en pesos y a valores netos. Los impuestos indirectos van como memo debajo del resultado.'
+        }
       />
 
-      <div className="mt-4 flex items-center gap-2">
-        <Link href={`${base}/reportes?ejercicio=${ejercicio - 1}`} className="btn-secondary text-xs">←</Link>
+      <div className="mt-4 flex items-center gap-2 flex-wrap">
+        <Link href={linkEjercicio(ejercicio - 1)} className="btn-secondary text-xs">←</Link>
         <span className="text-sm font-medium">
           Ejercicio {ejercicio}/{ejercicio + 1} ({MES_LABEL[inicio]} {ejercicio} – {MES_LABEL[inicio === 1 ? 12 : inicio - 1]} {inicio === 1 ? ejercicio : ejercicio + 1})
         </span>
-        <Link href={`${base}/reportes?ejercicio=${ejercicio + 1}`} className="btn-secondary text-xs">→</Link>
+        <Link href={linkEjercicio(ejercicio + 1)} className="btn-secondary text-xs">→</Link>
+        <form method="get" className="flex items-center gap-1 ml-2">
+          <input type="hidden" name="ejercicio" value={ejercicio} />
+          <label className="text-xs text-slate-500" htmlFor="proyecto">Proyecto</label>
+          <select id="proyecto" name="proyecto" defaultValue={proyectoParam ?? ''} className="input text-xs w-auto">
+            <option value="">Todos</option>
+            <option value="sin">Sin proyecto</option>
+            {proyectos.map((p) => (
+              <option key={p.id} value={p.id}>{p.nombre}{p.activo ? '' : ' (inactivo)'}</option>
+            ))}
+          </select>
+          <button className="btn-secondary text-xs">Ver</button>
+        </form>
         <span className="text-xs text-slate-400 ml-2">montos netos en $ · click en una celda abre el detalle</span>
       </div>
 
@@ -197,6 +233,12 @@ export default async function ReportesPage({
                 <Celdas valores={pnl.sinCategoria} />
               </tr>
             )}
+            {pnl.sinDistribucion.some((v) => v !== 0) && (
+              <tr className="text-amber-700">
+                <td className="sticky left-0 bg-white pl-6 whitespace-nowrap">Sin distribución (revisar)</td>
+                <Celdas valores={pnl.sinDistribucion} />
+              </tr>
+            )}
 
             <tr className="border-t-2 border-slate-300 bg-slate-100">
               <td className="sticky left-0 bg-slate-100 font-semibold">RESULTADO DEL PERÍODO</td>
@@ -216,6 +258,7 @@ export default async function ReportesPage({
               </td>
             </tr>
 
+            {!filtroProyecto && (<>
             <FilaSeccion titulo="Memo: impuestos indirectos (no integran el resultado)" />
             {(
               [
@@ -232,12 +275,15 @@ export default async function ReportesPage({
                 <Celdas valores={valores} />
               </tr>
             ))}
+            </>)}
           </tbody>
         </table>
         <p className="px-3 py-2 text-[11px] text-slate-500">
           Sólo computan movimientos ASIGNADOS y recibos confirmados, a valores netos (sin IVA, percepciones ni
           tributos) y en pesos (moneda extranjera × tipo de cambio; sin TC no computa). Las prepagas figuran por su
           neto dentro de Costos de personal.
+          {filtroProyecto &&
+            ' La porción del proyecto sale de las líneas de asignación (reparto al centavo): la suma de todos los proyectos más "Sin proyecto" reproduce el total. El IVA es del comprobante, por eso el memo de impuestos no aplica en esta vista.'}
         </p>
       </div>
     </div>

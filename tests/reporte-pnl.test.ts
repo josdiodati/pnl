@@ -65,3 +65,71 @@ describe('armarPnl', () => {
     expect(pnl.memo.percepcionesIibb).toEqual([-1_210, 0]);
   });
 });
+
+// Vista por proyecto: la porción de cada movimiento se toma de sus líneas de
+// distribución con el reparto al centavo (la última línea absorbe el redondeo),
+// sobre la MISMA base neta del P&L general — así la suma de todos los proyectos
+// más "sin proyecto" reproduce exactamente el total.
+describe('armarPnl por proyecto', () => {
+  const meses = [{ anio: 2026, mes: 7 }];
+  const linea = (proyectoId: string | null, porcentaje: number) => ({
+    centroCostoId: 'cc1', proyectoId, porcentaje,
+  });
+  const ventaRepartida: MovimientoPnl = {
+    ...venta,
+    lineas: [linea('p1', 33.33), linea('p2', 33.33), linea(null, 33.34)],
+  };
+
+  it('toma la porción del proyecto al centavo', () => {
+    const pnl = armarPnl({ meses, movimientos: [ventaRepartida], recibos: [], proyecto: { proyectoId: 'p1' } });
+    expect(pnl.ingresos.get('ventas')).toEqual([3_333]);
+    expect(pnl.resultado).toEqual([3_333]);
+  });
+
+  it('proyectoId null toma las líneas sin proyecto (con el redondeo de la última línea)', () => {
+    const pnl = armarPnl({ meses, movimientos: [ventaRepartida], recibos: [], proyecto: { proyectoId: null } });
+    expect(pnl.ingresos.get('ventas')).toEqual([3_334]);
+  });
+
+  it('la suma de proyectos + sin proyecto reproduce el total sin filtro', () => {
+    const armar = (proyecto?: { proyectoId: string | null }) =>
+      armarPnl({ meses, movimientos: [ventaRepartida, { ...gasto, lineas: [linea('p1', 100)] }], recibos: [], proyecto });
+    const total = armar().resultado[0];
+    const porPartes = ['p1', 'p2', null].map((p) => armar({ proyectoId: p }).resultado[0]);
+    expect(porPartes.reduce((a, v) => a + v, 0)).toBe(total);
+  });
+
+  it('movimiento sin líneas: va a "sin distribución" en la vista sin proyecto y no computa en un proyecto', () => {
+    const enProyecto = armarPnl({ meses, movimientos: [venta], recibos: [], proyecto: { proyectoId: 'p1' } });
+    expect(enProyecto.resultado).toEqual([0]);
+    expect(enProyecto.sinDistribucion).toEqual([0]);
+
+    const sinProyecto = armarPnl({ meses, movimientos: [venta], recibos: [], proyecto: { proyectoId: null } });
+    expect(sinProyecto.ingresos.get('ventas')).toBeUndefined();
+    expect(sinProyecto.sinDistribucion).toEqual([10_000]);
+    expect(sinProyecto.resultado).toEqual([10_000]);
+  });
+
+  it('sueldos: la fila toma la porción del proyecto según las líneas del recibo', () => {
+    const recibo = { anio: 2026, mes: 7, costoTotalEmpleador: 100, lineas: [linea('p1', 40), linea(null, 60)] };
+    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], proyecto: { proyectoId: 'p1' } }).sueldos).toEqual([-4_000]);
+    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], proyecto: { proyectoId: null } }).sueldos).toEqual([-6_000]);
+  });
+
+  it('recibo sin líneas: entero a la vista sin proyecto, nada a un proyecto', () => {
+    const recibo = { anio: 2026, mes: 7, costoTotalEmpleador: 100 };
+    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], proyecto: { proyectoId: 'p1' } }).sueldos).toEqual([0]);
+    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], proyecto: { proyectoId: null } }).sueldos).toEqual([-10_000]);
+  });
+
+  it('el memo de impuestos queda en cero con filtro (el IVA es del comprobante, no de la línea)', () => {
+    const pnl = armarPnl({ meses, movimientos: [ventaRepartida], recibos: [], proyecto: { proyectoId: 'p1' } });
+    expect(pnl.memo.ivaDebito).toEqual([0]);
+  });
+
+  it('sin filtro nada cambia: sinDistribucion queda en cero aunque falten líneas', () => {
+    const pnl = armarPnl({ meses, movimientos: [venta], recibos: [] });
+    expect(pnl.sinDistribucion).toEqual([0]);
+    expect(pnl.ingresos.get('ventas')).toEqual([10_000]);
+  });
+});

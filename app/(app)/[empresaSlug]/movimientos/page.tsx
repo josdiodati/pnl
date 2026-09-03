@@ -20,7 +20,7 @@ export default async function MovimientosPage({
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
 
   const where = buildWhereMovimientos(searchParams, { esValidador, usuarioId: ctx.usuario.id });
-  const [movimientos, categorias, centros, clientes, contrapartes] = await Promise.all([
+  const [movimientos, categorias, centros, clientes, proyectos, contrapartes] = await Promise.all([
     ctx.db.movimiento.findMany({
       where,
       include: { categoria: true, contraparte: true, lineas: true, vinculosEmpleados: { select: { monto: true } } },
@@ -30,6 +30,7 @@ export default async function MovimientosPage({
     ctx.db.categoria.findMany({ orderBy: { nombre: 'asc' } }),
     ctx.db.centroCosto.findMany({ orderBy: { nombre: 'asc' } }),
     ctx.db.cliente.findMany({ orderBy: { nombre: 'asc' } }),
+    ctx.db.proyecto.findMany({ orderBy: { nombre: 'asc' } }),
     ctx.db.contraparte.findMany({ orderBy: { razonSocial: 'asc' } }),
   ]);
 
@@ -77,13 +78,20 @@ export default async function MovimientosPage({
         })),
       })),
   );
-  // Si se filtra por centro de costo o cliente, el bloque muestra sólo esa porción.
+  // Si se filtra por centro de costo, cliente o proyecto, el bloque muestra sólo
+  // esa porción. 'sin' (proyecto) = lo no atribuido a ningún proyecto.
+  const personalSinProyecto =
+    resumenPersonal.total - [...resumenPersonal.porProyecto.values()].reduce((a, v) => a + v, 0);
   const personalMostrado = searchParams.centroCostoId
     ? resumenPersonal.porCentroCosto.get(searchParams.centroCostoId) ?? 0
     : searchParams.clienteId
       ? resumenPersonal.porCliente.get(searchParams.clienteId) ?? 0
-      : resumenPersonal.total;
-  const sinFiltroDePersonal = !searchParams.centroCostoId && !searchParams.clienteId;
+      : searchParams.proyectoId
+        ? searchParams.proyectoId === 'sin'
+          ? personalSinProyecto
+          : resumenPersonal.porProyecto.get(searchParams.proyectoId) ?? 0
+        : resumenPersonal.total;
+  const sinFiltroDePersonal = !searchParams.centroCostoId && !searchParams.clienteId && !searchParams.proyectoId;
 
   const qs = new URLSearchParams(
     Object.entries(searchParams).filter(([k, v]) => v && k !== 'ok') as [string, string][],
@@ -92,7 +100,12 @@ export default async function MovimientosPage({
   const filtros: { name: keyof FiltrosMovimientos; label: string; opciones: { id: string; nombre: string }[] }[] = [
     { name: 'categoriaId', label: 'Categoría', opciones: categorias.map((c) => ({ id: c.id, nombre: `${c.nombre} (${c.tipo})` })) },
     { name: 'centroCostoId', label: 'Centro de costo', opciones: centros.map((c) => ({ id: c.id, nombre: c.nombre })) },
-    { name: 'clienteId', label: 'Cliente / proyecto', opciones: clientes.map((c) => ({ id: c.id, nombre: c.nombre })) },
+    { name: 'clienteId', label: 'Cliente', opciones: clientes.map((c) => ({ id: c.id, nombre: c.nombre })) },
+    {
+      name: 'proyectoId',
+      label: 'Proyecto',
+      opciones: [{ id: 'sin', nombre: '— Sin proyecto —' }, ...proyectos.map((p) => ({ id: p.id, nombre: p.nombre }))],
+    },
     { name: 'contraparteId', label: 'Contraparte', opciones: contrapartes.map((c) => ({ id: c.id, nombre: c.razonSocial })) },
   ];
 
@@ -234,7 +247,8 @@ export default async function MovimientosPage({
                       <span key={l.id}>
                         {i > 0 && ' · '}
                         {centros.find((c) => c.id === l.centroCostoId)?.nombre ?? '?'}
-                        {l.clienteId ? `/${clientes.find((c) => c.id === l.clienteId)?.nombre ?? '?'}` : ''}{' '}
+                        {l.clienteId ? `/${clientes.find((c) => c.id === l.clienteId)?.nombre ?? '?'}` : ''}
+                        {l.proyectoId ? `/${proyectos.find((p) => p.id === l.proyectoId)?.nombre ?? '?'}` : ''}{' '}
                         {Number(l.porcentaje).toLocaleString('es-AR')}%
                       </span>
                     ))}

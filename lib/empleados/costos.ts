@@ -15,6 +15,7 @@ export type ResumenPersonal = {
   total: number;
   porCentroCosto: Map<string, number>;
   porCliente: Map<string, number>;
+  porProyecto: Map<string, number>;
 };
 
 function acumular(resumen: ResumenPersonal, firmado: number, lineas: LineaResumen[]): void {
@@ -31,6 +32,7 @@ function acumular(resumen: ResumenPersonal, firmado: number, lineas: LineaResume
     parsed.forEach((l, i) => {
       resumen.porCentroCosto.set(l.centroCostoId, (resumen.porCentroCosto.get(l.centroCostoId) ?? 0) + importes[i]);
       if (l.clienteId) resumen.porCliente.set(l.clienteId, (resumen.porCliente.get(l.clienteId) ?? 0) + importes[i]);
+      if (l.proyectoId) resumen.porProyecto.set(l.proyectoId, (resumen.porProyecto.get(l.proyectoId) ?? 0) + importes[i]);
     });
   } catch {
     // líneas inconsistentes: el total ya se sumó, se omite el desglose
@@ -42,7 +44,7 @@ export function resumirCostosPersonal(
   vinculos: VinculoParaResumen[],
   movimientosPersonal: MovimientoPersonalParaResumen[] = [],
 ): ResumenPersonal {
-  const resumen: ResumenPersonal = { total: 0, porCentroCosto: new Map(), porCliente: new Map() };
+  const resumen: ResumenPersonal = { total: 0, porCentroCosto: new Map(), porCliente: new Map(), porProyecto: new Map() };
   for (const r of recibos) {
     if (r.costoTotalEmpleador == null) continue;
     acumular(resumen, -Math.round(Number(r.costoTotalEmpleador) * 100), r.lineas);

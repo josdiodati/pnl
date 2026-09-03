@@ -10,6 +10,7 @@ export type FiltrosMovimientos = {
   categoriaId?: string;
   centroCostoId?: string;
   clienteId?: string;
+  proyectoId?: string; // 'sin' = líneas sin proyecto
   contraparteId?: string;
   origen?: string;
   estado?: string;
@@ -59,11 +60,12 @@ export function buildWhereMovimientos(
       { contraparte: { cuit: contains } },
     ];
   }
-  if (f.centroCostoId || f.clienteId) {
+  if (f.centroCostoId || f.clienteId || f.proyectoId) {
     where.lineas = {
       some: {
         ...(f.centroCostoId ? { centroCostoId: f.centroCostoId } : {}),
         ...(f.clienteId ? { clienteId: f.clienteId } : {}),
+        ...(f.proyectoId ? { proyectoId: f.proyectoId === 'sin' ? null : f.proyectoId } : {}),
       },
     };
   }
@@ -76,7 +78,7 @@ export type MovimientoConRelaciones = {
   total: unknown;
   tipoComprobante: string | null;
   categoria: { tipo: 'INGRESO' | 'EGRESO'; nombre: string; esCostoPersonal?: boolean } | null;
-  lineas: { centroCostoId: string; clienteId: string | null; porcentaje: unknown }[];
+  lineas: { centroCostoId: string; clienteId: string | null; proyectoId?: string | null; porcentaje: unknown }[];
   /** Vínculos comprobante→empleado: su monto se descuenta del libro y computa en Costos de personal. */
   vinculosEmpleados?: { monto: unknown }[];
   /** Moneda del comprobante y TC (pesos por unidad): el libro unifica en ARS. */
@@ -117,6 +119,7 @@ export type ResumenMovimientos = {
   resultado: number;
   porCentroCosto: Map<string, number>;
   porCliente: Map<string, number>;
+  porProyecto: Map<string, number>;
 };
 
 /**
@@ -129,6 +132,7 @@ export function resumirMovimientos(movs: MovimientoConRelaciones[]): ResumenMovi
   let egresos = 0;
   const porCentroCosto = new Map<string, number>();
   const porCliente = new Map<string, number>();
+  const porProyecto = new Map<string, number>();
 
   for (const mov of movs) {
     if (mov.estado !== 'ASIGNADO') continue;
@@ -150,6 +154,7 @@ export function resumirMovimientos(movs: MovimientoConRelaciones[]): ResumenMovi
       const lineas = mov.lineas.map((l) => ({
         centroCostoId: l.centroCostoId,
         clienteId: l.clienteId,
+        proyectoId: l.proyectoId ?? null,
         porcentaje: Number(l.porcentaje),
       }));
       try {
@@ -159,11 +164,14 @@ export function resumirMovimientos(movs: MovimientoConRelaciones[]): ResumenMovi
           if (l.clienteId) {
             porCliente.set(l.clienteId, (porCliente.get(l.clienteId) ?? 0) + importes[i]);
           }
+          if (l.proyectoId) {
+            porProyecto.set(l.proyectoId, (porProyecto.get(l.proyectoId) ?? 0) + importes[i]);
+          }
         });
       } catch {
         // legacy/inconsistent lines: skip breakdown but keep totals
       }
     }
   }
-  return { ingresos, egresos, resultado: ingresos + egresos, porCentroCosto, porCliente };
+  return { ingresos, egresos, resultado: ingresos + egresos, porCentroCosto, porCliente, porProyecto };
 }

@@ -27,6 +27,15 @@ describe('resumirCostosPersonal', () => {
     expect(r.porCentroCosto.get('bpo')).toBe(-20_000);
   });
 
+  it('desglosa por proyecto las líneas que lo tienen', () => {
+    const r = resumirCostosPersonal(
+      [{ costoTotalEmpleador: 1000, lineas: [{ ...linea('bpo', 60, 'cliA'), proyectoId: 'p1' }, linea('adm', 40)] }],
+      [],
+    );
+    expect(r.porProyecto.get('p1')).toBe(-60_000);
+    expect(r.porProyecto.size).toBe(1);
+  });
+
   it('un recibo sin líneas suma al total sin desglose (defensivo)', () => {
     const r = resumirCostosPersonal([{ costoTotalEmpleador: 100, lineas: [] }], []);
     expect(r.total).toBe(-10_000);
