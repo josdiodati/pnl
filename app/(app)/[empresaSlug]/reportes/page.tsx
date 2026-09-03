@@ -57,6 +57,7 @@ export default async function ReportesPage({
         categoriaId: m.categoriaId,
         tipoCategoria: (m.categoria?.tipo ?? 'EGRESO') as 'INGRESO' | 'EGRESO',
         esCostoPersonal: m.categoria?.esCostoPersonal ?? false,
+        esImpuestoIndirecto: m.categoria?.esImpuestoIndirecto ?? false,
         tipoComprobante: m.tipoComprobante,
         moneda: m.moneda,
         tipoCambio: m.tipoCambio != null ? Number(m.tipoCambio) : null,
@@ -273,6 +274,12 @@ export default async function ReportesPage({
               <tr key={titulo} className="text-slate-500 hover:bg-slate-50">
                 <td className="sticky left-0 bg-white pl-6 whitespace-nowrap">{titulo}</td>
                 <Celdas valores={valores} />
+              </tr>
+            ))}
+            {[...pnl.memo.porCategoria.entries()].map(([catId, valores]) => (
+              <tr key={catId} className="text-slate-500 hover:bg-slate-50">
+                <td className="sticky left-0 bg-white pl-6 whitespace-nowrap">{nombreCat.get(catId) ?? '?'}</td>
+                <Celdas valores={valores} categoriaId={catId} />
               </tr>
             ))}
             </>)}

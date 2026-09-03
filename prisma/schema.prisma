@@ -96,6 +96,9 @@ model Categoria {
   // Sus movimientos computan dentro del bloque "Costos de personal" del libro
   // (ej. Prepagas) y salen del resumen general — sin doble conteo.
   esCostoPersonal Boolean       @default(false)
+  // Sus movimientos son impuestos (ej. Sircreb): en el Reporte P&L van al memo
+  // de impuestos indirectos y NO modifican el resultado.
+  esImpuestoIndirecto Boolean   @default(false)
   empresa         Empresa       @relation(fields: [empresaId], references: [id])
   padre           Categoria?    @relation("jerarquia", fields: [padreId], references: [id])
   hijas           Categoria[]   @relation("jerarquia")

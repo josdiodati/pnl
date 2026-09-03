@@ -66,6 +66,41 @@ describe('armarPnl', () => {
   });
 });
 
+// Categorías marcadas "es impuesto indirecto" (ej. Sircreb): son impuestos, no
+// gasto operativo — no modifican el resultado. Van como filas del memo, por
+// categoría, junto al IVA y las percepciones.
+describe('armarPnl — categorías de impuesto indirecto (ej. Sircreb)', () => {
+  const meses = [{ anio: 2026, mes: 7 }];
+  const sircreb: MovimientoPnl = {
+    ...gasto, categoriaId: 'sircreb', esImpuestoIndirecto: true,
+    total: 100, iva21: null, percepcionesIibb: null,
+  };
+
+  it('no computa en egresos ni en el resultado; va al memo por categoría', () => {
+    const pnl = armarPnl({ meses, movimientos: [sircreb, venta], recibos: [] });
+    expect(pnl.egresos.size).toBe(0);
+    expect(pnl.resultado).toEqual([10_000]);
+    expect(pnl.memo.porCategoria.get('sircreb')).toEqual([-10_000]);
+  });
+
+  it('sus propios campos de impuestos no suman al resto del memo', () => {
+    const pnl = armarPnl({ meses, movimientos: [{ ...sircreb, total: 121, iva21: 21 }], recibos: [] });
+    expect(pnl.memo.ivaCredito).toEqual([0]);
+    expect(pnl.memo.porCategoria.get('sircreb')).toEqual([-10_000]);
+  });
+
+  it('en la vista por proyecto se omite por completo', () => {
+    const pnl = armarPnl({
+      meses,
+      movimientos: [{ ...sircreb, lineas: [{ centroCostoId: 'cc1', proyectoId: 'p1', porcentaje: 100 }] }],
+      recibos: [],
+      proyecto: { proyectoId: 'p1' },
+    });
+    expect(pnl.resultado).toEqual([0]);
+    expect(pnl.memo.porCategoria.size).toBe(0);
+  });
+});
+
 // Vista por proyecto: la porción de cada movimiento se toma de sus líneas de
 // distribución con el reparto al centavo (la última línea absorbe el redondeo),
 // sobre la MISMA base neta del P&L general — así la suma de todos los proyectos

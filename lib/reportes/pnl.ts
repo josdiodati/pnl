@@ -22,6 +22,8 @@ export type MovimientoPnl = {
   categoriaId: string | null;
   tipoCategoria: 'INGRESO' | 'EGRESO';
   esCostoPersonal: boolean;
+  /** Categoría marcada "es impuesto indirecto" (ej. Sircreb): va al memo, no al resultado. */
+  esImpuestoIndirecto?: boolean;
   tipoComprobante: string | null;
   moneda: string;
   tipoCambio: number | null;
@@ -72,6 +74,8 @@ export type MemoImpuestos = {
   percepcionesIva: number[];
   percepcionesIibb: number[];
   otrosTributos: number[];
+  /** Base neta de las categorías "es impuesto indirecto" (ej. Sircreb), por categoría. */
+  porCategoria: Map<string, number[]>;
 };
 
 export type Pnl = {
@@ -135,6 +139,7 @@ export function armarPnl(input: {
       percepcionesIva: ceros(),
       percepcionesIibb: ceros(),
       otrosTributos: ceros(),
+      porCategoria: new Map(),
     },
     totalEjercicio: { resultado: 0 },
   };
@@ -149,6 +154,14 @@ export function armarPnl(input: {
     if (c == null) continue;
     const base = baseImponibleFirmada(mov);
     if (base == null) continue;
+
+    // Impuesto indirecto por categoría (ej. Sircreb): es un impuesto, no gasto
+    // operativo — entero al memo, nunca al resultado. En la vista por proyecto
+    // no aplica (el memo se omite ahí).
+    if (mov.esImpuestoIndirecto && mov.categoriaId) {
+      if (!filtro) sumarEn(pnl.memo.porCategoria, mov.categoriaId, c, base);
+      continue;
+    }
 
     let importe = base;
     if (filtro) {

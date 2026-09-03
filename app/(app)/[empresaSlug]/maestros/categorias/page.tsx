@@ -50,6 +50,10 @@ export default async function CategoriasPage({
             <input type="checkbox" name="esCostoPersonal" value="1" defaultChecked={editando?.esCostoPersonal} />
             Es costo de personal
           </label>
+          <label className="flex items-center gap-2 text-sm pb-2" title="Sus movimientos son impuestos (ej. Sircreb): en el Reporte P&L van al memo de impuestos indirectos y no modifican el resultado">
+            <input type="checkbox" name="esImpuestoIndirecto" value="1" defaultChecked={editando?.esImpuestoIndirecto} />
+            Es impuesto indirecto (memo)
+          </label>
           <button className="btn-primary">{editando ? 'Guardar cambios' : 'Crear'}</button>
           {editando && (
             <Link href={`/${params.empresaSlug}/maestros/categorias`} className="btn-secondary">Cancelar</Link>
@@ -69,6 +73,9 @@ export default async function CategoriasPage({
                   {c.nombre}
                   {c.esCostoPersonal && (
                     <span className="ml-1.5 inline-block rounded bg-red-50 text-red-700 px-1.5 py-0.5 text-[10px]">personal</span>
+                  )}
+                  {c.esImpuestoIndirecto && (
+                    <span className="ml-1.5 inline-block rounded bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">impuesto (memo)</span>
                   )}
                 </td>
                 <td>{c.tipo === 'INGRESO' ? 'Ingreso' : 'Egreso'}</td>
