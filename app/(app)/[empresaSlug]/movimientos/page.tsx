@@ -100,7 +100,11 @@ export default async function MovimientosPage({
   const filtros: { name: keyof FiltrosMovimientos; label: string; opciones: { id: string; nombre: string }[] }[] = [
     { name: 'categoriaId', label: 'Categoría', opciones: categorias.map((c) => ({ id: c.id, nombre: `${c.nombre} (${c.tipo})` })) },
     { name: 'centroCostoId', label: 'Centro de costo', opciones: centros.map((c) => ({ id: c.id, nombre: c.nombre })) },
-    { name: 'clienteId', label: 'Cliente', opciones: clientes.map((c) => ({ id: c.id, nombre: c.nombre })) },
+    {
+      name: 'clienteId',
+      label: 'Cliente',
+      opciones: [{ id: 'sin', nombre: '— Sin cliente —' }, ...clientes.map((c) => ({ id: c.id, nombre: c.nombre }))],
+    },
     {
       name: 'proyectoId',
       label: 'Proyecto',

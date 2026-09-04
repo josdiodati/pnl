@@ -94,7 +94,7 @@ describe('armarPnl — categorías de impuesto indirecto (ej. Sircreb)', () => {
       meses,
       movimientos: [{ ...sircreb, lineas: [{ centroCostoId: 'cc1', proyectoId: 'p1', porcentaje: 100 }] }],
       recibos: [],
-      proyecto: { proyectoId: 'p1' },
+      filtro: { campo: 'proyectoId', valor: 'p1' },
     });
     expect(pnl.resultado).toEqual([0]);
     expect(pnl.memo.porCategoria.size).toBe(0);
@@ -116,30 +116,30 @@ describe('armarPnl por proyecto', () => {
   };
 
   it('toma la porción del proyecto al centavo', () => {
-    const pnl = armarPnl({ meses, movimientos: [ventaRepartida], recibos: [], proyecto: { proyectoId: 'p1' } });
+    const pnl = armarPnl({ meses, movimientos: [ventaRepartida], recibos: [], filtro: { campo: 'proyectoId', valor: 'p1' } });
     expect(pnl.ingresos.get('ventas')).toEqual([3_333]);
     expect(pnl.resultado).toEqual([3_333]);
   });
 
   it('proyectoId null toma las líneas sin proyecto (con el redondeo de la última línea)', () => {
-    const pnl = armarPnl({ meses, movimientos: [ventaRepartida], recibos: [], proyecto: { proyectoId: null } });
+    const pnl = armarPnl({ meses, movimientos: [ventaRepartida], recibos: [], filtro: { campo: 'proyectoId', valor: null } });
     expect(pnl.ingresos.get('ventas')).toEqual([3_334]);
   });
 
   it('la suma de proyectos + sin proyecto reproduce el total sin filtro', () => {
-    const armar = (proyecto?: { proyectoId: string | null }) =>
-      armarPnl({ meses, movimientos: [ventaRepartida, { ...gasto, lineas: [linea('p1', 100)] }], recibos: [], proyecto });
+    const armar = (filtro?: { campo: 'proyectoId'; valor: string | null }) =>
+      armarPnl({ meses, movimientos: [ventaRepartida, { ...gasto, lineas: [linea('p1', 100)] }], recibos: [], filtro });
     const total = armar().resultado[0];
-    const porPartes = ['p1', 'p2', null].map((p) => armar({ proyectoId: p }).resultado[0]);
+    const porPartes = ['p1', 'p2', null].map((p) => armar({ campo: 'proyectoId', valor: p }).resultado[0]);
     expect(porPartes.reduce((a, v) => a + v, 0)).toBe(total);
   });
 
   it('movimiento sin líneas: va a "sin distribución" en la vista sin proyecto y no computa en un proyecto', () => {
-    const enProyecto = armarPnl({ meses, movimientos: [venta], recibos: [], proyecto: { proyectoId: 'p1' } });
+    const enProyecto = armarPnl({ meses, movimientos: [venta], recibos: [], filtro: { campo: 'proyectoId', valor: 'p1' } });
     expect(enProyecto.resultado).toEqual([0]);
     expect(enProyecto.sinDistribucion).toEqual([0]);
 
-    const sinProyecto = armarPnl({ meses, movimientos: [venta], recibos: [], proyecto: { proyectoId: null } });
+    const sinProyecto = armarPnl({ meses, movimientos: [venta], recibos: [], filtro: { campo: 'proyectoId', valor: null } });
     expect(sinProyecto.ingresos.get('ventas')).toBeUndefined();
     expect(sinProyecto.sinDistribucion).toEqual([10_000]);
     expect(sinProyecto.resultado).toEqual([10_000]);
@@ -147,18 +147,18 @@ describe('armarPnl por proyecto', () => {
 
   it('sueldos: la fila toma la porción del proyecto según las líneas del recibo', () => {
     const recibo = { anio: 2026, mes: 7, costoTotalEmpleador: 100, lineas: [linea('p1', 40), linea(null, 60)] };
-    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], proyecto: { proyectoId: 'p1' } }).sueldos).toEqual([-4_000]);
-    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], proyecto: { proyectoId: null } }).sueldos).toEqual([-6_000]);
+    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], filtro: { campo: 'proyectoId', valor: 'p1' } }).sueldos).toEqual([-4_000]);
+    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], filtro: { campo: 'proyectoId', valor: null } }).sueldos).toEqual([-6_000]);
   });
 
   it('recibo sin líneas: entero a la vista sin proyecto, nada a un proyecto', () => {
     const recibo = { anio: 2026, mes: 7, costoTotalEmpleador: 100 };
-    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], proyecto: { proyectoId: 'p1' } }).sueldos).toEqual([0]);
-    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], proyecto: { proyectoId: null } }).sueldos).toEqual([-10_000]);
+    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], filtro: { campo: 'proyectoId', valor: 'p1' } }).sueldos).toEqual([0]);
+    expect(armarPnl({ meses, movimientos: [], recibos: [recibo], filtro: { campo: 'proyectoId', valor: null } }).sueldos).toEqual([-10_000]);
   });
 
   it('el memo de impuestos queda en cero con filtro (el IVA es del comprobante, no de la línea)', () => {
-    const pnl = armarPnl({ meses, movimientos: [ventaRepartida], recibos: [], proyecto: { proyectoId: 'p1' } });
+    const pnl = armarPnl({ meses, movimientos: [ventaRepartida], recibos: [], filtro: { campo: 'proyectoId', valor: 'p1' } });
     expect(pnl.memo.ivaDebito).toEqual([0]);
   });
 
@@ -166,5 +166,72 @@ describe('armarPnl por proyecto', () => {
     const pnl = armarPnl({ meses, movimientos: [venta], recibos: [] });
     expect(pnl.sinDistribucion).toEqual([0]);
     expect(pnl.ingresos.get('ventas')).toEqual([10_000]);
+  });
+});
+
+// Mismas vistas para las otras dos dimensiones de las líneas: centro de costo
+// y cliente. La API es un filtro genérico { campo, valor }; valor null = líneas
+// sin ese dato ("sin cliente") o, para centro de costo (siempre presente en la
+// línea), sólo lo no distribuible.
+describe('armarPnl por centro de costo y por cliente', () => {
+  const meses = [{ anio: 2026, mes: 7 }];
+  const linea = (centroCostoId: string, clienteId: string | null, porcentaje: number) => ({
+    centroCostoId, clienteId, proyectoId: null, porcentaje,
+  });
+  const ventaRepartida: MovimientoPnl = {
+    ...venta,
+    lineas: [linea('cc1', 'cliA', 33.33), linea('cc2', 'cliB', 33.33), linea('cc2', null, 33.34)],
+  };
+
+  it('toma la porción del centro de costo al centavo', () => {
+    const pnl = armarPnl({
+      meses, movimientos: [ventaRepartida], recibos: [],
+      filtro: { campo: 'centroCostoId', valor: 'cc2' },
+    });
+    expect(pnl.ingresos.get('ventas')).toEqual([6_667]);
+  });
+
+  it('la suma de centros + "sin centro" reproduce el total sin filtro', () => {
+    const movs = [ventaRepartida, { ...gasto, lineas: undefined }];
+    const armar = (valor?: string | null) =>
+      armarPnl({ meses, movimientos: movs, recibos: [], filtro: valor === undefined ? undefined : { campo: 'centroCostoId', valor } });
+    const total = armar().resultado[0];
+    const porPartes = ['cc1', 'cc2', null].map((v) => armar(v).resultado[0]);
+    expect(porPartes.reduce((a, v) => a + v, 0)).toBe(total);
+  });
+
+  it('"sin centro" sólo junta lo no distribuible (toda línea tiene centro)', () => {
+    const pnl = armarPnl({
+      meses, movimientos: [ventaRepartida, { ...gasto, lineas: undefined }], recibos: [],
+      filtro: { campo: 'centroCostoId', valor: null },
+    });
+    expect(pnl.ingresos.get('ventas')).toBeUndefined();
+    expect(pnl.sinDistribucion).toEqual([-10_000]);
+  });
+
+  it('toma la porción del cliente, y valor null junta las líneas sin cliente', () => {
+    const porCliente = armarPnl({
+      meses, movimientos: [ventaRepartida], recibos: [],
+      filtro: { campo: 'clienteId', valor: 'cliA' },
+    });
+    expect(porCliente.ingresos.get('ventas')).toEqual([3_333]);
+    const sinCliente = armarPnl({
+      meses, movimientos: [ventaRepartida], recibos: [],
+      filtro: { campo: 'clienteId', valor: null },
+    });
+    expect(sinCliente.ingresos.get('ventas')).toEqual([3_334]);
+  });
+
+  it('sueldos toman la porción según las líneas del recibo', () => {
+    const recibo = {
+      anio: 2026, mes: 7, costoTotalEmpleador: 100,
+      lineas: [linea('cc1', 'cliA', 40), linea('cc2', null, 60)],
+    };
+    expect(
+      armarPnl({ meses, movimientos: [], recibos: [recibo], filtro: { campo: 'centroCostoId', valor: 'cc2' } }).sueldos,
+    ).toEqual([-6_000]);
+    expect(
+      armarPnl({ meses, movimientos: [], recibos: [recibo], filtro: { campo: 'clienteId', valor: 'cliA' } }).sueldos,
+    ).toEqual([-4_000]);
   });
 });

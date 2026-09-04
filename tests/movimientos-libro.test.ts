@@ -29,6 +29,10 @@ describe('buildWhereMovimientos — filtro por proyecto', () => {
   it("'sin' filtra las líneas sin proyecto", () => {
     expect(buildWhereMovimientos({ proyectoId: 'sin' }, opts).lineas).toEqual({ some: { proyectoId: null } });
   });
+
+  it("'sin' también aplica a cliente (drill-down del reporte por cliente)", () => {
+    expect(buildWhereMovimientos({ clienteId: 'sin' }, opts).lineas).toEqual({ some: { clienteId: null } });
+  });
 });
 
 describe('resumirMovimientos — desglose por proyecto', () => {

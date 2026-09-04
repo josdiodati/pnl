@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { MES_LABEL, periodoDeFecha, ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
-import { armarPnl, type MovimientoPnl } from '@/lib/reportes/pnl';
+import { armarPnl, type MovimientoPnl, type FiltroPnl } from '@/lib/reportes/pnl';
 import { PageHeader } from '@/components/page-header';
 
 // Reporte P&L: categorías (eje Y) × meses del ejercicio (eje X), en pesos.
@@ -16,7 +16,7 @@ export default async function ReportesPage({
   searchParams,
 }: {
   params: { empresaSlug: string };
-  searchParams: { ejercicio?: string; proyecto?: string };
+  searchParams: { ejercicio?: string; vista?: string; proyecto?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const base = `/${params.empresaSlug}`;
@@ -24,9 +24,18 @@ export default async function ReportesPage({
   const inicio = ctx.empresa.inicioEjercicioFiscal;
   const ejercicio = Number(searchParams.ejercicio ?? ejercicioDeMes(hoy.anio, hoy.mes, inicio));
   const meses = mesesDeEjercicio(ejercicio, inicio);
-  // Vista por proyecto: 'sin' = porción sin proyecto; ausente = P&L completo.
-  const proyectoParam = searchParams.proyecto || undefined;
-  const filtroProyecto = proyectoParam ? { proyectoId: proyectoParam === 'sin' ? null : proyectoParam } : undefined;
+  // Vista por dimensión de línea: 'p:<id>' proyecto, 'cc:<id>' centro de
+  // costo, 'cl:<id>' cliente; '<pref>:sin' = líneas sin ese dato; ausente =
+  // P&L completo. `proyecto` queda como alias legacy de 'p:'.
+  const vistaParam = searchParams.vista || (searchParams.proyecto ? `p:${searchParams.proyecto}` : undefined) || undefined;
+  const CAMPO_VISTA = { p: 'proyectoId', cc: 'centroCostoId', cl: 'clienteId' } as const;
+  let filtro: FiltroPnl | undefined;
+  if (vistaParam) {
+    const [pref, ...resto] = vistaParam.split(':');
+    const valor = resto.join(':');
+    const campo = CAMPO_VISTA[pref as keyof typeof CAMPO_VISTA];
+    if (campo && valor) filtro = { campo, valor: valor === 'sin' ? null : valor };
+  }
 
   const periodos = await ctx.db.periodo.findMany({
     where: { OR: meses.map((m) => ({ anio: m.anio, mes: m.mes })) },
@@ -34,7 +43,7 @@ export default async function ReportesPage({
   const periodoIds = periodos.map((p) => p.id);
   const periodoPorId = new Map(periodos.map((p) => [p.id, p]));
 
-  const [movimientos, recibos, categorias, proyectos] = await Promise.all([
+  const [movimientos, recibos, categorias, proyectos, centros, clientes] = await Promise.all([
     ctx.db.movimiento.findMany({
       where: { estado: 'ASIGNADO', periodoId: { in: periodoIds } },
       include: { categoria: true, lineas: true },
@@ -45,6 +54,8 @@ export default async function ReportesPage({
     }),
     ctx.db.categoria.findMany({ orderBy: { nombre: 'asc' } }),
     ctx.db.proyecto.findMany({ orderBy: { nombre: 'asc' } }),
+    ctx.db.centroCosto.findMany({ orderBy: { nombre: 'asc' } }),
+    ctx.db.cliente.findMany({ orderBy: { nombre: 'asc' } }),
   ]);
 
   const pnl = armarPnl({
@@ -70,6 +81,7 @@ export default async function ReportesPage({
         otrosTributos: m.otrosTributos != null ? Number(m.otrosTributos) : null,
         lineas: m.lineas.map((l) => ({
           centroCostoId: l.centroCostoId,
+          clienteId: l.clienteId ?? null,
           proyectoId: l.proyectoId ?? null,
           porcentaje: Number(l.porcentaje),
         })),
@@ -81,11 +93,12 @@ export default async function ReportesPage({
       costoTotalEmpleador: r.costoTotalEmpleador != null ? Number(r.costoTotalEmpleador) : null,
       lineas: r.lineas.map((l) => ({
         centroCostoId: l.centroCostoId,
+        clienteId: l.clienteId ?? null,
         proyectoId: l.proyectoId ?? null,
         porcentaje: Number(l.porcentaje),
       })),
     })),
-    proyecto: filtroProyecto,
+    filtro,
   });
 
   // Orden de filas por sección: categorías padre y sus hijas indentadas.
@@ -111,13 +124,31 @@ export default async function ReportesPage({
     const desde = `${m.anio}-${String(m.mes).padStart(2, '0')}-01`;
     const ultimo = new Date(Date.UTC(m.anio, m.mes, 0)).getUTCDate();
     const hasta = `${m.anio}-${String(m.mes).padStart(2, '0')}-${String(ultimo).padStart(2, '0')}`;
-    return `${base}/movimientos?desde=${desde}&hasta=${hasta}${categoriaId ? `&categoriaId=${categoriaId}` : ''}${
-      proyectoParam ? `&proyectoId=${proyectoParam}` : ''
-    }`;
+    // Drill-down al libro por la dimensión activa ('sin' = líneas sin ese
+    // dato; para centro de costo no existe: toda línea tiene centro).
+    const drill = !filtro
+      ? ''
+      : filtro.campo === 'proyectoId'
+        ? `&proyectoId=${filtro.valor ?? 'sin'}`
+        : filtro.campo === 'clienteId'
+          ? `&clienteId=${filtro.valor ?? 'sin'}`
+          : filtro.valor
+            ? `&centroCostoId=${filtro.valor}`
+            : '';
+    return `${base}/movimientos?desde=${desde}&hasta=${hasta}${categoriaId ? `&categoriaId=${categoriaId}` : ''}${drill}`;
   };
-  const linkEjercicio = (e: number) => `${base}/reportes?ejercicio=${e}${proyectoParam ? `&proyecto=${proyectoParam}` : ''}`;
-  const nombreProyecto =
-    proyectoParam === 'sin' ? 'Sin proyecto' : proyectos.find((p) => p.id === proyectoParam)?.nombre;
+  const linkEjercicio = (e: number) => `${base}/reportes?ejercicio=${e}${vistaParam ? `&vista=${vistaParam}` : ''}`;
+  const DIMENSIONES = [
+    { pref: 'p', etiqueta: 'Proyecto', sinEtiqueta: 'Sin proyecto', items: proyectos },
+    { pref: 'cc', etiqueta: 'Centro de costo', sinEtiqueta: 'Sin distribución', items: centros },
+    { pref: 'cl', etiqueta: 'Cliente', sinEtiqueta: 'Sin cliente', items: clientes },
+  ] as { pref: string; etiqueta: string; sinEtiqueta: string; items: { id: string; nombre: string; activo: boolean }[] }[];
+  const dimActiva = vistaParam ? DIMENSIONES.find((d) => vistaParam.startsWith(`${d.pref}:`)) : undefined;
+  const nombreVista = !filtro || !dimActiva
+    ? undefined
+    : filtro.valor === null
+      ? dimActiva.sinEtiqueta
+      : dimActiva.items.find((i) => i.id === filtro!.valor)?.nombre;
 
   const total = (valores: number[]) => valores.reduce((a, v) => a + v, 0);
   const Celdas = ({ valores, categoriaId, negrita }: { valores: number[]; categoriaId?: string; negrita?: boolean }) => (
@@ -145,10 +176,10 @@ export default async function ReportesPage({
   return (
     <div>
       <PageHeader
-        titulo={nombreProyecto ? `Reporte P&L — ${nombreProyecto}` : 'Reporte P&L'}
+        titulo={nombreVista ? `Reporte P&L — ${nombreVista}` : 'Reporte P&L'}
         descripcion={
-          nombreProyecto
-            ? 'Porción del proyecto según las líneas de asignación, en pesos y a valores netos.'
+          nombreVista && dimActiva
+            ? `Porción de ${dimActiva.etiqueta.toLowerCase()} según las líneas de asignación, en pesos y a valores netos.`
             : 'Resultado por categoría y mes, en pesos y a valores netos. Los impuestos indirectos van como memo debajo del resultado.'
         }
       />
@@ -161,12 +192,17 @@ export default async function ReportesPage({
         <Link href={linkEjercicio(ejercicio + 1)} className="btn-secondary text-xs">→</Link>
         <form method="get" className="flex items-center gap-1 ml-2">
           <input type="hidden" name="ejercicio" value={ejercicio} />
-          <label className="text-xs text-slate-500" htmlFor="proyecto">Proyecto</label>
-          <select id="proyecto" name="proyecto" defaultValue={proyectoParam ?? ''} className="input text-xs w-auto">
-            <option value="">Todos</option>
-            <option value="sin">Sin proyecto</option>
-            {proyectos.map((p) => (
-              <option key={p.id} value={p.id}>{p.nombre}{p.activo ? '' : ' (inactivo)'}</option>
+          <label className="text-xs text-slate-500" htmlFor="vista">Vista</label>
+          {/* key: los selects no controlados no toman defaultValue al navegar client-side */}
+          <select key={vistaParam ?? 'todos'} id="vista" name="vista" defaultValue={vistaParam ?? ''} className="input text-xs w-auto">
+            <option value="">P&L completo</option>
+            {DIMENSIONES.map((d) => (
+              <optgroup key={d.pref} label={d.etiqueta}>
+                {d.items.map((i) => (
+                  <option key={i.id} value={`${d.pref}:${i.id}`}>{i.nombre}{i.activo ? '' : ' (inactivo)'}</option>
+                ))}
+                <option value={`${d.pref}:sin`}>{d.sinEtiqueta}</option>
+              </optgroup>
             ))}
           </select>
           <button className="btn-secondary text-xs">Ver</button>
@@ -259,7 +295,7 @@ export default async function ReportesPage({
               </td>
             </tr>
 
-            {!filtroProyecto && (<>
+            {!filtro && (<>
             <FilaSeccion titulo="Memo: impuestos indirectos (no integran el resultado)" />
             {(
               [
@@ -289,8 +325,8 @@ export default async function ReportesPage({
           Sólo computan movimientos ASIGNADOS y recibos confirmados, a valores netos (sin IVA, percepciones ni
           tributos) y en pesos (moneda extranjera × tipo de cambio; sin TC no computa). Las prepagas figuran por su
           neto dentro de Costos de personal.
-          {filtroProyecto &&
-            ' La porción del proyecto sale de las líneas de asignación (reparto al centavo): la suma de todos los proyectos más "Sin proyecto" reproduce el total. El IVA es del comprobante, por eso el memo de impuestos no aplica en esta vista.'}
+          {filtro &&
+            ' La porción sale de las líneas de asignación (reparto al centavo): la suma de todos los valores de la dimensión más su "sin" reproduce el total. El IVA es del comprobante, por eso el memo de impuestos no aplica en esta vista.'}
         </p>
       </div>
     </div>

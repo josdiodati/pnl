@@ -7,14 +7,14 @@ import { importesPorLinea } from '@/lib/movimientos/distribucion';
 // es extranjera. Los impuestos indirectos quedan como MEMO bajo el resultado
 // (no lo modifican): IVA débito/crédito y posición, percepciones, tributos.
 //
-// Con `proyecto` la misma tabla muestra la porción de un proyecto (o de las
-// líneas sin proyecto, proyectoId null), tomada de las líneas de distribución
-// con el reparto al centavo sobre la MISMA base neta: la suma de todos los
-// proyectos + "sin proyecto" reproduce exactamente el total sin filtro.
+// Con `filtro` la misma tabla muestra la porción de una dimensión de las
+// líneas de asignación (proyecto, centro de costo o cliente; valor null = las
+// líneas sin ese dato), con el reparto al centavo sobre la MISMA base neta: la
+// suma de todos los valores + "sin <dimensión>" reproduce el total sin filtro.
 
 export type MesPnl = { anio: number; mes: number };
 
-export type LineaPnl = { centroCostoId: string; proyectoId?: string | null; porcentaje: number };
+export type LineaPnl = { centroCostoId: string; clienteId?: string | null; proyectoId?: string | null; porcentaje: number };
 
 export type MovimientoPnl = {
   anio: number;
@@ -39,7 +39,10 @@ export type MovimientoPnl = {
 
 export type ReciboPnl = { anio: number; mes: number; costoTotalEmpleador: number | null; lineas?: LineaPnl[] };
 
-export type FiltroProyecto = { proyectoId: string | null }; // null = líneas sin proyecto
+export type CampoPnl = 'proyectoId' | 'centroCostoId' | 'clienteId';
+// valor null = líneas sin ese dato (para centroCostoId, siempre presente en la
+// línea, junta sólo lo no distribuible).
+export type FiltroPnl = { campo: CampoPnl; valor: string | null };
 
 const n = (v: number | null | undefined) => v ?? 0;
 
@@ -85,7 +88,7 @@ export type Pnl = {
   personal: Map<string, number[]>; // categorías esCostoPersonal (ej. Prepagas)
   sueldos: number[]; // recibos confirmados (costo total empleador), negativo
   sinCategoria: number[]; // asignados sin categoría computable (no debería haber)
-  sinDistribucion: number[]; // sólo en la vista "sin proyecto": líneas ausentes/inconsistentes (revisar)
+  sinDistribucion: number[]; // sólo en la vista "sin <dimensión>": líneas ausentes/inconsistentes (revisar)
   subtotalIngresos: number[];
   subtotalEgresos: number[];
   subtotalPersonal: number[];
@@ -95,15 +98,15 @@ export type Pnl = {
 };
 
 /**
- * Porción de un total firmado que corresponde al proyecto (o a "sin proyecto"
- * con proyectoId null), al centavo. Devuelve null si las líneas faltan o son
- * inconsistentes: quién llama decide qué hacer con lo no distribuible.
+ * Porción de un total firmado que corresponde al valor de la dimensión (o a
+ * "sin <dimensión>" con valor null), al centavo. Devuelve null si las líneas
+ * faltan o son inconsistentes: quién llama decide qué hacer con eso.
  */
-function parteDelProyecto(totalCentavos: number, lineas: LineaPnl[] | undefined, proyectoId: string | null): number | null {
+function parteDeLineas(totalCentavos: number, lineas: LineaPnl[] | undefined, filtro: FiltroPnl): number | null {
   if (!lineas?.length) return null;
   try {
     const importes = importesPorLinea(totalCentavos, lineas);
-    return lineas.reduce((acc, l, i) => acc + ((l.proyectoId ?? null) === proyectoId ? importes[i] : 0), 0);
+    return lineas.reduce((acc, l, i) => acc + ((l[filtro.campo] ?? null) === filtro.valor ? importes[i] : 0), 0);
   } catch {
     return null;
   }
@@ -113,12 +116,12 @@ export function armarPnl(input: {
   meses: MesPnl[];
   movimientos: MovimientoPnl[];
   recibos: ReciboPnl[];
-  proyecto?: FiltroProyecto;
+  filtro?: FiltroPnl;
 }): Pnl {
   const N = input.meses.length;
   const col = new Map(input.meses.map((m, i) => [`${m.anio}-${m.mes}`, i]));
   const ceros = () => Array<number>(N).fill(0);
-  const filtro = input.proyecto;
+  const filtro = input.filtro;
 
   const pnl: Pnl = {
     meses: input.meses,
@@ -156,7 +159,7 @@ export function armarPnl(input: {
     if (base == null) continue;
 
     // Impuesto indirecto por categoría (ej. Sircreb): es un impuesto, no gasto
-    // operativo — entero al memo, nunca al resultado. En la vista por proyecto
+    // operativo — entero al memo, nunca al resultado. En las vistas filtradas
     // no aplica (el memo se omite ahí).
     if (mov.esImpuestoIndirecto && mov.categoriaId) {
       if (!filtro) sumarEn(pnl.memo.porCategoria, mov.categoriaId, c, base);
@@ -165,13 +168,15 @@ export function armarPnl(input: {
 
     let importe = base;
     if (filtro) {
-      const parte = parteDelProyecto(base, mov.lineas, filtro.proyectoId);
+      const parte = parteDeLineas(base, mov.lineas, filtro);
       if (parte == null) {
-        // No distribuible: sólo la vista "sin proyecto" lo muestra, como fila
-        // aparte a revisar — así la suma por proyectos sigue cerrando.
-        if (filtro.proyectoId === null) pnl.sinDistribucion[c] += base;
+        // No distribuible: sólo la vista "sin <dimensión>" lo muestra, como
+        // fila aparte a revisar — así la suma por valores sigue cerrando.
+        if (filtro.valor === null) pnl.sinDistribucion[c] += base;
         continue;
       }
+      // Porción exactamente cero: no crear la fila (ruido en la vista filtrada).
+      if (parte === 0) continue;
       importe = parte;
     }
 
@@ -204,11 +209,11 @@ export function armarPnl(input: {
       pnl.sueldos[c] += totalRecibo;
       continue;
     }
-    const parte = parteDelProyecto(totalRecibo, r.lineas, filtro.proyectoId);
-    // Recibo sin distribución: entero a la vista "sin proyecto" (sigue siendo
-    // claramente sueldos, no hace falta la fila aparte).
+    const parte = parteDeLineas(totalRecibo, r.lineas, filtro);
+    // Recibo sin distribución: entero a la vista "sin <dimensión>" (sigue
+    // siendo claramente sueldos, no hace falta la fila aparte).
     if (parte == null) {
-      if (filtro.proyectoId === null) pnl.sueldos[c] += totalRecibo;
+      if (filtro.valor === null) pnl.sueldos[c] += totalRecibo;
     } else {
       pnl.sueldos[c] += parte;
     }

@@ -9,7 +9,7 @@ export type FiltrosMovimientos = {
   hasta?: string;
   categoriaId?: string;
   centroCostoId?: string;
-  clienteId?: string;
+  clienteId?: string; // 'sin' = líneas sin cliente
   proyectoId?: string; // 'sin' = líneas sin proyecto
   contraparteId?: string;
   origen?: string;
@@ -64,7 +64,7 @@ export function buildWhereMovimientos(
     where.lineas = {
       some: {
         ...(f.centroCostoId ? { centroCostoId: f.centroCostoId } : {}),
-        ...(f.clienteId ? { clienteId: f.clienteId } : {}),
+        ...(f.clienteId ? { clienteId: f.clienteId === 'sin' ? null : f.clienteId } : {}),
         ...(f.proyectoId ? { proyectoId: f.proyectoId === 'sin' ? null : f.proyectoId } : {}),
       },
     };
