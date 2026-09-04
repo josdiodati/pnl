@@ -5,8 +5,9 @@ import { rolAlcanza } from '@/lib/roles';
 import { buildWhereMovimientos, totalFirmadoDe, montoVinculadoCentavos, type FiltrosMovimientos } from '@/lib/movimientos/query';
 import { importesPorLinea } from '@/lib/movimientos/distribucion';
 import { resumirCostosPersonal } from '@/lib/empleados/costos';
+import { generarXlsx, type CeldaXlsx } from '@/lib/movimientos/xlsx';
 
-// CSV export of the filtered selection: one row per assignment line, so the
+// XLSX export of the filtered selection: one row per assignment line, so the
 // double dimension (cost center + client/project) lands directly in Excel.
 export async function GET(req: NextRequest, { params }: { params: { empresaSlug: string } }) {
   let ctx;
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
   const sp = req.nextUrl.searchParams;
   const filtros: FiltrosMovimientos = Object.fromEntries(
-    ['desde', 'hasta', 'categoriaId', 'centroCostoId', 'clienteId', 'contraparteId', 'origen', 'estado', 'canal', 'q']
+    ['desde', 'hasta', 'categoriaId', 'centroCostoId', 'clienteId', 'proyectoId', 'contraparteId', 'origen', 'estado', 'canal', 'q']
       .map((k) => [k, sp.get(k) ?? undefined]),
   );
 
@@ -67,21 +68,16 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
       ? resumenPersonal.porCliente.get(filtros.clienteId) ?? 0
       : resumenPersonal.total;
 
-  const esc = (v: unknown) => {
-    const s = v == null ? '' : String(v);
-    return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const filas: string[] = [
-    [
-      'fecha', 'origen', 'estado', 'canal', 'contraparte', 'cuit', 'categoria', 'tipo_categoria',
-      'tipo_comprobante', 'punto_venta', 'numero', 'descripcion', 'moneda',
-      'centro_costo', 'cliente', 'proyecto', 'porcentaje', 'importe_linea', 'total_movimiento_firmado',
-    ].join(';'),
+  const encabezados = [
+    'fecha', 'origen', 'estado', 'canal', 'contraparte', 'cuit', 'categoria', 'tipo_categoria',
+    'tipo_comprobante', 'punto_venta', 'numero', 'descripcion', 'moneda',
+    'centro_costo', 'cliente', 'proyecto', 'porcentaje', 'importe_linea', 'total_movimiento_firmado',
   ];
+  const filas: CeldaXlsx[][] = [];
 
   for (const m of movimientos) {
     // A diferencia de la pantalla (que muestra el movimiento entero, con el
-    // badge "· vinculado a empleados"), el CSV existe para sumarse en Excel:
+    // badge "· vinculado a empleados"), el export existe para sumarse en Excel:
     // cada línea descuenta la porción vinculada a empleados (mismo ajuste que
     // resumirMovimientos) para que sumar todas las filas + la línea agregada
     // de "Costos de personal" dé el resultado correcto, sin doble conteo.
@@ -92,7 +88,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
       : firmadoBruto < 0
         ? Math.min(firmadoBruto + vinculado, 0)
         : Math.max(firmadoBruto - vinculado, 0);
-    const base = [
+    const base: CeldaXlsx[] = [
       m.fechaDevengamiento?.toISOString().slice(0, 10) ?? '',
       m.origen,
       m.estado,
@@ -120,41 +116,36 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
         importes = null;
       }
       m.lineas.forEach((l, i) => {
-        filas.push(
-          [
-            ...base,
-            l.centroCosto.nombre,
-            l.cliente?.nombre ?? '',
-            l.proyecto?.nombre ?? '',
-            String(Number(l.porcentaje)).replace('.', ','),
-            importes ? (importes[i] / 100).toFixed(2).replace('.', ',') : '',
-            (firmado / 100).toFixed(2).replace('.', ','),
-          ].map(esc).join(';'),
-        );
+        filas.push([
+          ...base,
+          l.centroCosto.nombre,
+          l.cliente?.nombre ?? '',
+          l.proyecto?.nombre ?? '',
+          Number(l.porcentaje),
+          importes ? importes[i] / 100 : null,
+          firmado / 100,
+        ]);
       });
     } else {
-      filas.push(
-        [...base, '', '', '', '', '', firmado != null ? (firmado / 100).toFixed(2).replace('.', ',') : ''].map(esc).join(';'),
-      );
+      filas.push([...base, '', '', '', null, null, firmado != null ? firmado / 100 : null]);
     }
   }
 
   // Línea agregada de costos de personal: un único total, sin detalle por
   // empleado (las columnas no aplicables quedan vacías).
-  filas.push(
-    [
-      '', '', '', '', '', '', '', '', '', '', '',
-      'Costos de personal (recibos + vinculados)',
-      '', '', '', '', '',
-      '',
-      (personalMostrado / 100).toFixed(2).replace('.', ','),
-    ].map(esc).join(';'),
-  );
+  filas.push([
+    '', '', '', '', '', '', '', '', '', '', '',
+    'Costos de personal (recibos + vinculados)',
+    '', '', '', '', null,
+    null,
+    personalMostrado / 100,
+  ]);
 
-  return new NextResponse('﻿' + filas.join('\n'), {
+  const buffer = await generarXlsx('Movimientos', encabezados, filas);
+  return new NextResponse(new Uint8Array(buffer), {
     headers: {
-      'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="movimientos-${params.empresaSlug}.csv"`,
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="movimientos-${params.empresaSlug}.xlsx"`,
     },
   });
 }

@@ -8,7 +8,7 @@ import { CanalBadge } from '@/components/badges';
 import { OkBanner } from '@/components/error-banner';
 
 // Minimal reporting view (doc 09): filterable table + selection totals +
-// mini-summary with cost-center breakdown + CSV export. No formatted P&L.
+// mini-summary with cost-center breakdown + XLSX export. No formatted P&L.
 export default async function MovimientosPage({
   params,
   searchParams,
@@ -117,7 +117,7 @@ export default async function MovimientosPage({
           <p className="text-xs text-slate-500">Libro de movimientos asignados: lo que impacta el resultado. Lo validado sin imputar está en la cola de Asignación.</p>
         </div>
         <a href={`/${params.empresaSlug}/movimientos/export${qs ? `?${qs}` : ''}`} className="btn-secondary text-sm">
-          Exportar CSV
+          Exportar Excel
         </a>
       </div>
       <OkBanner mensaje={searchParams.ok} />
@@ -294,7 +294,7 @@ export default async function MovimientosPage({
         </table>
       </div>
       {movimientos.length === 500 && (
-        <p className="text-xs text-amber-600">Se muestran los primeros 500 movimientos; afiná los filtros o usá el export CSV.</p>
+        <p className="text-xs text-amber-600">Se muestran los primeros 500 movimientos; afiná los filtros o usá el export a Excel.</p>
       )}
     </div>
   );

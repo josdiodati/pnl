@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { signoMovimiento } from './signo';
 import { importesPorLinea } from './distribucion';
 
-// Shared filter/summary logic for the Movimientos table and its CSV export.
+// Shared filter/summary logic for the Movimientos table and its XLSX export.
 
 export type FiltrosMovimientos = {
   desde?: string;
