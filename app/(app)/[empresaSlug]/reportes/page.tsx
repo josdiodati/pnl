@@ -115,6 +115,7 @@ export default async function ReportesPage({
         mes: f ? f.getUTCMonth() + 1 : l.resumen.periodo.mes,
         motivo: l.motivoIgnorada!,
         monto: Number(l.monto),
+        centroCostoId: l.centroCostoId,
       };
     }),
     filtro,

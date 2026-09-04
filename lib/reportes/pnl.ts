@@ -41,8 +41,9 @@ export type ReciboPnl = { anio: number; mes: number; costoTotalEmpleador: number
 
 // Cargo de resumen: línea IGNORADA cuyo motivo afecta el P&L (consumo sin
 // comprobante, seguros, comisiones). Monto en pesos FIRMADO tal como vino del
-// resumen (débitos negativos).
-export type CargoResumenPnl = { anio: number; mes: number; motivo: string; monto: number };
+// resumen (débitos negativos). El centro de costo (único, 100%) permite
+// atribuirlo en la vista por centro; no tiene proyecto ni cliente.
+export type CargoResumenPnl = { anio: number; mes: number; motivo: string; monto: number; centroCostoId?: string | null };
 
 export type CampoPnl = 'proyectoId' | 'centroCostoId' | 'clienteId';
 // valor null = líneas sin ese dato (para centroCostoId, siempre presente en la
@@ -229,15 +230,21 @@ export function armarPnl(input: {
     }
   }
 
-  // Cargos de resúmenes: no tienen líneas de distribución, así que en las
-  // vistas filtradas van enteros a la vista "sin <dimensión>" (como los
-  // recibos sin líneas) y nada a un valor puntual — la suma sigue cerrando.
-  if (!filtro || filtro.valor === null) {
-    for (const cargo of input.cargos ?? []) {
-      const c = col.get(`${cargo.anio}-${cargo.mes}`);
-      if (c == null) continue;
-      sumarEn(pnl.cargos, cargo.motivo, c, Math.round(cargo.monto * 100));
+  // Cargos de resúmenes: centro de costo único (100%), sin proyecto/cliente.
+  // En la vista por centro se atribuyen a su centro (sin centro → "sin"); en
+  // las vistas por proyecto o cliente van enteros a la "sin <dimensión>" (como
+  // los recibos sin líneas) — la suma por valores sigue cerrando.
+  for (const cargo of input.cargos ?? []) {
+    const c = col.get(`${cargo.anio}-${cargo.mes}`);
+    if (c == null) continue;
+    if (filtro) {
+      if (filtro.campo === 'centroCostoId') {
+        if ((cargo.centroCostoId ?? null) !== filtro.valor) continue;
+      } else if (filtro.valor !== null) {
+        continue;
+      }
     }
+    sumarEn(pnl.cargos, cargo.motivo, c, Math.round(cargo.monto * 100));
   }
 
   for (let c = 0; c < N; c++) {

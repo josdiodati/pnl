@@ -270,4 +270,28 @@ describe('armarPnl — cargos de resúmenes', () => {
     expect(conFiltro(null).cargos.get('Seguros')).toEqual([-5_000, -7_000]);
     expect(conFiltro(null).resultado).toEqual([-8_000, -7_000]);
   });
+
+  it('con centro de costo, la vista por ese centro los atribuye y la "sin" no los repite', () => {
+    const conCentro = [
+      { anio: 2026, mes: 7, motivo: 'Seguros', monto: -50, centroCostoId: 'cc1' },
+      { anio: 2026, mes: 7, motivo: 'Comisiones', monto: -30, centroCostoId: null },
+    ];
+    const conFiltro = (valor: string | null) =>
+      armarPnl({ meses, movimientos: [], recibos: [], cargos: conCentro, filtro: { campo: 'centroCostoId', valor } });
+    expect(conFiltro('cc1').cargos.get('Seguros')).toEqual([-5_000, 0]);
+    expect(conFiltro('cc1').cargos.get('Comisiones')).toBeUndefined();
+    expect(conFiltro(null).cargos.get('Comisiones')).toEqual([-3_000, 0]);
+    expect(conFiltro(null).cargos.get('Seguros')).toBeUndefined();
+    // La suma por centros + "sin" sigue reproduciendo el total sin filtro.
+    const total = armarPnl({ meses, movimientos: [], recibos: [], cargos: conCentro }).resultado[0];
+    expect(conFiltro('cc1').resultado[0] + conFiltro(null).resultado[0]).toBe(total);
+  });
+
+  it('en vistas por proyecto o cliente siguen enteros en la "sin" aunque tengan centro', () => {
+    const conCentro = [{ anio: 2026, mes: 7, motivo: 'Seguros', monto: -50, centroCostoId: 'cc1' }];
+    const porProyecto = (valor: string | null) =>
+      armarPnl({ meses, movimientos: [], recibos: [], cargos: conCentro, filtro: { campo: 'proyectoId', valor } });
+    expect(porProyecto('p1').subtotalCargos).toEqual([0, 0]);
+    expect(porProyecto(null).cargos.get('Seguros')).toEqual([-5_000, 0]);
+  });
 });

@@ -6,6 +6,7 @@ import { validarPertenenciaLineas } from '@/lib/movimientos/service';
 import { getOrCreatePeriodo } from '@/lib/periodos';
 import { assertTransicion } from '@/lib/movimientos/estados';
 import { normalizarDescriptor } from './matching';
+import { MOTIVOS_IGNORO_PNL } from './motivos';
 import { rematchearResumen } from './ingesta';
 
 // Acciones sobre líneas de resumen. Conciliar NO crea gasto (el movimiento ya
@@ -158,17 +159,31 @@ export async function rechazarCandidato(ctx: EmpresaContext, params: { lineaId: 
   });
 }
 
-export async function ignorarLinea(ctx: EmpresaContext, params: { lineaId: string; motivo: string }): Promise<void> {
+export async function ignorarLinea(
+  ctx: EmpresaContext,
+  params: { lineaId: string; motivo: string; centroCostoId?: string | null },
+): Promise<void> {
   const linea = await lineaOrThrow(ctx, params.lineaId);
   if (linea.estado !== 'PENDIENTE' && linea.estado !== 'SUGERIDA') throw new DomainError('La línea ya está resuelta: deshacela primero.');
-  if (!params.motivo.trim()) throw new DomainError('Indicá el motivo para ignorar la línea.');
-  await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'IGNORADA', motivoIgnorada: params.motivo.trim() } });
+  const motivo = params.motivo.trim();
+  if (!motivo) throw new DomainError('Indicá el motivo para ignorar la línea.');
+  // Los motivos que computan al P&L son un cargo real: exigen centro de costo
+  // (único, 100%) para que la vista por centro pueda atribuirlos.
+  const computaPnl = (MOTIVOS_IGNORO_PNL as readonly string[]).includes(motivo);
+  let centroCostoId: string | null = null;
+  if (computaPnl) {
+    if (!params.centroCostoId) throw new DomainError(`El motivo «${motivo}» computa en el P&L: elegí el centro de costo.`);
+    const centro = await ctx.db.centroCosto.findFirst({ where: { id: params.centroCostoId } });
+    if (!centro) throw new DomainError('Centro de costo inexistente.');
+    centroCostoId = centro.id;
+  }
+  await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'IGNORADA', motivoIgnorada: motivo, centroCostoId } });
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,
     entidad: 'Resumen',
     entidadId: linea.resumenId,
     accion: 'RESUMEN_IGNORAR',
-    despues: { lineaId: linea.id, descriptor: linea.descriptor, motivo: params.motivo },
+    despues: { lineaId: linea.id, descriptor: linea.descriptor, motivo, ...(centroCostoId ? { centroCostoId } : {}) },
   });
 }
 
@@ -202,7 +217,7 @@ export async function deshacerLinea(ctx: EmpresaContext, params: { lineaId: stri
   }
   await ctx.db.resumenLinea.update({
     where: { id: linea.id },
-    data: { estado: 'PENDIENTE', movimientoId: null, motivoIgnorada: null, reglaAplicada: null },
+    data: { estado: 'PENDIENTE', movimientoId: null, motivoIgnorada: null, centroCostoId: null, reglaAplicada: null },
   });
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,

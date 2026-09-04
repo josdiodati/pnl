@@ -56,7 +56,14 @@ export async function aplicarReglasResumen(
     if (!regla) continue;
     try {
       if (regla.accion === 'IGNORAR') {
-        await ignorarLinea(ctx, { lineaId: linea.id, motivo: regla.motivoIgnorar?.trim() || `Regla: ${regla.nombre}` });
+        // Si el motivo computa al P&L, el centro viene de la regla (copiado de
+        // la línea original al crearla); sin centro, ignorarLinea la rechaza y
+        // la línea queda pendiente para resolverla a mano.
+        await ignorarLinea(ctx, {
+          lineaId: linea.id,
+          motivo: regla.motivoIgnorar?.trim() || `Regla: ${regla.nombre}`,
+          centroCostoId: regla.centroCostoId,
+        });
         ignoradas++;
       } else {
         if (linea.estado === 'SUGERIDA') continue; // la sugerencia de conciliación gana
@@ -99,7 +106,9 @@ export async function crearReglaDesdeLinea(
       accion: params.accion,
       motivoIgnorar: params.accion === 'IGNORAR' ? params.motivo : null,
       categoriaId: params.accion === 'IMPUTAR' ? params.categoriaId : null,
-      centroCostoId: params.accion === 'IMPUTAR' ? params.centroCostoId : null,
+      // IGNORAR con motivo que computa al P&L: hereda el centro que se eligió
+      // al ignorar la línea original, así la regla puede auto-resolver.
+      centroCostoId: params.accion === 'IMPUTAR' ? params.centroCostoId : linea.centroCostoId ?? null,
       clienteId: params.accion === 'IMPUTAR' ? params.clienteId : null,
       proyectoId: params.accion === 'IMPUTAR' ? params.proyectoId : null,
     } as never,

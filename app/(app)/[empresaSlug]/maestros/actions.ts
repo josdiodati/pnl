@@ -9,6 +9,7 @@ import { cuitEsValido, normalizarCuit } from '@/lib/checks';
 import { esIdentificadorExterno } from '@/lib/checks/cuit';
 import { validarDistribucion } from '@/lib/movimientos/distribucion';
 import { proyectoDuplicado } from '@/lib/proyectos';
+import { MOTIVOS_IGNORO_PNL } from '@/lib/resumenes/motivos';
 import { prisma } from '@/lib/db';
 
 // Masters CRUD. All actions: VALIDADOR+ (enforced server-side via
@@ -389,12 +390,17 @@ export async function guardarReglaResumen(formData: FormData): Promise<void> {
       motivoIgnorar: accion === 'IGNORAR' ? v('motivoIgnorar') : null,
       categoriaId: accion === 'IMPUTAR' ? v('categoriaId') : null,
       distribucionId: accion === 'IMPUTAR' ? v('distribucionId') : null,
-      centroCostoId: accion === 'IMPUTAR' ? v('centroCostoId') : null,
+      // IGNORAR con motivo que computa al P&L también lleva centro (lo exige
+      // ignorarLinea al aplicar la regla).
+      centroCostoId: v('centroCostoId'),
       clienteId: accion === 'IMPUTAR' ? v('clienteId') : null,
       proyectoId: accion === 'IMPUTAR' ? v('proyectoId') : null,
     };
     if (accion === 'IMPUTAR' && (!data.categoriaId || !(data.distribucionId || data.centroCostoId))) {
       throw new DomainError('La acción Imputar necesita categoría y (plantilla de distribución o centro de costo).');
+    }
+    if (accion === 'IGNORAR' && data.motivoIgnorar && (MOTIVOS_IGNORO_PNL as readonly string[]).includes(data.motivoIgnorar) && !data.centroCostoId) {
+      throw new DomainError(`El motivo «${data.motivoIgnorar}» computa en el P&L: la regla necesita un centro de costo.`);
     }
     if ((data.clienteId || data.proyectoId) && !data.centroCostoId) {
       throw new DomainError('Cliente/proyecto requieren un centro de costo (línea única).');

@@ -126,7 +126,8 @@ export async function ignorarAction(formData: FormData): Promise<void> {
     const lineaId = String(formData.get('lineaId'));
     // Los chips de motivo rápido mandan `motivoRapido` (botones con value); el texto libre, `motivo`.
     const motivo = String(formData.get('motivoRapido') ?? '') || String(formData.get('motivo') ?? '');
-    await ignorarLinea(ctx, { lineaId, motivo });
+    const centroCostoId = String(formData.get('centroCostoId') ?? '') || null;
+    await ignorarLinea(ctx, { lineaId, motivo, centroCostoId });
     if (formData.get('crearRegla')) {
       const r = await crearReglaDesdeLinea(ctx.db, { lineaId, accion: 'IGNORAR', motivo: motivo.trim() });
       mensaje += r.creada ? ` · regla «${r.nombre}» creada` : ` · ya existía una regla «${r.nombre}»`;

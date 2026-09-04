@@ -124,6 +124,7 @@ model CentroCosto {
   plantillaLineas PlantillaDistribucionLinea[]
   empleadoLineas  EmpleadoDistribucionLinea[]  @relation("empleadoLineas")
   reciboLineas    ReciboDistribucionLinea[]    @relation("reciboLineas")
+  cargosResumen   ResumenLinea[]               @relation("cargosResumen")
 
   @@unique([empresaId, nombre])
 }
@@ -504,11 +505,13 @@ model ResumenLinea {
   movimientoId   String? // conciliado (existente) o imputado (creado)
   candidatos     Json? // [{movimientoId, score, motivo, rechazado?}] del matching
   motivoIgnorada String?
+  centroCostoId  String? // obligatorio al ignorar con motivo que computa al P&L (cargo 100% a un centro)
   reglaAplicada  String? // nombre de la ReglaResumen que la resolvió automáticamente
 
-  resumen    Resumen     @relation(fields: [resumenId], references: [id], onDelete: Cascade)
-  movimiento Movimiento? @relation(fields: [movimientoId], references: [id])
-  createdAt  DateTime    @default(now())
+  resumen     Resumen      @relation(fields: [resumenId], references: [id], onDelete: Cascade)
+  movimiento  Movimiento?  @relation(fields: [movimientoId], references: [id])
+  centroCosto CentroCosto? @relation("cargosResumen", fields: [centroCostoId], references: [id])
+  createdAt   DateTime     @default(now())
 
   @@index([resumenId])
   @@index([movimientoId])

@@ -237,10 +237,21 @@ export default async function ResumenDetallePage({
                       name="motivoRapido"
                       value={m}
                       className="rounded-full border border-slate-300 px-2.5 py-0.5 text-xs text-slate-600 hover:bg-slate-100"
+                      title={(MOTIVOS_IGNORO_PNL as readonly string[]).includes(m) ? 'Computa en el Reporte P&L: requiere centro de costo' : undefined}
                     >
                       {m}
+                      {(MOTIVOS_IGNORO_PNL as readonly string[]).includes(m) && <span className="ml-1 text-[10px] text-slate-400">· P&L</span>}
                     </button>
                   ))}
+                </div>
+                <div className="w-64">
+                  <label className="label">Centro de costo (para los motivos que computan al P&L)</label>
+                  <select name="centroCostoId" className="input text-xs" defaultValue="">
+                    <option value="">Centro de costo…</option>
+                    {centros.map((c) => (
+                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
@@ -498,18 +509,36 @@ export default async function ResumenDetallePage({
                       <input type="hidden" name="resumenId" value={resumen.id} />
                       <input type="hidden" name="lineaId" value={l.id} />
                       <p className="px-3 py-1 text-[11px] font-semibold text-slate-400">Ignorar como…</p>
-                      {MOTIVOS_IGNORO_RAPIDO.map((m) => (
+                      {MOTIVOS_IGNORO_RAPIDO.filter((m) => !(MOTIVOS_IGNORO_PNL as readonly string[]).includes(m)).map((m) => (
                         <button
                           key={m}
                           name="motivoRapido"
                           value={m}
                           className="block w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-amber-50"
-                          title={(MOTIVOS_IGNORO_PNL as readonly string[]).includes(m) ? 'Computa en el Reporte P&L' : undefined}
                         >
                           {m}
-                          {(MOTIVOS_IGNORO_PNL as readonly string[]).includes(m) && (
-                            <span className="ml-1 text-[10px] text-slate-400">· P&L</span>
-                          )}
+                        </button>
+                      ))}
+                      <p className="px-3 pt-2 pb-1 text-[11px] font-semibold text-slate-400 border-t border-slate-100 mt-1">
+                        Computan al P&L — elegí centro de costo
+                      </p>
+                      <div className="px-3 pb-1">
+                        <select name="centroCostoId" className="input text-xs w-full" defaultValue="">
+                          <option value="">Centro de costo…</option>
+                          {centros.map((c) => (
+                            <option key={c.id} value={c.id}>{c.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {MOTIVOS_IGNORO_PNL.map((m) => (
+                        <button
+                          key={m}
+                          name="motivoRapido"
+                          value={m}
+                          className="block w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-amber-50"
+                          title="Computa en el Reporte P&L con el centro de costo elegido"
+                        >
+                          {m} <span className="text-[10px] text-slate-400">· P&L</span>
                         </button>
                       ))}
                     </form>

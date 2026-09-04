@@ -94,6 +94,28 @@ describe('conciliación de líneas de resumen (integración)', () => {
     expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
   });
 
+  it('ignorar con motivo que computa al P&L exige centro de costo y lo guarda; deshacer lo limpia', async () => {
+    const l = await linea();
+    await expect(ignorarLinea(ctx, { lineaId: l.id, motivo: 'Seguros' })).rejects.toThrow(/centro de costo/i);
+    await expect(ignorarLinea(ctx, { lineaId: l.id, motivo: 'Seguros', centroCostoId: 'inexistente' })).rejects.toThrow(DomainError);
+    await ignorarLinea(ctx, { lineaId: l.id, motivo: 'Seguros', centroCostoId: centroId });
+    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
+    expect(actual!.estado).toBe('IGNORADA');
+    expect(actual!.centroCostoId).toBe(centroId);
+    await deshacerLinea(ctx, { lineaId: l.id });
+    const deshecha = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
+    expect(deshecha!.estado).toBe('PENDIENTE');
+    expect(deshecha!.centroCostoId).toBeNull();
+  });
+
+  it('un motivo que no computa al P&L no exige centro y no lo guarda', async () => {
+    const l = await linea();
+    await ignorarLinea(ctx, { lineaId: l.id, motivo: 'Movimiento sin consumo' });
+    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
+    expect(actual!.estado).toBe('IGNORADA');
+    expect(actual!.centroCostoId).toBeNull();
+  });
+
   it('deshacer una imputación anula el movimiento creado', async () => {
     const l = await linea({ descriptor: 'COMISION', monto: -500 });
     await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] });
