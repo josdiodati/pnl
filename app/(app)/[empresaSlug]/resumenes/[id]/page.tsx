@@ -10,6 +10,7 @@ import { DistribucionEditor } from '@/components/distribucion-editor';
 import { MontoArsHint } from '@/components/monto-ars-hint';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { HistorialComprobante } from '@/components/historial-comprobante';
+import { BuscadorMovimiento } from '@/components/buscador-movimiento';
 import {
   conciliarAction,
   imputarAction,
@@ -43,7 +44,6 @@ const ESTADO_COLOR: Record<string, string> = {
   IGNORADA: 'bg-slate-200 text-slate-600',
 };
 const ESTADOS_RESUELTOS = new Set(['CONCILIADA', 'IMPUTADA', 'IGNORADA']);
-const MOVIMIENTOS_CONCILIABLES = ['ASIGNADO', 'VALIDADO', 'PENDIENTE_VALIDACION'] as const;
 
 type Candidato = { movimientoId: string; score: number; motivo: string; rechazado?: boolean };
 
@@ -106,16 +106,6 @@ export default async function ResumenDetallePage({
     if (linea) {
       const candidatosLinea = (linea.candidatos as Candidato[] | null) ?? [];
       const editable = linea.estado === 'PENDIENTE' || linea.estado === 'SUGERIDA';
-
-      const movimientosManual = editable
-        ? await ctx.db.movimiento.findMany({
-            where: { estado: { in: [...MOVIMIENTOS_CONCILIABLES] } },
-            include: { contraparte: true, lineasResumen: { where: { estado: { in: ['CONCILIADA', 'IMPUTADA'] } }, select: { id: true } } },
-            orderBy: [{ fechaDevengamiento: 'desc' }, { createdAt: 'desc' }],
-            take: 100,
-          })
-        : [];
-      const opcionesManual = movimientosManual.filter((m) => m.lineasResumen.length === 0);
 
       panel = (
         <div className="card p-4 border-sky-200 space-y-3">
@@ -184,19 +174,7 @@ export default async function ResumenDetallePage({
               <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
               <input type="hidden" name="resumenId" value={resumen.id} />
               <input type="hidden" name="lineaId" value={linea.id} />
-              <div className="flex-1">
-                <label className="label">Buscar movimiento manualmente</label>
-                <select name="movimientoId" className="input" required defaultValue="">
-                  <option value="" disabled>Elegí un movimiento…</option>
-                  {opcionesManual.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {nombreContraparte(m).nombre ?? 'Sin identificar'} · {formatFecha(m.fechaDevengamiento ?? m.createdAt)} ·{' '}
-                      {formatMoney(m.total != null ? Number(m.total) : null)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button className="btn-secondary text-sm">Conciliar</button>
+              <BuscadorMovimiento empresaSlug={params.empresaSlug} />
             </form>
           )}
 
