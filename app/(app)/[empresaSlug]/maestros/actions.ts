@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
-import { isDomainError, isForbidden, DomainError } from '@/lib/errors';
+import { isDomainError, isForbidden, esViolacionUnicidad, DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import { cuitEsValido, normalizarCuit } from '@/lib/checks';
 import { esIdentificadorExterno } from '@/lib/checks/cuit';
@@ -21,6 +21,7 @@ function volver(slug: string, tab: string, error?: string): never {
 
 function mensaje(err: unknown): string {
   if (isDomainError(err) || isForbidden(err)) return err.message;
+  if (esViolacionUnicidad(err)) return 'Ya existe otro registro con ese nombre en esta empresa.';
   throw err;
 }
 

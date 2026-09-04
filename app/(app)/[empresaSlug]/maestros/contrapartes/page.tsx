@@ -27,7 +27,7 @@ export default async function ContrapartesPage({
 
       <div className="card p-4">
         <h2 className="font-medium mb-3">{editando ? `Editar "${editando.razonSocial}"` : 'Nueva contraparte'}</h2>
-        <form action={guardarContraparte} className="grid gap-3 md:grid-cols-3">
+        <form key={searchParams.editar ?? 'nuevo'} action={guardarContraparte} className="grid gap-3 md:grid-cols-3">
           <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
           {editando && <input type="hidden" name="id" value={editando.id} />}
           <div>

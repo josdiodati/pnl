@@ -30,7 +30,7 @@ export default async function DistribucionesPage({
 
       <div className="card p-4">
         <h2 className="font-medium mb-3">{editando ? `Editar "${editando.nombre}"` : 'Nueva plantilla'}</h2>
-        <form action={guardarPlantillaDistribucion} className="space-y-3">
+        <form key={searchParams.editar ?? 'nuevo'} action={guardarPlantillaDistribucion} className="space-y-3">
           <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
           {editando && <input type="hidden" name="id" value={editando.id} />}
           <div className="w-72">

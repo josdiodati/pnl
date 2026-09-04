@@ -79,7 +79,7 @@ export default async function PrepagasPage({
               <span className="ml-2 text-xs text-slate-500">(aportes precargados del recibo de {MES_LABEL[mesPrevio.mes]})</span>
             )}
           </p>
-          <form action={guardarPrepagaAction} className="flex flex-wrap items-end gap-3">
+          <form key={`${searchParams.editar ?? 'nueva'}-${searchParams.anio ?? ''}-${searchParams.mes ?? ''}`} action={guardarPrepagaAction} className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
             <input type="hidden" name="empleadoId" value={empleado.id} />
             <input type="hidden" name="anio" value={anio} />

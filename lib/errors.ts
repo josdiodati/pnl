@@ -26,3 +26,9 @@ export function isForbidden(err: unknown): err is ForbiddenError {
 export function isDomainError(err: unknown): err is DomainError {
   return err instanceof Error && err.name === 'DomainError';
 }
+
+// P2002: violación de índice único (p.ej. dos proyectos con el mismo nombre).
+// Duck-typing sobre el code para no arrastrar @prisma/client a este módulo.
+export function esViolacionUnicidad(err: unknown): boolean {
+  return err instanceof Error && (err as { code?: unknown }).code === 'P2002';
+}

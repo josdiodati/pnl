@@ -111,7 +111,7 @@ export default async function AsientosPage({
 
           <div className="card p-4 max-w-3xl">
             <h2 className="font-medium mb-3">{editandoRec ? `Editar "${editandoRec.nombre}"` : 'Nueva plantilla recurrente'}</h2>
-            <form action={guardarPlantillaRecurrente} className="grid sm:grid-cols-3 gap-3">
+            <form key={searchParams.editarRecurrente ?? 'nuevo'} action={guardarPlantillaRecurrente} className="grid sm:grid-cols-3 gap-3">
               <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
               {editandoRec && <input type="hidden" name="id" value={editandoRec.id} />}
               <div>

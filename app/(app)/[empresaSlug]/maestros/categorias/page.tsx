@@ -23,7 +23,7 @@ export default async function CategoriasPage({
 
       <div className="card p-4">
         <h2 className="font-medium mb-3">{editando ? `Editar "${editando.nombre}"` : 'Nueva categoría'}</h2>
-        <form action={guardarCategoria} className="flex flex-wrap items-end gap-3">
+        <form key={searchParams.editar ?? 'nuevo'} action={guardarCategoria} className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
           {editando && <input type="hidden" name="id" value={editando.id} />}
           <div className="w-56">

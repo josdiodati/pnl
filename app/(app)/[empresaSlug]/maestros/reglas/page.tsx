@@ -41,7 +41,7 @@ export default async function ReglasPage({
         <h2 className="font-medium mb-3">
           {editando ? `Editar "${editando.nombre}"` : 'Nueva regla'}
         </h2>
-        <form action={guardarRegla} className="space-y-4">
+        <form key={searchParams.editar ?? 'nuevo'} action={guardarRegla} className="space-y-4">
           <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
           {editando && <input type="hidden" name="id" value={editando.id} />}
 

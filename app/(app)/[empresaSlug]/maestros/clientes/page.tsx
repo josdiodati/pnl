@@ -21,7 +21,7 @@ export default async function ClientesPage({
 
       <div className="card p-4">
         <h2 className="font-medium mb-3">{editando ? `Editar "${editando.nombre}"` : 'Nuevo cliente'}</h2>
-        <form action={guardarCliente} className="flex flex-wrap items-end gap-3">
+        <form key={searchParams.editar ?? 'nuevo'} action={guardarCliente} className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
           {editando && <input type="hidden" name="id" value={editando.id} />}
           <div className="w-64">
