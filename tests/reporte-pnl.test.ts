@@ -235,3 +235,39 @@ describe('armarPnl por centro de costo y por cliente', () => {
     ).toEqual([-4_000]);
   });
 });
+
+// Cargos de resúmenes: líneas de resumen IGNORADAS con motivo que afecta el
+// P&L (consumo sin comprobante, seguros, comisiones). No son movimientos —
+// entran como sección propia, fila por motivo, con su monto firmado tal como
+// vino del resumen (los débitos son negativos).
+describe('armarPnl — cargos de resúmenes', () => {
+  const meses = [{ anio: 2026, mes: 7 }, { anio: 2026, mes: 8 }];
+  const cargos = [
+    { anio: 2026, mes: 7, motivo: 'Seguros', monto: -50 },
+    { anio: 2026, mes: 7, motivo: 'Comisiones', monto: -30 },
+    { anio: 2026, mes: 8, motivo: 'Seguros', monto: -70 },
+    { anio: 2025, mes: 12, motivo: 'Seguros', monto: -999 }, // fuera del ejercicio
+  ];
+
+  it('agrupa por motivo y mes, y suma al resultado', () => {
+    const pnl = armarPnl({ meses, movimientos: [venta], recibos: [], cargos });
+    expect(pnl.cargos.get('Seguros')).toEqual([-5_000, -7_000]);
+    expect(pnl.cargos.get('Comisiones')).toEqual([-3_000, 0]);
+    expect(pnl.subtotalCargos).toEqual([-8_000, -7_000]);
+    expect(pnl.resultado).toEqual([10_000 - 8_000, -7_000]);
+  });
+
+  it('sin cargos la sección queda vacía y nada cambia', () => {
+    const pnl = armarPnl({ meses, movimientos: [venta], recibos: [] });
+    expect(pnl.cargos.size).toBe(0);
+    expect(pnl.subtotalCargos).toEqual([0, 0]);
+  });
+
+  it('en vistas filtradas por un valor no aparecen; en la vista "sin" van enteros', () => {
+    const conFiltro = (valor: string | null) =>
+      armarPnl({ meses, movimientos: [], recibos: [], cargos, filtro: { campo: 'centroCostoId', valor } });
+    expect(conFiltro('cc1').subtotalCargos).toEqual([0, 0]);
+    expect(conFiltro(null).cargos.get('Seguros')).toEqual([-5_000, -7_000]);
+    expect(conFiltro(null).resultado).toEqual([-8_000, -7_000]);
+  });
+});

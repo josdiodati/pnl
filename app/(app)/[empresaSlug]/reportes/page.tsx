@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { MES_LABEL, periodoDeFecha, ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
 import { armarPnl, type MovimientoPnl, type FiltroPnl } from '@/lib/reportes/pnl';
+import { MOTIVOS_IGNORO_PNL } from '@/lib/resumenes/motivos';
 import { PageHeader } from '@/components/page-header';
 
 // Reporte P&L: categorías (eje Y) × meses del ejercicio (eje X), en pesos.
@@ -58,6 +59,15 @@ export default async function ReportesPage({
     ctx.db.cliente.findMany({ orderBy: { nombre: 'asc' } }),
   ]);
 
+  // Cargos de resúmenes: líneas IGNORADAS con motivo que afecta el P&L
+  // (consumo sin comprobante, seguros, comisiones). El mes sale de la fecha de
+  // la línea (fallback: período del resumen), igual que la imputación;
+  // armarPnl descarta lo que caiga fuera del ejercicio.
+  const lineasCargo = await ctx.db.resumenLinea.findMany({
+    where: { estado: 'IGNORADA', motivoIgnorada: { in: [...MOTIVOS_IGNORO_PNL] }, monto: { not: null } },
+    include: { resumen: { include: { periodo: true } } },
+  });
+
   const pnl = armarPnl({
     meses,
     movimientos: movimientos.map((m): MovimientoPnl => {
@@ -98,6 +108,15 @@ export default async function ReportesPage({
         porcentaje: Number(l.porcentaje),
       })),
     })),
+    cargos: lineasCargo.map((l) => {
+      const f = l.fecha;
+      return {
+        anio: f ? f.getUTCFullYear() : l.resumen.periodo.anio,
+        mes: f ? f.getUTCMonth() + 1 : l.resumen.periodo.mes,
+        motivo: l.motivoIgnorada!,
+        monto: Number(l.monto),
+      };
+    }),
     filtro,
   });
 
@@ -264,6 +283,20 @@ export default async function ReportesPage({
               <Celdas valores={pnl.subtotalPersonal} negrita />
             </tr>
 
+            {pnl.cargos.size > 0 && (<>
+              <FilaSeccion titulo="Cargos de resúmenes" />
+              {[...pnl.cargos.entries()].map(([motivo, valores]) => (
+                <tr key={motivo} className="hover:bg-slate-50">
+                  <td className="sticky left-0 bg-white pl-6 whitespace-nowrap">{motivo}</td>
+                  <Celdas valores={valores} />
+                </tr>
+              ))}
+              <tr className="bg-slate-50/50">
+                <td className="sticky left-0 bg-slate-50/50 pl-6 font-medium">Total cargos de resúmenes</td>
+                <Celdas valores={pnl.subtotalCargos} negrita />
+              </tr>
+            </>)}
+
             {pnl.sinCategoria.some((v) => v !== 0) && (
               <tr className="text-amber-700">
                 <td className="sticky left-0 bg-white pl-6">Sin categoría (revisar)</td>
@@ -324,7 +357,8 @@ export default async function ReportesPage({
         <p className="px-3 py-2 text-[11px] text-slate-500">
           Sólo computan movimientos ASIGNADOS y recibos confirmados, a valores netos (sin IVA, percepciones ni
           tributos) y en pesos (moneda extranjera × tipo de cambio; sin TC no computa). Las prepagas figuran por su
-          neto dentro de Costos de personal.
+          neto dentro de Costos de personal. Los cargos de resúmenes son líneas ignoradas en conciliación con motivo
+          que afecta el resultado ({MOTIVOS_IGNORO_PNL.join(', ')}), por su monto del resumen.
           {filtro &&
             ' La porción sale de las líneas de asignación (reparto al centavo): la suma de todos los valores de la dimensión más su "sin" reproduce el total. El IVA es del comprobante, por eso el memo de impuestos no aplica en esta vista.'}
         </p>

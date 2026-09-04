@@ -11,6 +11,7 @@ import { MontoArsHint } from '@/components/monto-ars-hint';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { HistorialComprobante } from '@/components/historial-comprobante';
 import { BuscadorMovimiento } from '@/components/buscador-movimiento';
+import { MOTIVOS_IGNORO_RAPIDO } from '@/lib/resumenes/motivos';
 import {
   conciliarAction,
   imputarAction,
@@ -230,7 +231,7 @@ export default async function ResumenDetallePage({
                 <input type="hidden" name="lineaId" value={linea.id} />
                 <p className="text-xs font-semibold text-slate-500">Ignorar (no requiere imputación)</p>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {['Pago del resumen', 'Saldo/subtotal', 'Ya cargado a mano'].map((m) => (
+                  {MOTIVOS_IGNORO_RAPIDO.map((m) => (
                     <button
                       key={m}
                       name="motivoRapido"
