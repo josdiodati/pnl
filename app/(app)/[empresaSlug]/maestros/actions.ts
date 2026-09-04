@@ -8,6 +8,7 @@ import { writeAudit } from '@/lib/audit';
 import { cuitEsValido, normalizarCuit } from '@/lib/checks';
 import { esIdentificadorExterno } from '@/lib/checks/cuit';
 import { validarDistribucion } from '@/lib/movimientos/distribucion';
+import { proyectoDuplicado } from '@/lib/proyectos';
 import { prisma } from '@/lib/db';
 
 // Masters CRUD. All actions: VALIDADOR+ (enforced server-side via
@@ -178,6 +179,13 @@ export async function guardarProyecto(formData: FormData): Promise<void> {
     if (clienteId) {
       const cli = await ctx.db.cliente.findFirst({ where: { id: clienteId } });
       if (!cli) throw new DomainError('Cliente inexistente.');
+    }
+    if (await proyectoDuplicado(ctx.db, { nombre, clienteId, ignorarId: id || undefined })) {
+      throw new DomainError(
+        clienteId
+          ? `Ya existe un proyecto "${nombre}" para ese cliente.`
+          : `Ya existe un proyecto "${nombre}" sin clasificar.`,
+      );
     }
     if (id) {
       const antes = await ctx.db.proyecto.findFirst({ where: { id } });

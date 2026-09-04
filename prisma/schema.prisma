@@ -165,7 +165,10 @@ model Proyecto {
   empleadoLineas  EmpleadoDistribucionLinea[]  @relation("empleadoLineas")
   reciboLineas    ReciboDistribucionLinea[]    @relation("reciboLineas")
 
-  @@unique([empresaId, nombre])
+  // Único por combo (cliente, nombre): "Web" puede existir para dos clientes
+  // distintos. Los sin clasificar (clienteId NULL) no chocan en este índice;
+  // ese caso lo cubre proyectoDuplicado() en la action.
+  @@unique([empresaId, clienteId, nombre])
 }
 
 enum TipoContraparte {
