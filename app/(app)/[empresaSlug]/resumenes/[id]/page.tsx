@@ -369,7 +369,16 @@ export default async function ResumenDetallePage({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <Link href={`/${params.empresaSlug}/resumenes`} className="text-sm text-slate-500 underline">← Resúmenes</Link>
+        {/* "Back" contextual: desde un candidato (&ver=) vuelve al panel de la
+            línea, desde una línea (?linea=) al resumen, y sin panel a la
+            sección Resúmenes. */}
+        {searchParams.linea && searchParams.ver ? (
+          <Link href={`${base}?linea=${searchParams.linea}`} className="text-sm text-slate-500 underline">← Línea</Link>
+        ) : searchParams.linea ? (
+          <Link href={base} className="text-sm text-slate-500 underline">← Resumen</Link>
+        ) : (
+          <Link href={`/${params.empresaSlug}/resumenes`} className="text-sm text-slate-500 underline">← Resúmenes</Link>
+        )}
         <h1 className="text-lg font-semibold">{resumen.emisor}</h1>
         <span className="inline-block rounded px-1.5 py-0.5 text-[11px] font-semibold bg-line/60 text-ink-mute">
           {TIPO_LABEL[resumen.tipo]}
