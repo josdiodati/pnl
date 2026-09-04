@@ -11,7 +11,7 @@ import { MontoArsHint } from '@/components/monto-ars-hint';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { HistorialComprobante } from '@/components/historial-comprobante';
 import { BuscadorMovimiento } from '@/components/buscador-movimiento';
-import { MOTIVOS_IGNORO_RAPIDO } from '@/lib/resumenes/motivos';
+import { MOTIVOS_IGNORO_RAPIDO, MOTIVOS_IGNORO_PNL } from '@/lib/resumenes/motivos';
 import {
   conciliarAction,
   imputarAction,
@@ -480,6 +480,40 @@ export default async function ResumenDetallePage({
                   <span className="ml-1 text-[11px] text-violet-700" title={`Resuelta automáticamente por la regla «${l.reglaAplicada}»`}>
                     ⚡ regla
                   </span>
+                )}
+
+                {l.estado === 'PENDIENTE' && (
+                  <details className="relative inline-block ml-1 align-middle">
+                    <summary
+                      className="list-none cursor-pointer rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-amber-50 hover:border-amber-300 select-none"
+                      title="Acciones rápidas: ignorar con motivo"
+                    >
+                      ⚡
+                    </summary>
+                    <form
+                      action={ignorarAction}
+                      className="absolute z-20 mt-1 w-56 rounded border border-slate-200 bg-white shadow-lg py-1"
+                    >
+                      <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                      <input type="hidden" name="resumenId" value={resumen.id} />
+                      <input type="hidden" name="lineaId" value={l.id} />
+                      <p className="px-3 py-1 text-[11px] font-semibold text-slate-400">Ignorar como…</p>
+                      {MOTIVOS_IGNORO_RAPIDO.map((m) => (
+                        <button
+                          key={m}
+                          name="motivoRapido"
+                          value={m}
+                          className="block w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-amber-50"
+                          title={(MOTIVOS_IGNORO_PNL as readonly string[]).includes(m) ? 'Computa en el Reporte P&L' : undefined}
+                        >
+                          {m}
+                          {(MOTIVOS_IGNORO_PNL as readonly string[]).includes(m) && (
+                            <span className="ml-1 text-[10px] text-slate-400">· P&L</span>
+                          )}
+                        </button>
+                      ))}
+                    </form>
+                  </details>
                 )}
 
                 {l.estado === 'SUGERIDA' && top && (
