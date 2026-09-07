@@ -68,9 +68,14 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
       ? resumenPersonal.porCliente.get(filtros.clienteId) ?? 0
       : resumenPersonal.total;
 
+  // El desglose impositivo va tal como vino del comprobante: valores positivos
+  // en su moneda original (el signo y la pesificación quedan en las columnas
+  // firmadas del final).
   const encabezados = [
     'fecha', 'origen', 'estado', 'canal', 'contraparte', 'cuit', 'categoria', 'tipo_categoria',
-    'tipo_comprobante', 'punto_venta', 'numero', 'descripcion', 'moneda',
+    'tipo_comprobante', 'punto_venta', 'numero', 'descripcion', 'moneda', 'tipo_cambio',
+    'neto_gravado', 'iva_105', 'iva_21', 'iva_27', 'percepciones_iva', 'percepciones_iibb',
+    'otros_tributos', 'no_gravado_exento', 'total_comprobante',
     'centro_costo', 'cliente', 'proyecto', 'porcentaje', 'importe_linea', 'total_movimiento_firmado',
   ];
   const filas: CeldaXlsx[][] = [];
@@ -102,6 +107,16 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
       m.numero ?? '',
       m.descripcion ?? '',
       m.moneda,
+      m.tipoCambio != null ? Number(m.tipoCambio) : null,
+      m.netoGravado != null ? Number(m.netoGravado) : null,
+      m.iva105 != null ? Number(m.iva105) : null,
+      m.iva21 != null ? Number(m.iva21) : null,
+      m.iva27 != null ? Number(m.iva27) : null,
+      m.percepcionesIva != null ? Number(m.percepcionesIva) : null,
+      m.percepcionesIibb != null ? Number(m.percepcionesIibb) : null,
+      m.otrosTributos != null ? Number(m.otrosTributos) : null,
+      m.noGravadoExento != null ? Number(m.noGravadoExento) : null,
+      m.total != null ? Number(m.total) : null,
     ];
     if (m.lineas.length && firmado != null) {
       const lineas = m.lineas.map((l) => ({
@@ -136,7 +151,8 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
   filas.push([
     '', '', '', '', '', '', '', '', '', '', '',
     'Costos de personal (recibos + vinculados)',
-    '', '', '', '', null,
+    '', null, null, null, null, null, null, null, null, null, null,
+    '', '', '', null,
     null,
     personalMostrado / 100,
   ]);
