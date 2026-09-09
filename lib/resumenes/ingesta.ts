@@ -13,17 +13,19 @@ import { evaluarLinea, normalizarDescriptor, type MovimientoCandidato } from './
 // -> worker extrae líneas -> matching automático -> EXTRAIDO. El período se
 // crea al extraer (el que declara el propio resumen).
 
+/** Nombre del archivo sin extensión: rótulo provisorio hasta que se extrae. */
+function rotuloProvisorio(filename: string): string {
+  return filename.replace(/\.[^.]+$/, '').trim() || filename;
+}
+
 export async function ingestarResumen(params: {
   empresaId: string;
   usuarioId: string;
   buffer: Buffer;
   filename: string;
   mime: string;
-  tipo: 'TARJETA' | 'BANCO';
-  emisor: string;
 }): Promise<{ resumenId: string }> {
   if (params.mime !== 'application/pdf') throw new DomainError('Los resúmenes se cargan como PDF.');
-  if (!params.emisor.trim()) throw new DomainError('Indicá el banco/tarjeta emisor.');
   const db = scopedDb(params.empresaId);
   const storage = getFileStorage();
   const { key, hash } = await storage.put(params.buffer, { filename: params.filename, mime: params.mime, empresaId: params.empresaId });
@@ -34,10 +36,14 @@ export async function ingestarResumen(params: {
 
   // El período definitivo lo declara el resumen; hasta extraer se ancla al mes actual.
   const periodo = await getOrCreatePeriodo(db, new Date());
+  // Tipo y emisor los declara el propio PDF: hasta que el worker extrae, el
+  // resumen se rotula con el nombre del archivo (el tipo queda provisorio y la
+  // vista no lo muestra mientras está PROCESANDO).
+  const emisorProvisorio = rotuloProvisorio(params.filename);
   const resumen = await db.resumen.create({
     data: {
-      tipo: params.tipo,
-      emisor: params.emisor.trim(),
+      tipo: 'BANCO',
+      emisor: emisorProvisorio,
       periodoId: periodo.id,
       archivoKey: key,
       archivoNombre: params.filename,
@@ -50,7 +56,7 @@ export async function ingestarResumen(params: {
     entidad: 'Resumen',
     entidadId: resumen.id,
     accion: 'CREAR',
-    despues: { tipo: params.tipo, emisor: params.emisor, archivo: params.filename, hash },
+    despues: { archivo: params.filename, hash },
   });
   await enqueueJob('EXTRACCION_RESUMEN', { resumenId: resumen.id, empresaId: params.empresaId, usuarioId: params.usuarioId }, params.empresaId);
   return { resumenId: resumen.id };
@@ -155,6 +161,7 @@ export async function procesarExtraccionResumen(payload: { resumenId: string; em
       estado: 'EXTRAIDO',
       periodoId: periodo.id,
       tipo: extraccion.tipo as never,
+      emisor: extraccion.emisor.trim() || resumen.emisor,
       fechaCierre: extraccion.fechaCierre ? new Date(`${extraccion.fechaCierre}T00:00:00Z`) : null,
       totalDeclarado: extraccion.totalDeclarado,
       extraccionRaw: extraccion as never,

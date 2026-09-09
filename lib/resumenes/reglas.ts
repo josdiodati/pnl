@@ -16,10 +16,33 @@ export type LineaParaRegla = { descriptor: string };
 export type ResumenParaRegla = { emisor: string; tipo: string };
 export type CondicionReglaResumen = Pick<ReglaResumen, 'descriptorContiene' | 'emisor' | 'tipo'>;
 
+/**
+ * Une los grupos de miles: el normalizador convierte el punto en espacio, así
+ * que el mismo importe llega como "25 413" o como "25413" según lo imprima el
+ * banco (el impuesto al cheque de la ley 25.413 aparece de las dos formas).
+ * Sólo se unen los grupos de EXACTAMENTE tres dígitos, que es lo que define un
+ * separador de miles: "13 07 26" (una fecha) queda intacto.
+ */
+function compactarMiles(texto: string): string {
+  let previo = '';
+  let actual = texto;
+  while (actual !== previo) {
+    previo = actual;
+    actual = actual.replace(/(\d) (\d{3})(?!\d)/g, '$1$2');
+  }
+  return actual;
+}
+
+/** Normaliza y rodea de espacios para poder matchear por palabra completa. */
+function normalizarParaRegla(texto: string): string {
+  return ` ${compactarMiles(normalizarDescriptor(texto))} `;
+}
+
 export function reglaResumenMatchea(regla: CondicionReglaResumen, linea: LineaParaRegla, resumen: ResumenParaRegla): boolean {
-  const condicion = normalizarDescriptor(regla.descriptorContiene);
-  if (!condicion) return false; // sin condición: no matchea nunca (evita atrapa-todo)
-  if (!normalizarDescriptor(linea.descriptor).includes(condicion)) return false;
+  const condicion = normalizarParaRegla(regla.descriptorContiene);
+  if (!condicion.trim()) return false; // sin condición: no matchea nunca (evita atrapa-todo)
+  // Palabra completa: una condición corta como "iva" no puede matchear "privada".
+  if (!normalizarParaRegla(linea.descriptor).includes(condicion)) return false;
   if (regla.emisor && regla.emisor.trim().toLowerCase() !== resumen.emisor.trim().toLowerCase()) return false;
   if (regla.tipo && regla.tipo !== resumen.tipo) return false;
   return true;

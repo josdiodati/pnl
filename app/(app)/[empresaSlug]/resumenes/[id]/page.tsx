@@ -11,6 +11,7 @@ import { MontoArsHint } from '@/components/monto-ars-hint';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { HistorialComprobante } from '@/components/historial-comprobante';
 import { BuscadorMovimiento } from '@/components/buscador-movimiento';
+import { MenuRapido } from '@/components/menu-rapido';
 import { MOTIVOS_IGNORO_RAPIDO, MOTIVOS_IGNORO_PNL } from '@/lib/resumenes/motivos';
 import {
   conciliarAction,
@@ -563,13 +564,7 @@ export default async function ResumenDetallePage({
                 )}
 
                 {l.estado === 'PENDIENTE' && (
-                  <details className="relative inline-block ml-1 align-middle">
-                    <summary
-                      className="list-none cursor-pointer rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-amber-50 hover:border-amber-300 select-none"
-                      title="Acciones rápidas: ignorar con motivo"
-                    >
-                      ⚡
-                    </summary>
+                  <MenuRapido etiqueta="⚡" titulo="Acciones rápidas: ignorar con motivo">
                     <form
                       action={ignorarAction}
                       className="absolute z-20 mt-1 w-56 rounded border border-slate-200 bg-white shadow-lg py-1"
@@ -611,7 +606,7 @@ export default async function ResumenDetallePage({
                         </button>
                       ))}
                     </form>
-                  </details>
+                  </MenuRapido>
                 )}
 
                 {l.estado === 'SUGERIDA' && top && (

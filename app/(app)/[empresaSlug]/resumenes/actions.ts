@@ -37,29 +37,46 @@ function volverConError(slug: string, path: string, err: unknown): never {
   throw err;
 }
 
-export async function subirResumenAction(formData: FormData): Promise<{ ok: boolean; resumenId?: string; error?: string }> {
+export type SubirResumenesResultado = { ok: number; errores: string[] };
+
+/**
+ * Recibe uno o varios PDFs de resumen. Ni el tipo (tarjeta/banco) ni el emisor
+ * se piden: los declara el propio PDF y los completa la extracción.
+ */
+export async function subirResumenAction(formData: FormData): Promise<SubirResumenesResultado> {
   const slug = String(formData.get('empresaSlug'));
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
-    const archivo = formData.get('archivo');
-    if (!(archivo instanceof File) || archivo.size === 0) return { ok: false, error: 'No se recibió el PDF.' };
-    if (archivo.type !== 'application/pdf') return { ok: false, error: 'Los resúmenes se cargan como PDF.' };
-    if (archivo.size > MAX_BYTES) return { ok: false, error: 'El PDF supera el máximo de 15 MB.' };
-    const tipo = String(formData.get('tipo') ?? '');
-    if (tipo !== 'TARJETA' && tipo !== 'BANCO') return { ok: false, error: 'Elegí el tipo de resumen.' };
-    const emisor = String(formData.get('emisor') ?? '');
-    const { resumenId } = await ingestarResumen({
-      empresaId: ctx.empresa.id,
-      usuarioId: ctx.usuario.id,
-      buffer: Buffer.from(await archivo.arrayBuffer()),
-      filename: archivo.name,
-      mime: archivo.type,
-      tipo,
-      emisor,
-    });
-    return { ok: true, resumenId };
+    const archivos = formData.getAll('archivos').filter((f): f is File => f instanceof File && f.size > 0);
+    if (!archivos.length) return { ok: 0, errores: ['No se recibió ningún PDF.'] };
+
+    let ok = 0;
+    const errores: string[] = [];
+    for (const archivo of archivos) {
+      if (archivo.type !== 'application/pdf') {
+        errores.push(`${archivo.name}: los resúmenes se cargan como PDF.`);
+        continue;
+      }
+      if (archivo.size > MAX_BYTES) {
+        errores.push(`${archivo.name}: supera el máximo de 15 MB.`);
+        continue;
+      }
+      try {
+        await ingestarResumen({
+          empresaId: ctx.empresa.id,
+          usuarioId: ctx.usuario.id,
+          buffer: Buffer.from(await archivo.arrayBuffer()),
+          filename: archivo.name,
+          mime: archivo.type,
+        });
+        ok++;
+      } catch (err) {
+        errores.push(`${archivo.name}: ${err instanceof Error ? err.message : 'error inesperado'}`);
+      }
+    }
+    return { ok, errores };
   } catch (err) {
-    if (isForbidden(err) || isDomainError(err)) return { ok: false, error: err.message };
+    if (isForbidden(err) || isDomainError(err)) return { ok: 0, errores: [err.message] };
     throw err;
   }
 }

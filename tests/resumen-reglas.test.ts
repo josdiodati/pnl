@@ -24,6 +24,29 @@ describe('reglaResumenMatchea (puro)', () => {
     expect(reglaResumenMatchea({ ...base, descriptorContiene: '  ' } as never, { descriptor: 'CUALQUIERA' }, resumen)).toBe(false);
   });
 
+  it('una sola condición cubre el separador de miles: "ley 25.413" y "LEY 25413"', () => {
+    // El impuesto al cheque aparece en los dos formatos en el mismo banco.
+    const regla = { ...base, descriptorContiene: 'ley 25413' };
+    expect(reglaResumenMatchea(regla as never, { descriptor: 'Impuesto ley 25.413 credito 0,6%' }, resumen)).toBe(true);
+    expect(reglaResumenMatchea(regla as never, { descriptor: 'IMP.LEY 25413 13/07/26 00002' }, resumen)).toBe(true);
+  });
+
+  it('matchea palabras completas: "iva" no matchea "privada"', () => {
+    const regla = { ...base, descriptorContiene: 'iva' };
+    expect(reglaResumenMatchea(regla as never, { descriptor: 'DB IVA $ RESP INSC. 21%' }, resumen)).toBe(true);
+    expect(reglaResumenMatchea(regla as never, { descriptor: 'PERCEP.IVA RG2408 3,0%' }, resumen)).toBe(true);
+    expect(reglaResumenMatchea(regla as never, { descriptor: 'COMPRA PRIVADA 123' }, resumen)).toBe(false);
+  });
+
+  it('las condiciones ya cargadas en producción siguen matcheando', () => {
+    const sircreb = { ...base, descriptorContiene: 'sircreb' };
+    expect(
+      reglaResumenMatchea(sircreb as never, { descriptor: 'Regimen de recaudacion sircreb u Resp:30712093486 / 2,50% sobre $16.593.284,18' }, resumen),
+    ).toBe(true);
+    const nabu = { ...base, descriptorContiene: 'NABU CASA - HA C USD 6,50' };
+    expect(reglaResumenMatchea(nabu as never, { descriptor: 'NABU CASA - HA C USD 6,50' }, resumen)).toBe(true);
+  });
+
   it('emisor y tipo acotan la regla', () => {
     const regla = { descriptorContiene: 'pago', emisor: 'visa santander', tipo: 'TARJETA' };
     expect(reglaResumenMatchea(regla as never, { descriptor: 'SU PAGO' }, resumen)).toBe(true);

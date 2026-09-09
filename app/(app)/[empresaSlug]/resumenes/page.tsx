@@ -92,11 +92,21 @@ export default async function ResumenesPage({
               const pct = total > 0 ? Math.round((resueltas / total) * 100) : 0;
               return (
                 <tr key={r.id} className="hover:bg-slate-50">
-                  <td className="font-medium">{r.emisor}</td>
+                  <td className="font-medium">
+                    {r.emisor}
+                    {r.estado === 'PROCESANDO' && (
+                      <span className="ml-1 text-[11px] font-normal text-slate-400">(nombre del archivo)</span>
+                    )}
+                  </td>
                   <td>
-                    <span className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${TIPO_COLOR[r.tipo]}`}>
-                      {TIPO_LABEL[r.tipo]}
-                    </span>
+                    {/* Tipo y emisor los declara el PDF: hasta extraer, el que hay es provisorio. */}
+                    {r.estado === 'PROCESANDO' ? (
+                      <span className="text-[11px] text-slate-400">—</span>
+                    ) : (
+                      <span className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${TIPO_COLOR[r.tipo]}`}>
+                        {TIPO_LABEL[r.tipo]}
+                      </span>
+                    )}
                   </td>
                   <td>{MES_LABEL[r.periodo.mes]} {r.periodo.anio}</td>
                   <td className="num">{r.totalDeclarado != null ? formatMoney(Number(r.totalDeclarado)) : '—'}</td>
@@ -124,7 +134,7 @@ export default async function ResumenesPage({
               );
             })}
             {resumenes.length === 0 && (
-              <tr><td colSpan={7} className="text-center text-slate-400 py-8">Sin resúmenes: subí un PDF para empezar.</td></tr>
+              <tr><td colSpan={7} className="text-center text-slate-400 py-8">Sin resúmenes: subí uno o varios PDFs para empezar.</td></tr>
             )}
           </tbody>
         </table>

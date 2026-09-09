@@ -9,5 +9,7 @@ export const MOTIVOS_IGNORO_RAPIDO = [
   'Saldo/subtotal',
   'Ya cargado a mano',
   'Movimiento sin consumo',
+  'Cobros',
+  'Rendimientos',
   ...MOTIVOS_IGNORO_PNL,
 ] as const;

@@ -2,84 +2,77 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { subirResumenAction } from '@/app/(app)/[empresaSlug]/resumenes/actions';
+import { subirResumenAction, type SubirResumenesResultado } from '@/app/(app)/[empresaSlug]/resumenes/actions';
 
-// Carga de un resumen de tarjeta/banco: calco de RecibosUpload, con el tipo y
-// el emisor cargados antes de elegir el PDF (el pipeline los necesita para
-// crear el registro Resumen).
+// Carga de resúmenes de tarjeta/banco: varios PDFs de una, sin declarar tipo
+// ni emisor (los declara el propio PDF y los completa la extracción). Se manda
+// un PDF por request: los resúmenes pesan y el límite es 15 MB cada uno.
 export function ResumenesUpload({ empresaSlug }: { empresaSlug: string }) {
-  const [tipo, setTipo] = useState<'TARJETA' | 'BANCO'>('TARJETA');
-  const [emisor, setEmisor] = useState('');
-  const [mensaje, setMensaje] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [resultado, setResultado] = useState<SubirResumenesResultado | null>(null);
   const [subiendo, startTransition] = useTransition();
+  const [progreso, setProgreso] = useState<{ hechos: number; total: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  function enviar(file: File) {
-    if (!emisor.trim()) {
-      setMensaje({ ok: false, texto: 'Indicá el banco/tarjeta emisor antes de subir el PDF.' });
-      return;
-    }
+  function enviar(files: FileList | File[]) {
+    const lista = Array.from(files);
+    if (!lista.length) return;
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set('empresaSlug', empresaSlug);
-      fd.set('tipo', tipo);
-      fd.set('emisor', emisor.trim());
-      fd.set('archivo', file);
-      const r = await subirResumenAction(fd);
-      setMensaje(
-        r.ok
-          ? { ok: true, texto: 'PDF recibido: encolado para extracción. El worker lo está procesando.' }
-          : { ok: false, texto: r.error ?? 'Error inesperado' },
-      );
-      if (r.ok) setEmisor('');
+      const total: SubirResumenesResultado = { ok: 0, errores: [] };
+      setResultado(null);
+      setProgreso({ hechos: 0, total: lista.length });
+      for (const [i, file] of lista.entries()) {
+        const fd = new FormData();
+        fd.set('empresaSlug', empresaSlug);
+        fd.append('archivos', file);
+        const r = await subirResumenAction(fd);
+        total.ok += r.ok;
+        total.errores.push(...r.errores);
+        setProgreso({ hechos: i + 1, total: lista.length });
+      }
+      setResultado(total);
+      setProgreso(null);
       router.refresh();
     });
   }
 
   return (
-    <div className="flex items-end gap-2 flex-wrap">
-      <div>
-        <label className="block text-xs text-slate-500 mb-1">Tipo</label>
-        <select
-          className="input text-sm"
-          value={tipo}
-          onChange={(e) => setTipo(e.target.value as 'TARJETA' | 'BANCO')}
-          disabled={subiendo}
-        >
-          <option value="TARJETA">Tarjeta</option>
-          <option value="BANCO">Banco</option>
-        </select>
-      </div>
-      <div>
-        <label className="block text-xs text-slate-500 mb-1">Emisor</label>
-        <input
-          type="text"
-          className="input text-sm"
-          placeholder="VISA Santander, Cuenta Frances…"
-          value={emisor}
-          onChange={(e) => setEmisor(e.target.value)}
-          disabled={subiendo}
-        />
-      </div>
+    <div className="flex items-end gap-3 flex-wrap">
       <div>
         <button type="button" className="btn-primary" disabled={subiendo} onClick={() => inputRef.current?.click()}>
-          {subiendo ? 'Subiendo…' : 'Subir resumen (PDF)'}
+          {subiendo ? 'Subiendo…' : 'Subir resúmenes (PDF)'}
         </button>
         <input
           ref={inputRef}
           type="file"
+          multiple
           accept="application/pdf"
           className="hidden"
           onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) enviar(f);
+            if (e.target.files) enviar(e.target.files);
             e.target.value = '';
           }}
         />
       </div>
-      {mensaje && (
-        <p className={`text-sm w-full ${mensaje.ok ? 'text-accent-strong' : 'text-red-600'}`}>{mensaje.texto}</p>
+      <p className="text-xs text-slate-500">
+        Podés elegir varios de una vez. El banco/tarjeta y el período los detecta el propio resumen.
+      </p>
+      {progreso && (
+        <p className="text-sm text-slate-500 w-full tabular-nums">
+          Subiendo {progreso.hechos}/{progreso.total}…
+        </p>
+      )}
+      {resultado && (
+        <div className="w-full space-y-1">
+          {resultado.ok > 0 && (
+            <p className="text-sm text-accent-strong">
+              {resultado.ok} resumen{resultado.ok !== 1 ? 'es' : ''} en cola de extracción. El worker los está procesando.
+            </p>
+          )}
+          {resultado.errores.map((e, i) => (
+            <p key={i} className="text-sm text-red-600">{e}</p>
+          ))}
+        </div>
       )}
     </div>
   );

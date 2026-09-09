@@ -5,6 +5,7 @@ import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea, rechazarCand
 import { rematchearResumen } from '@/lib/resumenes/ingesta';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import { DomainError } from '@/lib/errors';
+import { MOTIVOS_IGNORO_RAPIDO, MOTIVOS_IGNORO_PNL } from '@/lib/resumenes/motivos';
 
 // Conciliación de líneas: conciliar NO crea gasto (anti-duplicados), imputar
 // crea un Movimiento origen RESUMEN que nace ASIGNADO, ignorar aparta con
@@ -92,6 +93,19 @@ describe('conciliación de líneas de resumen (integración)', () => {
     expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('IGNORADA');
     await deshacerLinea(ctx, { lineaId: l.id });
     expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
+  });
+
+  it('los motivos rápidos que NO computan al P&L se ignoran sin centro de costo', async () => {
+    for (const motivo of ['Cobros', 'Rendimientos']) {
+      expect(MOTIVOS_IGNORO_RAPIDO as readonly string[]).toContain(motivo);
+      expect(MOTIVOS_IGNORO_PNL as readonly string[]).not.toContain(motivo);
+      const l = await linea();
+      await ignorarLinea(ctx, { lineaId: l.id, motivo });
+      const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
+      expect(actual!.estado).toBe('IGNORADA');
+      expect(actual!.motivoIgnorada).toBe(motivo);
+      expect(actual!.centroCostoId).toBeNull();
+    }
   });
 
   it('ignorar con motivo que computa al P&L exige centro de costo y lo guarda; deshacer lo limpia', async () => {
