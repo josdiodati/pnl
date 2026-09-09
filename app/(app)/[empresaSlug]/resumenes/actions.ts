@@ -5,7 +5,7 @@ import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isDomainError, isForbidden } from '@/lib/errors';
 import { parsearImporteAr } from '@/lib/format';
 import { ingestarResumen, rematchearResumen } from '@/lib/resumenes/ingesta';
-import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea, rechazarCandidato } from '@/lib/resumenes/service';
+import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea, rechazarCandidato, editarLinea } from '@/lib/resumenes/service';
 import { aplicarReglasResumen, crearReglaDesdeLinea } from '@/lib/resumenes/reglas';
 
 // Actions de Resúmenes: exigen VALIDADOR (misma frontera que Validación /
@@ -136,6 +136,31 @@ export async function ignorarAction(formData: FormData): Promise<void> {
     volverConError(slug, `resumenes/${resumenId}`, err);
   }
   redirect(`/${slug}/resumenes/${resumenId}?ok=${encodeURIComponent(mensaje)}`);
+}
+
+/** Corrige a mano los datos capturados de una línea (falla del OCR/extracción). */
+export async function editarLineaAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const resumenId = String(formData.get('resumenId'));
+  const lineaId = String(formData.get('lineaId'));
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    const fechaTexto = String(formData.get('fecha') ?? '').trim();
+    await editarLinea(ctx, {
+      lineaId,
+      descriptor: String(formData.get('descriptor') ?? ''),
+      fecha: fechaTexto ? new Date(`${fechaTexto}T00:00:00Z`) : null,
+      monto: numeroOpcional(formData, 'monto') ?? null,
+      moneda: String(formData.get('moneda') ?? 'ARS'),
+      montoOrigen: numeroOpcional(formData, 'montoOrigen') ?? null,
+      cuotas: String(formData.get('cuotas') ?? ''),
+      cuenta: String(formData.get('cuenta') ?? ''),
+      titular: String(formData.get('titular') ?? ''),
+    });
+  } catch (err) {
+    volverConError(slug, `resumenes/${resumenId}?linea=${lineaId}`, err);
+  }
+  redirect(`/${slug}/resumenes/${resumenId}?linea=${lineaId}&ok=${encodeURIComponent('Línea corregida')}`);
 }
 
 export async function deshacerAction(formData: FormData): Promise<void> {

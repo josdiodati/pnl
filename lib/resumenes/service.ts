@@ -227,3 +227,64 @@ export async function deshacerLinea(ctx: EmpresaContext, params: { lineaId: stri
     antes: { lineaId: linea.id, estado: linea.estado, movimientoId: linea.movimientoId },
   });
 }
+
+const MONEDAS = ['ARS', 'USD', 'EUR', 'OTRA'] as const;
+
+export type DatosLineaResumen = {
+  lineaId: string;
+  descriptor: string;
+  fecha: Date | null;
+  monto: number | null; // ARS FIRMADO: consumos negativos, pagos positivos
+  moneda: string;
+  montoOrigen?: number | null;
+  cuotas?: string | null;
+  cuenta?: string | null;
+  titular?: string | null;
+};
+
+/**
+ * Corrige a mano los datos capturados de una línea cuando el OCR/la extracción
+ * falló. Sólo sobre líneas no resueltas (una resuelta se deshace primero: el
+ * movimiento vinculado se armó con estos datos). Descriptor, fecha y monto son
+ * la entrada del matching, así que después de guardar se recalcula: corregir
+ * el importe suele hacer aparecer el movimiento que corresponde.
+ */
+export async function editarLinea(ctx: EmpresaContext, params: DatosLineaResumen): Promise<void> {
+  const linea = await lineaOrThrow(ctx, params.lineaId);
+  if (linea.estado !== 'PENDIENTE' && linea.estado !== 'SUGERIDA') throw new DomainError('La línea ya está resuelta: deshacela primero.');
+  const descriptor = params.descriptor.trim();
+  if (!descriptor) throw new DomainError('El descriptor de la línea no puede quedar vacío.');
+  if (!(MONEDAS as readonly string[]).includes(params.moneda)) throw new DomainError('Moneda inválida.');
+
+  const antes = {
+    descriptor: linea.descriptor,
+    fecha: linea.fecha,
+    monto: linea.monto != null ? Number(linea.monto) : null,
+    moneda: linea.moneda,
+    montoOrigen: linea.montoOrigen != null ? Number(linea.montoOrigen) : null,
+    cuotas: linea.cuotas,
+    cuenta: linea.cuenta,
+    titular: linea.titular,
+  };
+  const despues = {
+    descriptor,
+    fecha: params.fecha,
+    monto: params.monto,
+    moneda: params.moneda,
+    montoOrigen: params.montoOrigen ?? null,
+    cuotas: params.cuotas?.trim() || null,
+    cuenta: params.cuenta?.trim() || null,
+    titular: params.titular?.trim() || null,
+  };
+
+  await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: despues as never });
+  await rematchearResumen(ctx.db, linea.resumenId);
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'Resumen',
+    entidadId: linea.resumenId,
+    accion: 'RESUMEN_EDITAR_LINEA',
+    antes: { lineaId: linea.id, ...antes },
+    despues: { lineaId: linea.id, ...despues },
+  });
+}

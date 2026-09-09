@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { getFileStorage } from '@/lib/storage';
 import { MES_LABEL } from '@/lib/periodos';
-import { formatMoney, formatFecha } from '@/lib/format';
+import { formatMoney, formatFecha, fechaInputValue } from '@/lib/format';
 import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 import { DocViewer } from '@/components/doc-viewer';
 import { DistribucionEditor } from '@/components/distribucion-editor';
@@ -21,6 +21,7 @@ import {
   confirmarSugeridasAction,
   rechazarCandidatoAction,
   aplicarReglasAction,
+  editarLineaAction,
 } from '../actions';
 
 // Bandeja de conciliación de un resumen: lista de líneas con su estado de
@@ -116,6 +117,74 @@ export default async function ResumenDetallePage({
             </p>
             <Link href={base} className="text-xs text-slate-500 underline">Cerrar</Link>
           </div>
+
+          {editable && (
+            <details className="rounded border border-slate-200 bg-slate-50/60">
+              <summary className="cursor-pointer select-none px-3 py-1.5 text-xs text-slate-600">
+                Corregir datos de la línea (falla del OCR)
+              </summary>
+              <form action={editarLineaAction} className="p-3 pt-1 space-y-2">
+                <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                <input type="hidden" name="resumenId" value={resumen.id} />
+                <input type="hidden" name="lineaId" value={linea.id} />
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div>
+                    <label className="label">Fecha</label>
+                    <input type="date" name="fecha" defaultValue={fechaInputValue(linea.fecha)} className="input text-xs" />
+                  </div>
+                  <div className="col-span-2 sm:col-span-3">
+                    <label className="label">Descriptor</label>
+                    <input name="descriptor" defaultValue={linea.descriptor} required className="input text-xs" />
+                  </div>
+                  <div>
+                    <label className="label">Monto ARS (firmado)</label>
+                    <input
+                      name="monto"
+                      defaultValue={linea.monto != null ? String(Number(linea.monto)) : ''}
+                      className="input text-xs tabular-nums"
+                      placeholder="-1234,56"
+                      title="Consumos y débitos NEGATIVOS; pagos y créditos POSITIVOS. Vacío = consumo en moneda extranjera sin pesificar."
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Moneda</label>
+                    <select name="moneda" defaultValue={linea.moneda} className="input text-xs">
+                      {['ARS', 'USD', 'EUR', 'OTRA'].map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Monto origen</label>
+                    <input
+                      name="montoOrigen"
+                      defaultValue={linea.montoOrigen != null ? String(Number(linea.montoOrigen)) : ''}
+                      className="input text-xs tabular-nums"
+                      title="Importe firmado en la moneda origen, cuando el resumen muestra las dos columnas."
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Cuotas</label>
+                    <input name="cuotas" defaultValue={linea.cuotas ?? ''} className="input text-xs" placeholder="3/6" />
+                  </div>
+                  <div>
+                    <label className="label">Cuenta / tarjeta</label>
+                    <input name="cuenta" defaultValue={linea.cuenta ?? ''} className="input text-xs" />
+                  </div>
+                  <div className="col-span-2 sm:col-span-3">
+                    <label className="label">Titular</label>
+                    <input name="titular" defaultValue={linea.titular ?? ''} className="input text-xs" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button className="btn-secondary text-sm">Guardar corrección</button>
+                  <span className="text-xs text-slate-500">
+                    Se re-matchea la línea con los datos corregidos y la corrección queda en la auditoría.
+                  </span>
+                </div>
+              </form>
+            </details>
+          )}
 
           <div>
             <p className="text-xs font-semibold text-slate-500 mb-1">Candidatos sugeridos</p>
