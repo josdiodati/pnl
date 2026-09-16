@@ -52,7 +52,7 @@ Lo que importa para decidir:
 - Paso 1: `<form id="F1" method="post" action="/contribuyente_/login.xhtml;jsessionid=...">` con campos `F1:username` (CUIT), botón `F1:btnSiguiente` y el hidden `javax.faces.ViewState`. Hay que conservar cookies y el `ViewState` entre pasos.
 - Paso 2: página `loginClave.xhtml` con `F1:password` y botón `F1:btnIngresar` (según los proyectos que lo automatizan; confirmar con Cowork).
 - **No hay CAPTCHA en la página inicial** (no aparecen recaptcha/hcaptcha/turnstile en el HTML). ARCA puede pedir CAPTCHA o segundo factor en situaciones anómalas (IP nueva, intentos fallidos). El **Token de nivel 4** (app "Token ARCA") sólo es obligatorio para operar aduana; una clave nivel 3 entra con usuario y contraseña.
-- Al entrar como administrador de relaciones (José) se accede a los servicios de las empresas representadas: el portal maneja el "representado" por CUIT en su API (ver 3.2), no hace falta un selector.
+- Al entrar como administrador de relaciones (José) se accede a los servicios de las empresas representadas. El portal maneja el "representado" por CUIT en su API (ver 3.2) y, ya adentro de Mis Comprobantes, hay una pantalla para elegir la persona (ver 3.3).
 
 ### 3.2 Portal de Clave Fiscal (SPA)
 
@@ -67,7 +67,7 @@ Lo que importa para decidir:
 
 El `serviceId` de Mis Comprobantes es **`mcmp`** (catálogo público `https://www.afip.gob.ar/clavefiscal/app/service-tags.json`: `{"name":"mcmp","tags":"mis comprobantes, ... emitidos, recibidos"}`).
 
-Esto es la pieza que los proyectos existentes no usan y que hace el flujo robusto: en vez de "buscar y clickear Mis Comprobantes" en la UI, después del login se pide `GET /portal/api/servicios/{CUIT_EMPRESA}/servicio/mcmp/autorizacion` y se lanza el servicio con ese `token`/`sign` (el portal lo hace con un POST auto-enviado a la URL del servicio; **la URL destino y los nombres de los campos del POST son el dato que falta**, punto 5 del brief).
+Esta es una pieza que los proyectos existentes no usan y que podría hacer el flujo más robusto: en vez de "buscar y clickear Mis Comprobantes" en la UI, después del login se pide `GET /portal/api/servicios/{CUIT_EMPRESA}/servicio/mcmp/autorizacion` y se lanza el servicio con ese `token`/`sign` (el portal lo hace con un POST auto-enviado a la URL del servicio; **la URL destino y los nombres de los campos del POST son el dato que falta**, punto 5 del brief).
 
 ### 3.3 El servicio Mis Comprobantes (MCMP)
 
