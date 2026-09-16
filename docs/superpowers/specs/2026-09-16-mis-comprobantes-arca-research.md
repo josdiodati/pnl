@@ -141,6 +141,20 @@ Ninguno usa el endpoint `…/servicio/mcmp/autorizacion` del portal: todos abren
 4. **Términos de uso.** No hay API oficial ni prohibición explícita; es la propia empresa consultando sus datos con su clave, a ritmo de una persona (2 consultas/día/empresa). No usar proxies ni paralelismo.
 5. **Build vs. comprar.** AfipSDK cuesta ~US$ 50/mes y exige entregarles la clave; lo propio son ~2 semanas de trabajo repartidas en fases y control total. Recomendación: **propio**, con el importador CSV primero (sirve igual aunque el scraping no ande).
 
+## 4b. Implementación (16-sep-2026, commit 95a90bf, desplegado)
+
+Se implementó **sin navegador**: el relevamiento de Cowork mostró que el flujo es HTTP puro. Piezas:
+
+- `lib/arca/portal/parsing.ts` (puro): ViewState/action del login JSF, detección de fallos de login que no se reintentan, índice del representado leído del `onclick`, verificación de "REPRESENTANDO A", clasificación de respuestas (JSON / sesión vencida / WAF / inesperada), rango de fechas.
+- `lib/arca/portal/cliente.ts`: `ClientePortalArca` con transporte inyectable (fetch con `redirect: 'manual'` y jar de cookies por dominio), login en dos POST + confirmación por `/portal/api/info`, ticket `mcmp` + handshake `token/sign` a `index.do`, `setearContribuyente.do`, consulta en tres pasos y descarga del ZIP; `descargarMisComprobantes()` hace UN login (re-login único sólo si la sesión vence después de un login exitoso).
+- `lib/arca/mis-comprobantes/`: `csv.ts` (28/30 columnas), `json.ts` (49/52 posiciones, falla si cambia el largo), `zip.ts` (lector mínimo), `cifrado.ts` (AES-256-GCM con `ARCA_PORTAL_SECRET`), `service.ts` (credencial, probar, importar, cruzar, sincronizar, programador), `tipos-arca.ts` (nombres de tipos).
+- Schema: `CredencialArca` (única por empresa, estado SIN_PROBAR/OK/BLOQUEADA) y `ComprobanteArca` (clave natural empresa+origen+CUIT contraparte+tipo+ptoVta+número).
+- Worker: job `SYNC_MIS_COMPROBANTES` (maxIntentos 2; un rechazo de login NO lanza, bloquea) y programador cada minuto que encola a las 06:30 AR una vez por día por empresa con credencial OK y sync automático. Ventana: 30 días hasta ayer.
+- UI: Configuración (admin) → sección "ARCA · Mis Comprobantes" con guardar/reemplazar clave, Probar ingreso, activar/desactivar sync, borrar, y el aviso rojo cuando está bloqueada. Pantalla `/{empresa}/arca` (validador): sincronizar ahora, importar CSV/ZIP, filtros por mes/origen/estado, faltantes, y "en el libro pero no en ARCA".
+- Tests: 87 nuevos (formatos con los ZIP reales del relevamiento si están en `Docs/`, parsing, cliente con transporte falso, servicio de integración). Total 531.
+
+**No verificado contra ARCA real** (no hay credenciales en la sesión de desarrollo): el primer "Probar ingreso" desde Configuración es la prueba de fuego. Si el WAF (F5) rechaza al cliente sin navegador, el plan B es Playwright con el mismo `ClientePortalArca` por detrás (cambiar el transporte).
+
 ## 5. Plan propuesto para PNL
 
 **F0 · Relevamiento con Cowork (1 sesión, sin código).** Capturar en el navegador real las requests exactas (brief en la sección 6). Salida: JSON de muestra de emitidos y recibidos con encabezados, request de lanzamiento del servicio, CSV de muestra.
