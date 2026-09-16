@@ -4,7 +4,18 @@ import { ROL_LABEL } from '@/lib/roles';
 import { MES_LABEL } from '@/lib/periodos';
 import { telegramHabilitado } from '@/lib/canales/telegram';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
-import { editarEmpresaAction, invitarUsuarioAction, cambiarRolAction, generarCodigoTelegramAction } from './actions';
+import { formatFechaHora } from '@/lib/format';
+import { cifradoConfigurado } from '@/lib/arca/mis-comprobantes/cifrado';
+import {
+  editarEmpresaAction,
+  invitarUsuarioAction,
+  cambiarRolAction,
+  generarCodigoTelegramAction,
+  guardarCredencialArcaAction,
+  probarCredencialArcaAction,
+  borrarCredencialArcaAction,
+  syncAutomaticoArcaAction,
+} from './actions';
 
 export default async function ConfigPage({
   params,
@@ -14,7 +25,7 @@ export default async function ConfigPage({
   searchParams: { error?: string; ok?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'ADMINISTRADOR');
-  const [miembros, invitaciones, vinculos] = await Promise.all([
+  const [miembros, invitaciones, vinculos, credencialArca] = await Promise.all([
     prisma.usuarioEmpresa.findMany({
       where: { empresaId: ctx.empresa.id },
       include: { usuario: true },
@@ -22,7 +33,9 @@ export default async function ConfigPage({
     }),
     ctx.db.invitacion.findMany({ where: { aceptada: false }, orderBy: { createdAt: 'desc' } }),
     ctx.db.telegramVinculo.findMany({ orderBy: { createdAt: 'desc' } }),
+    ctx.db.credencialArca.findFirst({ where: {} }),
   ]);
+  const cifradoOk = cifradoConfigurado();
 
   const dominio = process.env.INBOUND_EMAIL_DOMAIN ?? 'tu-dominio.com';
   const emailEntrante = `comprobantes+${ctx.empresa.slug}@${dominio}`;
@@ -114,6 +127,80 @@ export default async function ConfigPage({
               </li>
             ))}
           </ul>
+        )}
+      </div>
+
+      <div className="card p-4 space-y-3">
+        <div>
+          <h2 className="font-medium">ARCA · Mis Comprobantes</h2>
+          <p className="text-xs text-slate-500">
+            Con esta Clave Fiscal PNL entra al portal de ARCA todos los días a las 06:30 y baja los comprobantes emitidos y
+            recibidos de {ctx.empresa.razonSocial}. La clave se guarda cifrada y nunca se muestra ni se registra.
+          </p>
+        </div>
+        {!cifradoOk && (
+          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            Falta configurar <code>ARCA_PORTAL_SECRET</code> en el servidor: hasta entonces no se puede guardar la clave.
+          </p>
+        )}
+        {credencialArca?.estado === 'BLOQUEADA' && (
+          <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+            <p className="font-semibold">
+              Falló el ingreso a ARCA{credencialArca.ultimoIntentoAt ? ` el ${formatFechaHora(credencialArca.ultimoIntentoAt)}` : ''}: {credencialArca.motivoBloqueo}
+            </p>
+            <p className="text-xs mt-1">
+              Para no bloquear la Clave Fiscal, PNL no volvió a intentar. Verificá si cambió la clave: guardala de nuevo y tocá «Probar
+              ingreso» (un único intento). Si la clave sigue siendo la misma, probá directamente.
+            </p>
+          </div>
+        )}
+        <form action={guardarCredencialArcaAction} className="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+          <div className="w-48">
+            <label className="label">CUIT que ingresa</label>
+            <input name="cuitUsuario" required defaultValue={credencialArca?.cuitUsuario ?? ''} className="input" placeholder="20-12345678-9" title="El CUIT de la persona (administrador de relaciones) que tiene delegado Mis Comprobantes de esta empresa" />
+          </div>
+          <div className="w-56">
+            <label className="label">Clave Fiscal</label>
+            <input name="clave" type="password" required className="input" autoComplete="new-password" placeholder={credencialArca ? '•••••••• (guardada)' : ''} />
+          </div>
+          <button className="btn-primary" disabled={!cifradoOk}>{credencialArca ? 'Reemplazar clave' : 'Guardar clave'}</button>
+        </form>
+        {credencialArca && (
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span
+              className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${
+                credencialArca.estado === 'OK' ? 'bg-emerald-100 text-emerald-800' : credencialArca.estado === 'BLOQUEADA' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {credencialArca.estado === 'OK' ? 'Ingreso verificado' : credencialArca.estado === 'BLOQUEADA' ? 'Bloqueada' : 'Sin probar'}
+            </span>
+            <form action={probarCredencialArcaAction}>
+              <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+              <button className="btn-secondary text-xs" title="Hace un único intento de login en ARCA con la clave guardada">
+                Probar ingreso
+              </button>
+            </form>
+            <form action={syncAutomaticoArcaAction}>
+              <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+              <input type="hidden" name="activo" value={credencialArca.syncAutomatico ? '0' : '1'} />
+              <button className="btn-secondary text-xs">{credencialArca.syncAutomatico ? 'Desactivar sync diario' : 'Activar sync diario'}</button>
+            </form>
+            <form action={borrarCredencialArcaAction}>
+              <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+              <button className="btn-danger text-xs">Borrar credencial</button>
+            </form>
+            <span className="text-xs text-slate-500">
+              {credencialArca.ultimoOkAt ? `Último ingreso OK: ${formatFechaHora(credencialArca.ultimoOkAt)}` : 'Nunca ingresó'}
+              {credencialArca.ultimaSyncAt ? ` · última sync: ${formatFechaHora(credencialArca.ultimaSyncAt)}` : ''}
+              {credencialArca.syncAutomatico ? ' · sync diario 06:30' : ' · sync diario apagado'}
+            </span>
+          </div>
+        )}
+        {credencialArca?.ultimoErrorSync && credencialArca.estado !== 'BLOQUEADA' && (
+          <p className="text-xs text-amber-700">
+            Último error (no es de la clave{credencialArca.erroresSeguidos > 1 ? `, ${credencialArca.erroresSeguidos} seguidos` : ''}): {credencialArca.ultimoErrorSync}
+          </p>
         )}
       </div>
 

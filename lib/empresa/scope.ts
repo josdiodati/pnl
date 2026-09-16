@@ -23,6 +23,8 @@ export const SCOPED_MODELS = new Set([
   'LoteIngesta',
   'Resumen',
   'ReglaResumen',
+  'CredencialArca',
+  'ComprobanteArca',
 ]);
 
 // Child models without empresaId: scoped through their parent relation.

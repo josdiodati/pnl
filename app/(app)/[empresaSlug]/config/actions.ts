@@ -9,6 +9,7 @@ import { isDomainError, isForbidden, DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import { cuitEsValido, normalizarCuit } from '@/lib/checks';
 import { generarCodigoVinculo } from '@/lib/canales/telegram';
+import { guardarCredencialArca, probarCredencialArca, borrarCredencialArca, cambiarSyncAutomatico } from '@/lib/arca/mis-comprobantes/service';
 import type { Rol } from '@prisma/client';
 
 // Company configuration: ADMINISTRADOR only (doc 08).
@@ -129,4 +130,55 @@ export async function generarCodigoTelegramAction(formData: FormData): Promise<v
     volver(slug, err);
   }
   volver(slug, undefined, 'Código de vínculo generado');
+}
+
+// ---------- ARCA · Mis Comprobantes (Clave Fiscal cifrada) ----------
+
+/** Guarda usuario y Clave Fiscal cifrada. Destraba una credencial bloqueada (queda SIN_PROBAR). */
+export async function guardarCredencialArcaAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    await guardarCredencialArca(ctx, { cuitUsuario: String(formData.get('cuitUsuario') ?? ''), clave: String(formData.get('clave') ?? '') });
+  } catch (err) {
+    volver(slug, err);
+  }
+  volver(slug, undefined, 'Clave Fiscal guardada (cifrada). Tocá «Probar ingreso» para verificarla: es un único intento.');
+}
+
+/** Un solo intento de login. Éxito → OK y el sync diario retoma; rechazo → BLOQUEADA con aviso. */
+export async function probarCredencialArcaAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  let resultado: { ok: boolean; mensaje: string } | null = null;
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    resultado = await probarCredencialArca(ctx);
+  } catch (err) {
+    volver(slug, err);
+  }
+  revalidatePath(`/${slug}/config`);
+  redirect(`/${slug}/config?${resultado!.ok ? 'ok' : 'error'}=${encodeURIComponent(resultado!.mensaje)}`);
+}
+
+export async function borrarCredencialArcaAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    await borrarCredencialArca(ctx);
+  } catch (err) {
+    volver(slug, err);
+  }
+  volver(slug, undefined, 'Credencial de ARCA borrada.');
+}
+
+export async function syncAutomaticoArcaAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const activo = String(formData.get('activo')) === '1';
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    await cambiarSyncAutomatico(ctx, activo);
+  } catch (err) {
+    volver(slug, err);
+  }
+  volver(slug, undefined, activo ? 'Sync diario de Mis Comprobantes activado (06:30).' : 'Sync diario de Mis Comprobantes desactivado.');
 }

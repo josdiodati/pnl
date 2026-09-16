@@ -48,6 +48,8 @@ model Empresa {
   recibosSueldo          ReciboSueldo[]
   resumenes              Resumen[]
   reglasResumen          ReglaResumen[]
+  credencialArca         CredencialArca?
+  comprobantesArca       ComprobanteArca[]
   createdAt              DateTime                @default(now())
 }
 
@@ -348,8 +350,9 @@ model Movimiento {
   qrEstado            String? // QR AFIP/ARCA: OK | ILEGIBLE | SIN_QR | null (no aplica / imagen)
 
   // Assignment (double dimension, percentage split)
-  lineas          MovimientoLinea[]
-  vinculosResumen ResumenLineaVinculo[]
+  lineas           MovimientoLinea[]
+  vinculosResumen  ResumenLineaVinculo[]
+  comprobantesArca ComprobanteArca[]
 
   flags           Json? // future metadata (e.g. recurring template id, pending "I/O" flag)
   periodoId       String?
@@ -743,6 +746,79 @@ model MovimientoEmpleado {
 }
 
 // ---------- Infra ----------
+
+// ---------- ARCA · Mis Comprobantes ----------
+
+enum EstadoCredencialArca {
+  SIN_PROBAR
+  OK
+  BLOQUEADA // falló el ingreso por credenciales: no se reintenta hasta que un admin la re-guarde o pruebe
+}
+
+// Clave Fiscal con la que se entra al portal de ARCA para bajar "Mis
+// Comprobantes" de esta empresa. La clave va cifrada (AES-256-GCM con
+// ARCA_PORTAL_SECRET del .env); nunca se loguea ni se audita en claro.
+model CredencialArca {
+  id              String               @id @default(cuid())
+  empresaId       String               @unique
+  cuitUsuario     String // CUIT de la persona que ingresa (el administrador de relaciones), no el de la empresa
+  claveCifrada    String
+  estado          EstadoCredencialArca @default(SIN_PROBAR)
+  motivoBloqueo   String?
+  ultimoIntentoAt DateTime? // último login intentado (manual o del job)
+  ultimoOkAt      DateTime?
+  syncAutomatico  Boolean              @default(true)
+  ultimaSyncAt    DateTime? // última sincronización completa
+  ultimoErrorSync String? // error NO de credenciales (timeout, WAF, cambio del portal)
+  erroresSeguidos Int                  @default(0)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+}
+
+enum OrigenComprobanteArca {
+  EMITIDO
+  RECIBIDO
+}
+
+// Una fila del reporte "Mis Comprobantes" de ARCA (emitidos o recibidos),
+// tal como viene del CSV del portal. Clave natural: tipo + punto de venta +
+// número + CUIT de la contraparte (emisor en recibidos, receptor en emitidos).
+model ComprobanteArca {
+  id                      String                @id @default(cuid())
+  empresaId               String
+  origen                  OrigenComprobanteArca
+  fechaEmision            DateTime
+  tipoComprobante         Int // código ARCA (1, 6, 11, 19, 201…)
+  puntoVenta              Int
+  numeroDesde             Int
+  numeroHasta             Int
+  codigoAutorizacion      String?
+  tipoDocContraparte      Int?
+  nroDocContraparte       String // '' si no viene (consumidor final)
+  denominacionContraparte String?
+  tipoCambio              Decimal?              @db.Decimal(12, 4)
+  moneda                  String?
+  netoGravadoTotal        Decimal?              @db.Decimal(18, 2)
+  netoNoGravado           Decimal?              @db.Decimal(18, 2)
+  exentas                 Decimal?              @db.Decimal(18, 2)
+  otrosTributos           Decimal?              @db.Decimal(18, 2)
+  totalIva                Decimal?              @db.Decimal(18, 2)
+  importeTotal            Decimal?              @db.Decimal(18, 2)
+  ivaPorAlicuota          Json? // { "0": {neto}, "2.5": {iva, neto}, "5": …, "10.5": …, "21": …, "27": … }
+  fuente                  String // CSV (importación manual) | PORTAL (sync)
+  sincronizadoAt          DateTime
+  movimientoId            String? // comprobante del libro con el que cruza
+  createdAt               DateTime              @default(now())
+
+  empresa    Empresa     @relation(fields: [empresaId], references: [id])
+  movimiento Movimiento? @relation(fields: [movimientoId], references: [id], onDelete: SetNull)
+
+  @@unique([empresaId, origen, nroDocContraparte, tipoComprobante, puntoVenta, numeroDesde])
+  @@index([empresaId, fechaEmision])
+  @@index([movimientoId])
+}
 
 model Job {
   id             String    @id @default(cuid())

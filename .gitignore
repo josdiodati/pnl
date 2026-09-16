@@ -16,3 +16,15 @@ Docs/RecibosSueldoEwwo/
 
 # Resúmenes bancarios/tarjeta reales (datos sensibles)
 /Docs/Resumenes Ejemplo/
+
+# Relevamiento del portal de ARCA con datos reales de Ewwo (CUITs y proveedores)
+/Docs/arca-relevamiento-mcmp/
+/Docs/Claude outputs/
+/Docs/*.json
+/Docs/*.zip
+/Docs/*.xlsx
+/Docs/*.pdf
+/Docs/thead-*.html
+/Docs/informe.md
+/Docs/brief-implementacion.md
+/Docs/prueba-claude-descarga.txt
