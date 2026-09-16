@@ -2,6 +2,8 @@
 
 Fecha: 16-sep-2026. Estado: investigación (sin código). Autor: sesión de Claude Code a pedido de José.
 
+**Decisión (16-sep-2026, José):** desarrollo propio. La Clave Fiscal se guarda en PNL cifrada. Regla de seguridad: **un solo intento de login por corrida**; si falla, no se reintenta y la app muestra un aviso pidiendo verificar si la clave cambió (ver F3). El prompt para el relevamiento con Cowork está en `docs/superpowers/specs/2026-09-16-mis-comprobantes-cowork-brief.md`.
+
 ## 1. Qué queremos
 
 Traer a PNL, todos los días, el listado de comprobantes **emitidos** y **recibidos** que ARCA registra para cada empresa (Kawellu, Ewwo), para:
@@ -148,6 +150,13 @@ Ninguno usa el endpoint `…/servicio/mcmp/autorizacion` del portal: todos abren
 **F2 · Spike de scraping (script, fuera del pipeline).** `scripts/arca-mis-comprobantes.ts` con Playwright, tomando como referencia `fisco-ar-claude-plugin`: login en dos pasos (inputs por `evaluate` + eventos) → abrir Mis Comprobantes desde el portal → elegir el representado → `generarConsulta` por AJAX (tramos de 30 días) → esperar "Procesando" → bajar el ZIP con `descargarComprobantes.do?tf=csv` → parsear el CSV con encabezados. Probado a mano contra Ewwo en modo headed y luego headless en la VM (chromium + deps apt).
 
 **F3 · Sync automático.** Credenciales cifradas por empresa; job `SYNC_MIS_COMPROBANTES` en `pnl-worker` a la madrugada, ventana [hoy−7, hoy] para emitidos y recibidos, upsert en `ComprobanteArca`, auditoría del resultado, alerta en la pantalla ARCA si falla (con el botón de importar CSV como plan B).
+
+Política de login, para no martillar la clave y que ARCA la bloquee:
+- Cada corrida hace **exactamente un** intento de login. Sin reintentos automáticos por credenciales, ni en la misma corrida ni en las siguientes.
+- Si el login falla por credenciales (mensaje de clave o usuario incorrecto, pantalla de cambio de clave, CAPTCHA o segundo factor), la credencial pasa a estado **`BLOQUEADA`** con el motivo y la fecha, se audita, y el job diario **no vuelve a intentar** con esa empresa.
+- La app muestra un aviso persistente en Resúmenes/ARCA y en Configuración: "Falló el ingreso a ARCA el <fecha>: verificá si cambió la Clave Fiscal". Se destraba sólo cuando un administrador vuelve a guardar la clave (o toca "Probar ingreso"), que hace un único intento manual.
+- Los fallos que no son de credenciales (timeout, portal caído, cambio de HTML) no bloquean la credencial: quedan como error del sync con reintento al día siguiente, y también avisan si se repiten dos días seguidos.
+- Sesión reutilizable: si el portal mantiene la sesión (ver paso 9 del brief), se guardan las cookies cifradas y se reusan hasta que expiren, para loguear lo menos posible.
 
 **F4 · Reemplazar la constatación.** `arcaEstado` pasa a resolverse contra `ComprobanteArca`: match exacto → `VALIDO` (fuente "Mis Comprobantes"), sin match después de N días → `NO_FIGURA` y se observa el movimiento, igual que hoy con `INVALIDO`. El modo `ws` (certificado) queda como opción futura, no como camino.
 
