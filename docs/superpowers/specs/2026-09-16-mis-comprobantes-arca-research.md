@@ -72,7 +72,9 @@ Esto es la pieza que los proyectos existentes no usan y que hace el flujo robust
 ### 3.3 El servicio Mis Comprobantes (MCMP)
 
 - Host actual: **`https://fes.afip.gob.ar/mcmp/`** (hoy responde 403 "Su sesión ha expirado" sin sesión, o sea que existe; `serviciosjava2.afip.gob.ar/mcmp` da 404: ese host histórico ya no sirve).
-- Páginas: `/mcmp/jsp/comprobantesEmitidos.do` y `/mcmp/jsp/comprobantesRecibidos.do`.
+- Páginas: `/mcmp/jsp/menuPrincipal.do`, `/mcmp/jsp/setearContribuyente.do` (selección de **representado**), `/mcmp/jsp/comprobantesEmitidos.do` y `/mcmp/jsp/comprobantesRecibidos.do`.
+- **Representado.** Cuando el que entra administra varias personas, MCMP muestra "Elegí una persona para ingresar / REPRESENTAR A": form `seleccionaEmpresaForm` con `#idcontribuyente`, una tarjeta `a.panel` por persona con el CUIT como `XX-XXXXXXXX-X`. Después se cambia con `[title="Cambiar persona representada"]`, y el CUIT activo se lee de `.nombre-activo`. Esto es lo que resuelve Kawellu vs. Ewwo (además de `cuitConsultada`).
+- UI de la consulta: botones `#btnEmitidos` / `#btnRecibidos`, input `#fechaEmision` (jQuery daterangepicker, valor `DD/MM/YYYY - DD/MM/YYYY`), botón `#buscarComprobantes`, tabla `#tablaDataTables`.
 - La consulta es **AJAX en dos pasos**, JSON:
 
 ```http
@@ -81,8 +83,13 @@ X-Requested-With: XMLHttpRequest
 → { "estado": "ok", "datos": { "idConsulta": "…" } }          // "estado" ≠ ok trae "mensajeError"
 
 GET /mcmp/jsp/ajax.do?f=listaResultados&id=<idConsulta>
-→ { "estado": "ok", "datos": { "data": [ [col0, col1, …, col23+], … ] } }
+→ { "estado": "ok", "datos": { "data": [ [col0, col1, …], … ], "consulta": { "cantidadResultados": n } } }
+
+GET /mcmp/jsp/descargarComprobantes.do?id=<idConsulta>&tc=R&tf=csv     // tf=xls también
+→ ZIP con el CSV adentro (separador ";", fechas ISO yyyy-mm-dd, decimales con coma)
 ```
+
+La consulta se procesa en el servidor: la fila de la consulta muestra "Pendiente/Procesando" hasta que está lista, y recién ahí `listaResultados` y `descargarComprobantes.do` devuelven datos (hay que esperar unos segundos y reintentar). **La descarga del ZIP es el camino más limpio para nosotros**: trae el CSV completo con encabezados, sin depender de índices posicionales.
 
 - `t=E` emitidos, `t=R` recibidos. `fechaEmision` con el formato exacto `dd/mm/yyyy - dd/mm/yyyy` (espacios alrededor del guión). `tiposComprobantes[]` opcional. `cuitConsultada` = CUIT de la empresa (esto sirve para representados).
 - Cada fila es un **array posicional**. Índices confirmados por dos implementaciones independientes (recibidos):
@@ -105,18 +112,24 @@ GET /mcmp/jsp/ajax.do?f=listaResultados&id=<idConsulta>
 Los índices 2, 6, 7, 9, 16, 18, 20, 22 no están documentados (probablemente descripciones legibles, "Otros tributos", percepciones). Se completan con la captura de Cowork.
 
 - **Límites conocidos**: hasta **365 días** por consulta; por arriba de **500 comprobantes** la UI sólo ofera CSV (Excel/PDF desaparecen), el AJAX no sabemos si pagina. Los proyectos existentes consultan en tramos de 30 días para no toparse con esto. Un comprobante puede tardar **hasta 24 h** en aparecer, por eso el sync diario debe re-consultar una ventana solapada (últimos 7 días).
-- **CSV exportado** (para la importación manual de respaldo), separador `;`: `Fecha de Emisión; Tipo de Comprobante; Punto de Venta; Número Desde; Número Hasta; Cód. Autorización; Tipo Doc. Emisor; Nro. Doc. Emisor; Denominación Emisor; Tipo Cambio; Moneda; Imp. Neto Gravado; Imp. Neto No Gravado; Imp. Op. Exentas; Otros Tributos; IVA; Imp. Total` (en emitidos, "Receptor" en vez de "Emisor").
+- **CSV exportado** (el mismo que baja el botón CSV o `descargarComprobantes.do`): separador `;`, valores entre comillas, `Fecha de Emisión` en `yyyy-mm-dd`, `Tipo de Comprobante` como código numérico, decimales con coma. Según un scraper de 2026, **emitidos trae 28 columnas y recibidos 30**: fecha, tipo, punto de venta, número desde/hasta, cód. autorización, tipo/nro/denominación del receptor (emitidos) o del emisor **y** del receptor (recibidos), tipo de cambio, moneda, **once columnas de IVA por alícuota**, neto gravado total, neto no gravado, exentas, otros tributos, total IVA, importe total. Los nombres exactos de encabezado (`Imp. Neto Gravado Total`, `Total IVA`, etc.) se confirman con el CSV que capture Cowork. El nombre del archivo incluye `MCE`/`MCR` y el CUIT.
 
 ### 3.4 Proyectos de referencia (código público)
 
 | Proyecto | Qué aporta |
 |---|---|
+| `javiergradiche/fisco-ar-claude-plugin` (Node 20 + **Playwright**, último commit 4-sep-2026) | **El más completo y reciente.** `scripts/lib/arca-login.js` + `scripts/lib/mis-comprobantes.js`: login en dos pasos seteando los inputs por `evaluate` + eventos `input`/`change` (un `fill()` común no dispara los listeners de JSF), abre el servicio desde el portal ("Ver todos" si no está entre los más usados), soporta **apoderado** (`ARCA_<cuit_consultado>_LOGIN` / `_PASSWORD`), setea el daterangepicker, clickea `#buscarComprobantes`, captura `idConsulta` de la respuesta AJAX, espera que la consulta deje de estar Pendiente/Procesando y baja el ZIP por `descargarComprobantes.do?id=&tc=&tf=csv`. Detecta "captcha" y "clave incorrecta". Es el molde natural para nuestro spike. |
+| `Francoooo22/arca-scraper` (Python + Playwright + Flask, jul-2026) | Selección de **persona representada** e iteración de varias empresas en una sesión (`setearContribuyente.do`, `a.panel` con CUIT con guiones, `#idcontribuyente`, `[title="Cambiar persona representada"]`); lee la DataTable y captura la URL de `descargarComprobantes.do`. Documenta el layout de 28/30 columnas del CSV. |
+| `abrizuela/hack_mis_comprobantes` (extensión Firefox, 2024) | Llama directo a `ajax.do` (`generarConsulta` + `listaResultados`) desde la sesión ya abierta y consulta por año para saltear el límite de la UI. Índices usados por fila: `[0,1,3,4,5,8,10,11,12,13,14,15,17,19,21,23]`. Lee el CUIT activo de `.nombre-activo`. |
+| `diego-dotcom/bot_descarga_multiperiodo` (Python + Selenium, abr-2025, GPL) | El "clásico" de estudios contables: lee un Excel de contribuyentes (CUIT, clave, representado, desde, hasta) y baja XLSX/CSV por mes. Selectores: `buscadorInput` → `.search-item`, `//h2[contains(text(), '<representado>')]`, `#btnEmitidos`, `#fechaEmision`, botón "Aplicar", `#buscarComprobantes`, botones Excel/CSV. Anti-bot: `--disable-blink-features=AutomationControlled`. Nota del README: no resuelve cuando ARCA fuerza **cambio de clave**. |
 | Gist `alejoasotelo/99e0bdf16db64b783fc42d66321c2946` (jul-2022) | El primero en documentar `ajax.do?f=generarConsulta` + `f=listaResultados`. Corre en la consola del navegador ya logueado. Mapea fecha/tipo/ptoVta/nro/receptor/total. |
 | `santyarena1/STOCKRAPIDO` PR #49 "Sync online ARCA propio (sin Afip SDK)" (merged 11-sep-2026) | `apps/api/src/fiscal/arca-portal-client.ts`: **puppeteer-core + @sparticuz/chromium** en Vercel (120 s, 1 GB). Login por selectores `F1:username`/`F1:password` + click por texto "Siguiente"/"Ingresar"; abre Mis Comprobantes buscándolo en la UI del portal (frágil); resuelve el host de `ajax.do` según la URL donde cayó; consulta en tramos de 30 días; dedup por CAE+ptoVta+nro+CUIT. Aborta si detecta "captcha" o "doble factor". Guardan la clave fiscal cifrada en su base. Reemplazaron AfipSDK por costo/límite de automatizaciones. |
 | `santyarena1/STOCKRAPIDO` `sync-runner/arca_recibidos_sync_runner.py` | Misma lógica en **Python + Playwright para correr en la PC del usuario** (modo `--headed` para resolver CAPTCHA/2FA a mano). Genera el CSV con los 17 encabezados de arriba y lo sube a su API. Buen molde para el spike. |
 | AfipSDK (`github.com/afipsdk`) | Los SDKs sólo llaman a `app.afipsdk.com`; la automatización corre en su backend cerrado. No hay código del scraping. |
 
-Ninguno usa el endpoint `…/servicio/mcmp/autorizacion` del portal ni resuelve bien el "representado": llegan al MCMP con el CUIT del que se loguea y confían en `cuitConsultada`. Para nosotros (José administra Kawellu y Ewwo) hay que confirmar que `cuitConsultada` alcanza o que hay que lanzar el servicio con el token del representado.
+Otros con menos valor: `Yoryoboy/ArcaMCP` (MCP que sólo llama a AfipSDK), `nanosgr/arca_scraper` (mismo login, pero baja el Libro IVA), varios bots de Selenium/UiPath con el mismo flujo, y `reingart/pyafipws` **no tiene nada** de Mis Comprobantes (su grupo confirma: "no hay WS, la única solución es automatizar la descarga").
+
+Ninguno usa el endpoint `…/servicio/mcmp/autorizacion` del portal: todos abren el servicio clickeando en la UI y resuelven el representado en la pantalla de MCMP. Para nosotros (José administra Kawellu y Ewwo) el camino probado es ese: entrar, elegir la persona en `setearContribuyente.do` y consultar; la autorización por API queda como optimización a validar en el relevamiento. Modos de falla que sí hay que contemplar: `F1:msg` "Clave o usuario incorrecto" y la pantalla de **cambio de clave fiscal forzado** ("CAMBIAR CLAVE FISCAL").
 
 ## 4. Riesgos y decisiones
 
@@ -132,7 +145,7 @@ Ninguno usa el endpoint `…/servicio/mcmp/autorizacion` del portal ni resuelve 
 
 **F1 · Modelo + importador CSV + vista de faltantes.** Tabla `ComprobanteArca` (empresa, origen E/R, fecha, tipo, ptoVta, nro, CAE, cuit y denominación de contraparte, moneda, TC, netos, IVA, otros tributos, total, `fuente` csv/portal, `sincronizadoAt`; único por empresa+origen+cuitContraparte+tipo+ptoVta+nro). Pantalla "ARCA" con: subir CSV de Mis Comprobantes, cruce contra `Movimiento` por (CUIT, tipo, ptoVta, nro) y por CAE, lista de **faltantes** (en ARCA y no en el libro) y **no figura** (en el libro y no en ARCA), y acción "cargar a mano desde el faltante". Valor inmediato aunque no haya scraping.
 
-**F2 · Spike de scraping (script, fuera del pipeline).** `scripts/arca-mis-comprobantes.ts` con Playwright: login → `autorizacion` de `mcmp` → `generarConsulta`/`listaResultados` en tramos de 30 días → JSON. Probado a mano contra Ewwo en modo headed y luego headless en la VM (chromium + deps apt).
+**F2 · Spike de scraping (script, fuera del pipeline).** `scripts/arca-mis-comprobantes.ts` con Playwright, tomando como referencia `fisco-ar-claude-plugin`: login en dos pasos (inputs por `evaluate` + eventos) → abrir Mis Comprobantes desde el portal → elegir el representado → `generarConsulta` por AJAX (tramos de 30 días) → esperar "Procesando" → bajar el ZIP con `descargarComprobantes.do?tf=csv` → parsear el CSV con encabezados. Probado a mano contra Ewwo en modo headed y luego headless en la VM (chromium + deps apt).
 
 **F3 · Sync automático.** Credenciales cifradas por empresa; job `SYNC_MIS_COMPROBANTES` en `pnl-worker` a la madrugada, ventana [hoy−7, hoy] para emitidos y recibidos, upsert en `ComprobanteArca`, auditoría del resultado, alerta en la pantalla ARCA si falla (con el botón de importar CSV como plan B).
 
@@ -146,10 +159,10 @@ Pasos y qué guardar de cada uno:
 
 1. **Login.** Ir a `https://auth.afip.gob.ar/contribuyente_/login.xhtml`, poner el CUIT y "Siguiente"; poner la clave e "Ingresar". Guardar: la URL y el `Form Data` de los **dos POST** (nombres de todos los campos; valores tapados) y a qué URL redirige al final. Anotar si apareció CAPTCHA, código por mail/SMS o pantalla de "token".
 2. **Portal.** En `https://portalcf.cloud.afip.gob.ar/portal/app/`, filtrar Network por `portal/api`. Guardar la lista de requests con método, URL completa y el JSON de respuesta de: `servicios/{cuit}` (o `servicios/all`) y cualquier request que mencione `mcmp`. Anotar si hay que elegir el "representado" (Ewwo) en la UI y qué request dispara eso.
-3. **Lanzar Mis Comprobantes.** Buscar "Mis Comprobantes" y abrirlo. Guardar: el request `…/servicio/mcmp/autorizacion` (URL exacta y forma del JSON de respuesta, valores tapados) y el **request siguiente que sale del portal hacia el servicio**: método, URL destino (esperamos `https://fes.afip.gob.ar/mcmp/...`), nombres de los campos del formulario (esperamos `token` y `sign`) y las redirecciones hasta la URL final del servicio.
+3. **Lanzar Mis Comprobantes.** Buscar "Mis Comprobantes" y abrirlo (se abre en una pestaña nueva; las DevTools hay que abrirlas ahí también). Guardar: el request `…/servicio/mcmp/autorizacion` (URL exacta y forma del JSON de respuesta, valores tapados) y el **request siguiente que sale del portal hacia el servicio**: método, URL destino (esperamos `https://fes.afip.gob.ar/mcmp/...`), nombres de los campos del formulario (esperamos `token` y `sign`) y las redirecciones hasta la URL final. Si aparece "Elegí una persona para ingresar", elegir Ewwo y guardar el POST que dispara (esperamos `setearContribuyente.do` con `idcontribuyente`) y una captura de esa pantalla con las personas listadas.
 4. **Emitidos.** En Mis Comprobantes → Comprobantes Emitidos, consultar el rango 01/08/2026 a 31/08/2026 sin otros filtros. Guardar: la request `ajax.do?f=generarConsulta…` completa (todos los parámetros de la query) y su respuesta; la request `ajax.do?f=listaResultados…` y su **respuesta JSON completa** (Copy → Response). Además, en la tabla en pantalla, copiar los **encabezados de columna en orden** (o el HTML de `<thead>`), para mapear los índices del array.
 5. **Recibidos.** Repetir el paso 4 en Comprobantes Recibidos, mismo rango.
-6. **Exportar.** Con el resultado de Recibidos en pantalla, tocar CSV, Excel y PDF. Guardar la request de cada botón (URL y parámetros) y **el archivo CSV** que baja (para el importador manual). Si el rango 01/01/2026–31/08/2026 supera 500 filas, probarlo y anotar qué botones desaparecen y si `listaResultados` trae todas las filas o pagina (`length`, `start`, `draw` en la query).
+6. **Exportar.** Con el resultado de Recibidos en pantalla, tocar CSV, Excel y PDF. Guardar la request de cada botón (esperamos `descargarComprobantes.do?id=…&tc=R&tf=csv`) y **el archivo que baja** (es un ZIP con el CSV adentro; guardar el ZIP tal cual, con su nombre). Repetir el CSV para Emitidos. Si el rango 01/01/2026–31/08/2026 supera 500 filas, probarlo y anotar qué botones desaparecen y si `listaResultados` trae todas las filas o pagina (`length`, `start`, `draw` en la query).
 7. **Otros filtros.** Abrir el selector de tipos de comprobante y de punto de venta: copiar las opciones (código y texto) y qué parámetro agregan a `generarConsulta` (`tiposComprobantes[]`, `puntosVenta[]`).
 8. **Sesión.** Anotar la duración: dejar la pestaña abierta 30 minutos y repetir una consulta; ver si pide login de nuevo. Guardar los nombres (no los valores) de las cookies de `fes.afip.gob.ar` y `auth.afip.gob.ar`.
 
@@ -160,5 +173,7 @@ Entregables: un `.md` con las URLs, parámetros y observaciones por paso; los JS
 - afipsdk.com/blog/descargar-mis-comprobantes-de-arca-via-api/ · afipsdk.com/pricing/ · afipsdk.com/docs/automations/introduction/
 - gist.github.com/alejoasotelo/99e0bdf16db64b783fc42d66321c2946
 - github.com/santyarena1/STOCKRAPIDO/pull/49 (arca-portal-client.ts, sync-runner/arca_recibidos_sync_runner.py)
+- github.com/javiergradiche/fisco-ar-claude-plugin · github.com/Francoooo22/arca-scraper · github.com/abrizuela/hack_mis_comprobantes · github.com/diego-dotcom/bot_descarga_multiperiodo
+- github.com/AfipSDK/afip.js (CreateAutomation: sólo cliente HTTP de app.afipsdk.com) · groups.google.com/g/pyafipws/c/V4qV5P1Dqwo
 - portalcf.cloud.afip.gob.ar/portal/app/static/js/main.9bed98e0.js (endpoints `/portal/api/...`) · afip.gob.ar/clavefiscal/app/service-tags.json (`mcmp`)
 - contadoresenred.com (límite 365 días, >500 filas sólo CSV) · afip.gob.ar/clavefiscal/ayuda/token.asp (nivel 4)
