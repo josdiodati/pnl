@@ -92,3 +92,38 @@ describe('rangoFechasPortal', () => {
     expect(() => rangoFechasPortal(new Date('2026-08-31T00:00:00Z'), new Date('2026-08-01T00:00:00Z'))).toThrow();
   });
 });
+
+import { redireccionEnHtml, resumenHtml } from '@/lib/arca/portal/parsing';
+
+describe('redireccionEnHtml (redirecciones que no son 3xx)', () => {
+  it('meta refresh', () => {
+    const r = redireccionEnHtml('<html><head><meta http-equiv="refresh" content="0; URL=https://portalcf.cloud.afip.gob.ar/portal/app/"></head></html>', 'https://auth.afip.gob.ar/contribuyente_/loginClave.xhtml');
+    expect(r).toEqual({ method: 'GET', url: 'https://portalcf.cloud.afip.gob.ar/portal/app/' });
+  });
+  it('location por JavaScript, relativa a la página', () => {
+    expect(redireccionEnHtml(`<script>window.location.href = '/portal/app/';</script>`, 'https://portalcf.cloud.afip.gob.ar/x/y')).toEqual({ method: 'GET', url: 'https://portalcf.cloud.afip.gob.ar/portal/app/' });
+    expect(redireccionEnHtml(`<script>location.replace("https://portalcf.cloud.afip.gob.ar/portal/app/?a=1")</script>`, 'https://auth.afip.gob.ar/')).toEqual({ method: 'GET', url: 'https://portalcf.cloud.afip.gob.ar/portal/app/?a=1' });
+  });
+  it('formulario que se auto-envía: POST con sus hidden', () => {
+    const html = `<body onload="document.forms[0].submit()"><form method="post" action="https://portalcf.cloud.afip.gob.ar/portal/sso"><input type="hidden" name="token" value="T"/><input type="hidden" name="sign" value="S"/><noscript><input type="submit"/></noscript></form></body>`;
+    expect(redireccionEnHtml(html, 'https://auth.afip.gob.ar/x')).toEqual({ method: 'POST', url: 'https://portalcf.cloud.afip.gob.ar/portal/sso', body: 'token=T&sign=S' });
+  });
+  it('un formulario normal (con campos visibles, sin auto-submit) no es una redirección', () => {
+    expect(redireccionEnHtml('<form id="F1" method="post" action="/x"><input name="F1:password" type="password"/></form>', 'https://auth.afip.gob.ar/')).toBeNull();
+    expect(redireccionEnHtml('<html>hola</html>', 'https://auth.afip.gob.ar/')).toBeNull();
+  });
+});
+
+describe('resumenHtml (traza técnica sin secretos)', () => {
+  it('describe título, formularios y redirecciones sin copiar valores de inputs', () => {
+    const html = `<html><head><title>Acceso con Clave Fiscal</title></head><body><form id="F1" action="/contribuyente_/loginClave.xhtml"><input type="hidden" name="javax.faces.ViewState" value="SECRETO1"/><input type="password" name="F1:password" value="SECRETO2"/></form><span id="F1:msg">Clave o usuario incorrecto</span><script>location.href='/x'</script></body></html>`;
+    const r = resumenHtml(html);
+    expect(r).toContain('Acceso con Clave Fiscal');
+    expect(r).toContain('form#F1→/contribuyente_/loginClave.xhtml');
+    expect(r).toContain('F1:password');
+    expect(r).toContain('Clave o usuario incorrecto');
+    expect(r).not.toContain('SECRETO1');
+    expect(r).not.toContain('SECRETO2');
+    expect(r.length).toBeLessThan(700);
+  });
+});

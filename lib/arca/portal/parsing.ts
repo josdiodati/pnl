@@ -96,3 +96,80 @@ export function rangoFechasPortal(desde: Date, hasta: Date): string {
   if (dias > 365) throw new Error('Mis Comprobantes: el rango máximo por consulta es de 365 días.');
   return `${ddmmyyyy(desde)} - ${ddmmyyyy(hasta)}`;
 }
+
+// ---------- redirecciones que no son 3xx ----------
+
+export type RedireccionHtml = { method: 'GET'; url: string } | { method: 'POST'; url: string; body: string };
+
+function decodificarEntidades(s: string): string {
+  return s.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
+/**
+ * Los saltos entre auth.afip.gob.ar, el portal y los servicios no siempre son
+ * 302: pueden ser un <meta refresh>, un `location.href = …` o un formulario
+ * con hidden que se auto-envía. Devuelve el pedido a hacer, o null.
+ */
+export function redireccionEnHtml(html: string, urlBase: string): RedireccionHtml | null {
+  const meta = html.match(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*content=["']\s*\d+\s*;\s*url=([^"'>\s]+)/i);
+  if (meta) return { method: 'GET', url: new URL(decodificarEntidades(meta[1]), urlBase).toString() };
+
+  // Formulario auto-enviado: sólo hidden (sin campos visibles) y un submit() por script/onload.
+  const autoSubmit = /\.submit\(\)/.test(html);
+  if (autoSubmit) {
+    for (const f of html.matchAll(/<form[^>]*>([\s\S]*?)<\/form>/gi)) {
+      const apertura = f[0].slice(0, f[0].indexOf('>') + 1);
+      const action = apertura.match(/action=["']([^"']*)["']/i)?.[1];
+      const method = (apertura.match(/method=["']([^"']*)["']/i)?.[1] ?? 'GET').toUpperCase();
+      const inputs = [...f[1].matchAll(/<input[^>]*>/gi)].map((m) => m[0]);
+      const visibles = inputs.filter((i) => !/type=["']?(hidden|submit)/i.test(i));
+      if (visibles.length > 0 || !action) continue;
+      const campos: [string, string][] = [];
+      for (const i of inputs) {
+        if (!/type=["']?hidden/i.test(i)) continue;
+        const name = i.match(/name=["']([^"']*)["']/i)?.[1];
+        const value = i.match(/value=["']([^"']*)["']/i)?.[1] ?? '';
+        if (name) campos.push([name, decodificarEntidades(value)]);
+      }
+      const url = new URL(decodificarEntidades(action), urlBase).toString();
+      const body = campos.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+      if (method === 'POST') return { method: 'POST', url, body };
+      return { method: 'GET', url: body ? `${url}${url.includes('?') ? '&' : '?'}${body}` : url };
+    }
+  }
+
+  const js = html.match(/(?:window\.|document\.|top\.)?location(?:\.href)?\s*=\s*["']([^"']+)["']/) ?? html.match(/location\.(?:replace|assign)\(\s*["']([^"']+)["']\s*\)/);
+  if (js) return { method: 'GET', url: new URL(decodificarEntidades(js[1]), urlBase).toString() };
+  return null;
+}
+
+/**
+ * Resumen de una respuesta HTML para la traza técnica: título, formularios
+ * (acción y nombres de campos, NUNCA sus valores), redirecciones y un
+ * extracto del texto visible. Sirve para diagnosticar un login que no llegó
+ * al portal sin exponer clave, ViewState, tokens ni cookies.
+ */
+export function resumenHtml(html: string): string {
+  const partes: string[] = [];
+  const titulo = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, ' ').trim();
+  if (titulo) partes.push(`título «${titulo.slice(0, 80)}»`);
+  for (const f of html.matchAll(/<form([^>]*)>([\s\S]*?)<\/form>/gi)) {
+    const id = f[1].match(/id=["']([^"']*)["']/i)?.[1] ?? f[1].match(/name=["']([^"']*)["']/i)?.[1] ?? '';
+    const action = (f[1].match(/action=["']([^"']*)["']/i)?.[1] ?? '').replace(/;jsessionid=[^?]*/i, ';jsessionid=***');
+    const campos = [...f[2].matchAll(/<input[^>]*name=["']([^"']*)["']/gi)].map((m) => m[1]).slice(0, 12);
+    partes.push(`form#${id}→${action} [${campos.join(', ')}]`);
+  }
+  const meta = html.match(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*content=["']([^"']*)["']/i)?.[1];
+  if (meta) partes.push(`meta-refresh «${meta.slice(0, 120)}»`);
+  const js = html.match(/location(?:\.href)?\s*=\s*["']([^"']+)["']/)?.[1] ?? html.match(/location\.(?:replace|assign)\(\s*["']([^"']+)["']/)?.[1];
+  if (js) partes.push(`js-location «${js.slice(0, 120)}»`);
+  if (/\.submit\(\)/.test(html)) partes.push('auto-submit');
+  const texto = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (texto) partes.push(`texto «${texto.slice(0, 220)}»`);
+  return partes.join(' · ').slice(0, 650);
+}

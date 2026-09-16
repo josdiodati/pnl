@@ -152,6 +152,18 @@ export default async function ConfigPage({
               Para no bloquear la Clave Fiscal, PNL no volvió a intentar. Verificá si cambió la clave: guardala de nuevo y tocá «Probar
               ingreso» (un único intento). Si la clave sigue siendo la misma, probá directamente.
             </p>
+            {Array.isArray(credencialArca.detalleBloqueo) && credencialArca.detalleBloqueo.length > 0 && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs underline">Detalle técnico del intento (sin claves ni cookies)</summary>
+                <ol className="mt-1 space-y-1 text-[11px] font-mono text-red-900/80 break-all">
+                  {(credencialArca.detalleBloqueo as { paso: number; method: string; url: string; status: number; contentType: string; bytes: number; resumen: string }[]).map((t) => (
+                    <li key={t.paso}>
+                      {t.paso}. {t.method} {t.url} → {t.status} {t.contentType} ({t.bytes} b) {t.resumen}
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
           </div>
         )}
         <form action={guardarCredencialArcaAction} className="flex flex-wrap items-end gap-3">

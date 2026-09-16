@@ -234,3 +234,44 @@ describe('ClientePortalArca: fallos', () => {
     expect(pedidos.some((p) => p.url.includes('ajax.do'))).toBe(false);
   });
 });
+
+describe('ClientePortalArca: redirección por HTML después del login y traza técnica', () => {
+  it('sigue un formulario auto-enviado hacia el portal en vez de dar el login por fallido', async () => {
+    const reglas = reglasFelices();
+    reglas[2] = {
+      test: es('POST', 'loginClave.xhtml'),
+      responder: () => ({ body: `<body onload="document.forms[0].submit()"><form method="post" action="https://portalcf.cloud.afip.gob.ar/portal/sso"><input type="hidden" name="token" value="T"/><input type="hidden" name="sign" value="S"/></form></body>` }),
+    };
+    reglas.push({ test: es('POST', 'portalcf.cloud.afip.gob.ar/portal/sso'), responder: () => ({ status: 302, headers: { location: '/portal/app/' }, setCookies: ['PORTALSESSION=p1; Path=/'] }) });
+    const { transporte, pedidos } = transporteFalso(reglas);
+    const cliente = new ClientePortalArca({ transporte, pausaMs: 0 });
+    await cliente.login(CUIT_USUARIO, 'clave');
+    const sso = pedidos.find((p) => p.url.includes('/portal/sso'))!;
+    expect(sso.method).toBe('POST');
+    expect(sso.body).toBe('token=T&sign=S');
+    const info = pedidos.find((p) => p.url.includes('/portal/api/info'))!;
+    expect(info.headers?.cookie).toContain('PORTALSESSION=p1');
+  });
+
+  it('login desconocido: el error trae la traza de pasos, sin clave ni ViewState', async () => {
+    const reglas = reglasFelices();
+    reglas[4] = { test: es('GET', '/portal/api/info'), responder: () => ({ body: '<html><title>Portal</title>login requerido</html>' }) };
+    const { transporte } = transporteFalso(reglas);
+    const cliente = new ClientePortalArca({ transporte, pausaMs: 0 });
+    let error: ErrorLoginArca | null = null;
+    try {
+      await cliente.login(CUIT_USUARIO, 'clave-secreta');
+    } catch (e) {
+      error = e as ErrorLoginArca;
+    }
+    expect(error?.motivo).toBe('desconocido');
+    const traza = error!.traza!;
+    expect(traza.length).toBeGreaterThanOrEqual(5);
+    expect(traza.some((t) => t.url.includes('/portal/api/info') && t.resumen.includes('login requerido'))).toBe(true);
+    const texto = JSON.stringify(traza);
+    expect(texto).not.toContain('clave-secreta');
+    expect(texto).not.toContain('VS1');
+    expect(texto).not.toContain('VS2');
+    expect(texto).not.toContain('J1.auth10'); // jsessionid tampoco
+  });
+});

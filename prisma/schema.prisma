@@ -765,6 +765,7 @@ model CredencialArca {
   claveCifrada    String
   estado          EstadoCredencialArca @default(SIN_PROBAR)
   motivoBloqueo   String?
+  detalleBloqueo  Json? // traza técnica del intento fallido (URLs, status, resumen del HTML), sin secretos
   ultimoIntentoAt DateTime? // último login intentado (manual o del job)
   ultimoOkAt      DateTime?
   syncAutomatico  Boolean              @default(true)

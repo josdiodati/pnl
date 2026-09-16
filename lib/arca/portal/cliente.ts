@@ -9,6 +9,8 @@ import {
   extraerViewState,
   indiceRepresentado,
   rangoFechasPortal,
+  redireccionEnHtml,
+  resumenHtml,
   verificarRepresentando,
 } from './parsing';
 
@@ -42,11 +44,16 @@ const TIMEOUT_MS = 60_000;
 
 export type MotivoLogin = 'credenciales' | 'captcha' | 'cambio_clave' | 'segundo_factor' | 'desconocido';
 
+/** Un paso de la traza técnica: qué se pidió y qué volvió, sin secretos. */
+export type PasoTraza = { paso: number; method: string; url: string; status: number; contentType: string; bytes: number; resumen: string };
+
 /** El login no llegó al portal. No se reintenta: podría bloquear la Clave Fiscal. */
 export class ErrorLoginArca extends Error {
   readonly name = 'ErrorLoginArca';
-  constructor(readonly motivo: MotivoLogin, mensaje: string) {
+  traza?: PasoTraza[];
+  constructor(readonly motivo: MotivoLogin, mensaje: string, traza?: PasoTraza[]) {
     super(mensaje);
+    this.traza = traza;
   }
 }
 /** La sesión del portal/servicio murió en el medio: hay que re-loguear. */
@@ -139,6 +146,8 @@ export class ClientePortalArca {
   private cookies = new Cookies();
   private cuitUsuario: string | null = null;
   private ultimaLlamada = 0;
+  /** Traza técnica de la corrida (URLs sin jsessionid, status, resumen del HTML sin valores). */
+  readonly traza: PasoTraza[] = [];
 
   constructor(opts: OpcionesCliente = {}) {
     this.transporte = opts.transporte ?? transporteFetch;
@@ -164,18 +173,49 @@ export class ClientePortalArca {
     this.ultimaLlamada = Date.now();
     const res = await this.transporte({ ...p, headers });
     this.cookies.guardar(res.setCookies, host);
+    this.anotar(p, res);
     return res;
   }
 
-  /** GET/POST siguiendo redirecciones (máx. 5) y acumulando cookies de cada salto. */
-  private async navegar(p: PedidoHttp): Promise<{ res: RespuestaHttp; url: string }> {
+  private anotar(p: PedidoHttp, res: RespuestaHttp): void {
+    const ct = res.headers['content-type'] ?? '';
+    let resumen = '';
+    if (/html|xml|text/i.test(ct) || (!ct && res.body.length > 0)) resumen = resumenHtml(this.texto(res));
+    else if (/json/i.test(ct)) resumen = `json ${res.body.toString('utf8').slice(0, 160).replace(/"(token|sign|clave|password)"\s*:\s*"[^"]*"/gi, '"$1":"***"')}`;
+    if (res.headers.location) resumen = `→ ${res.headers.location.replace(/;jsessionid=[^?]*/i, ';jsessionid=***')} ${resumen}`.trim();
+    this.traza.push({
+      paso: this.traza.length + 1,
+      method: p.method,
+      url: p.url.replace(/;jsessionid=[^?]*/i, ';jsessionid=***'),
+      status: res.status,
+      contentType: ct.split(';')[0],
+      bytes: res.body.length,
+      resumen: resumen.slice(0, 650),
+    });
+    if (this.traza.length > 40) this.traza.shift();
+  }
+
+  /**
+   * GET/POST siguiendo redirecciones (máx. 6) y acumulando cookies de cada
+   * salto. Además de los 3xx sigue las redirecciones en HTML (meta refresh,
+   * location por JavaScript, formulario auto-enviado), que es como ARCA salta
+   * entre auth, portal y servicios.
+   */
+  private async navegar(p: PedidoHttp, opts: { seguirHtml?: boolean } = {}): Promise<{ res: RespuestaHttp; url: string }> {
     let pedido = p;
-    for (let salto = 0; salto < 6; salto++) {
+    for (let salto = 0; salto < 8; salto++) {
       const res = await this.pedir(pedido);
       const loc = res.headers.location;
       if (res.status >= 300 && res.status < 400 && loc) {
         pedido = { method: 'GET', url: new URL(loc, pedido.url).toString() };
         continue;
+      }
+      if (opts.seguirHtml && /html|xml/i.test(res.headers['content-type'] ?? 'html')) {
+        const r = redireccionEnHtml(this.texto(res), pedido.url);
+        if (r) {
+          pedido = r.method === 'POST' ? { method: 'POST', url: r.url, body: r.body } : { method: 'GET', url: r.url };
+          continue;
+        }
       }
       return { res, url: pedido.url };
     }
@@ -199,6 +239,7 @@ export class ClientePortalArca {
     this.cuitUsuario = null;
     this.cookies = new Cookies();
 
+    const fallar = (motivo: MotivoLogin, mensaje: string) => new ErrorLoginArca(motivo, mensaje, [...this.traza]);
     const paso0 = await this.navegar({ method: 'GET', url: URL_LOGIN });
     const html0 = this.texto(paso0.res);
     let viewState: string;
@@ -207,7 +248,7 @@ export class ClientePortalArca {
       viewState = extraerViewState(html0);
       accion = extraerAccionFormulario(html0);
     } catch (e) {
-      throw new ErrorLoginArca('desconocido', `La página de login de ARCA cambió: ${(e as Error).message}`);
+      throw fallar('desconocido', `La página de login de ARCA cambió: ${(e as Error).message}`);
     }
 
     const paso1 = await this.navegar({
@@ -217,32 +258,37 @@ export class ClientePortalArca {
     });
     const html1 = this.texto(paso1.res);
     const fallo1 = detectarFalloLogin(html1);
-    if (fallo1) throw new ErrorLoginArca(fallo1, MENSAJE_LOGIN[fallo1]);
+    if (fallo1) throw fallar(fallo1, MENSAJE_LOGIN[fallo1]);
     let viewState2: string;
     let accion2: string;
     try {
       viewState2 = extraerViewState(html1);
       accion2 = extraerAccionFormulario(html1);
     } catch (e) {
-      throw new ErrorLoginArca('desconocido', `La pantalla de clave de ARCA cambió: ${(e as Error).message}`);
+      throw fallar('desconocido', `La pantalla de clave de ARCA cambió: ${(e as Error).message}`);
     }
 
-    const paso2 = await this.navegar({
-      method: 'POST',
-      url: new URL(accion2, paso1.url).toString(),
-      body: form({ F1: 'F1', 'F1:captcha': '', 'F1:username': cuit, 'F1:password': clave, 'F1:btnIngresar': 'Ingresar', 'javax.faces.ViewState': viewState2 }),
-    });
+    // El POST de la clave puede terminar en un 302, en un meta refresh, en
+    // un location por JS o en un formulario auto-enviado al portal: se sigue todo.
+    const paso2 = await this.navegar(
+      {
+        method: 'POST',
+        url: new URL(accion2, paso1.url).toString(),
+        body: form({ F1: 'F1', 'F1:captcha': '', 'F1:username': cuit, 'F1:password': clave, 'F1:btnIngresar': 'Ingresar', 'javax.faces.ViewState': viewState2 }),
+      },
+      { seguirHtml: true },
+    );
     const html2 = this.texto(paso2.res);
     const fallo2 = detectarFalloLogin(html2);
-    if (fallo2) throw new ErrorLoginArca(fallo2, MENSAJE_LOGIN[fallo2]);
+    if (fallo2) throw fallar(fallo2, MENSAJE_LOGIN[fallo2]);
 
     // Confirmación: la API del portal responde JSON con el CUIT logueado.
-    if (!paso2.url.includes('portalcf')) await this.navegar({ method: 'GET', url: URL_PORTAL });
-    const info = await this.pedir({ method: 'GET', url: `${URL_PORTAL_API}/info` }, { accept: 'application/json' });
+    if (!paso2.url.includes('portalcf')) await this.navegar({ method: 'GET', url: URL_PORTAL }, { seguirHtml: true });
+    const info = await this.pedir({ method: 'GET', url: `${URL_PORTAL_API}/info` }, { accept: 'application/json, text/plain, */*', referer: URL_PORTAL, 'x-requested-with': 'XMLHttpRequest' });
     const clas = clasificarRespuestaAjax(info.status, info.headers['content-type'] ?? '', this.texto(info));
     const infoJson = clas.tipo === 'json' ? (clas.json as { cuit?: number | string }) : null;
     if (!infoJson?.cuit) {
-      throw new ErrorLoginArca('desconocido', MENSAJE_LOGIN.desconocido);
+      throw fallar('desconocido', MENSAJE_LOGIN.desconocido);
     }
     this.cuitUsuario = cuit;
     return { cuit: String(infoJson.cuit) };

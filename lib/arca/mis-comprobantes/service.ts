@@ -65,7 +65,7 @@ export async function guardarCredencialArca(ctx: EmpresaContext, params: { cuitU
     throw new DomainError(`No se puede guardar la clave: ${(e as Error).message}`);
   }
   const previa = await ctx.db.credencialArca.findFirst({ where: {} });
-  const data = { cuitUsuario, claveCifrada, estado: 'SIN_PROBAR' as const, motivoBloqueo: null, ultimoErrorSync: null, erroresSeguidos: 0 };
+  const data = { cuitUsuario, claveCifrada, estado: 'SIN_PROBAR' as const, motivoBloqueo: null, detalleBloqueo: undefined as never, ultimoErrorSync: null, erroresSeguidos: 0 };
   const guardada = previa
     ? await ctx.db.credencialArca.update({ where: { id: previa.id }, data })
     : await ctx.db.credencialArca.create({ data: { ...data, empresaId: ctx.empresa.id } as never });
@@ -106,17 +106,20 @@ export async function cambiarSyncAutomatico(ctx: EmpresaContext, activo: boolean
   });
 }
 
-async function bloquearCredencial(db: ScopedDb, credencialId: string, motivo: string, usuarioId: string | null): Promise<void> {
+async function bloquearCredencial(db: ScopedDb, credencialId: string, error: ErrorLoginArca, usuarioId: string | null): Promise<void> {
+  // La traza técnica (URLs, status, resumen del HTML sin valores) se guarda
+  // para diagnosticar; nunca contiene la clave, el ViewState ni cookies.
+  const detalle = error.traza ?? null;
   await db.credencialArca.update({
     where: { id: credencialId },
-    data: { estado: 'BLOQUEADA', motivoBloqueo: motivo, ultimoIntentoAt: new Date() },
+    data: { estado: 'BLOQUEADA', motivoBloqueo: error.message, ultimoIntentoAt: new Date(), detalleBloqueo: (detalle ?? undefined) as never },
   });
   await writeAudit(db, {
     usuarioId,
     entidad: 'CredencialArca',
     entidadId: credencialId,
     accion: 'ARCA_CREDENCIAL_BLOQUEAR',
-    despues: { motivo },
+    despues: { motivo: error.motivo, mensaje: error.message, traza: detalle },
   });
 }
 
@@ -135,7 +138,7 @@ export async function probarCredencialArca(ctx: EmpresaContext, deps: DepsArca =
     await d.probarAcceso({ cuitUsuario: cred.cuitUsuario, clave, cuitEmpresa: ctx.empresa.cuit });
   } catch (e) {
     if (e instanceof ErrorLoginArca) {
-      await bloquearCredencial(ctx.db, cred.id, e.message, ctx.usuario.id);
+      await bloquearCredencial(ctx.db, cred.id, e, ctx.usuario.id);
       return { ok: false, mensaje: `${e.message} La credencial quedó bloqueada: verificá si cambió la Clave Fiscal y volvé a guardarla.` };
     }
     const mensaje = e instanceof Error ? e.message : String(e);
@@ -145,7 +148,7 @@ export async function probarCredencialArca(ctx: EmpresaContext, deps: DepsArca =
   }
   await ctx.db.credencialArca.update({
     where: { id: cred.id },
-    data: { estado: 'OK', motivoBloqueo: null, ultimoOkAt: new Date(), ultimoErrorSync: null, erroresSeguidos: 0 },
+    data: { estado: 'OK', motivoBloqueo: null, detalleBloqueo: undefined as never, ultimoOkAt: new Date(), ultimoErrorSync: null, erroresSeguidos: 0 },
   });
   await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'CredencialArca', entidadId: cred.id, accion: 'ARCA_CREDENCIAL_PROBAR', despues: { ok: true } });
   return { ok: true, mensaje: 'Ingreso a ARCA verificado: Mis Comprobantes abre para esta empresa. El sync diario queda habilitado.' };
@@ -365,7 +368,7 @@ export async function sincronizarMisComprobantes(
     descarga = await d.descargar({ cuitUsuario: cred.cuitUsuario, clave: descifrarSecreto(cred.claveCifrada), cuitEmpresa: empresa.cuit, desde, hasta });
   } catch (e) {
     if (e instanceof ErrorLoginArca) {
-      await bloquearCredencial(db, cred.id, e.message, usuarioId);
+      await bloquearCredencial(db, cred.id, e, usuarioId);
       return { estado: 'BLOQUEADA', motivo: e.message };
     }
     const mensaje = e instanceof Error ? e.message : String(e);
