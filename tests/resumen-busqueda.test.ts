@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { buildWhereMovimientoConciliable, MOVIMIENTOS_CONCILIABLES } from '@/lib/resumenes/busqueda';
 
-// Buscador del panel de conciliación: texto libre sobre los movimientos que
-// todavía se pueden conciliar (estados conciliables y sin línea de resumen ya
-// conciliada/imputada encima).
+// Buscador del panel de conciliación: texto libre sobre los movimientos en
+// estado conciliable. Los que ya tienen una línea vinculada aparecen (pago
+// parcial, con confirmación); los nacidos de una imputación no.
 describe('buildWhereMovimientoConciliable', () => {
   const where = buildWhereMovimientoConciliable('acme');
 
@@ -12,8 +12,8 @@ describe('buildWhereMovimientoConciliable', () => {
     expect(MOVIMIENTOS_CONCILIABLES).toContain('ASIGNADO');
   });
 
-  it('excluye movimientos ya usados por otra línea de resumen', () => {
-    expect(where.lineasResumen).toEqual({ none: { estado: { in: ['CONCILIADA', 'IMPUTADA'] } } });
+  it('excluye sólo los movimientos nacidos de una imputación (los conciliados se pueden compartir)', () => {
+    expect(where.vinculosResumen).toEqual({ none: { linea: { estado: 'IMPUTADA' } } });
   });
 
   it('busca el texto en contraparte, descripción, número y cuit', () => {

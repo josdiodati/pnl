@@ -8,6 +8,7 @@ import { DomainError } from '@/lib/errors';
 import { getResumenExtractor } from '@/lib/extractor/resumen';
 import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 import { evaluarLinea, normalizarDescriptor, type MovimientoCandidato } from './matching';
+import { verificarTitular } from './titular';
 
 // Pipeline de resúmenes: PDF -> Resumen PROCESANDO -> Job EXTRACCION_RESUMEN
 // -> worker extrae líneas -> matching automático -> EXTRAIDO. El período se
@@ -89,10 +90,12 @@ async function candidatosDeMatching(db: ScopedDb, ventana: { desde: Date; hasta:
         { AND: [{ fechaDevengamiento: null }, { createdAt: { gte: ventana.desde, lte: ventana.hasta } }] },
       ],
     },
-    include: { contraparte: true, lineasResumen: { where: { estado: { in: ['CONCILIADA', 'IMPUTADA'] } }, select: { id: true } } },
+    include: { contraparte: true, vinculosResumen: { select: { id: true } } },
   });
   return movs
-    .filter((m) => m.lineasResumen.length === 0) // un movimiento admite una sola línea ocupante (conciliada o imputada)
+    // Un comprobante ya vinculado a alguna línea no se vuelve a sugerir: el
+    // pago parcial (compartirlo) es excepcional y se hace a mano, con confirmación.
+    .filter((m) => m.vinculosResumen.length === 0)
     .map((m) => ({
       id: m.id,
       total: m.total != null ? Number(m.total) : null,
@@ -105,7 +108,7 @@ async function candidatosDeMatching(db: ScopedDb, ventana: { desde: Date; hasta:
 
 export async function procesarExtraccionResumen(payload: { resumenId: string; empresaId: string }): Promise<void> {
   const db = scopedDb(payload.empresaId);
-  const resumen = await db.resumen.findFirst({ where: { id: payload.resumenId } });
+  const resumen = await db.resumen.findFirst({ where: { id: payload.resumenId }, include: { empresa: true } });
   if (!resumen) throw new Error(`Resumen ${payload.resumenId} inexistente`);
 
   const buffer = await getFileStorage().get(resumen.archivoKey);
@@ -120,6 +123,16 @@ export async function procesarExtraccionResumen(payload: { resumenId: string; em
   }
 
   const { extraccion, uso } = await getResumenExtractor().extract({ texto, buffer, mime: resumen.archivoMime });
+
+  // ¿Es de esta empresa? CUIT o razón social en el texto del PDF o en el
+  // titular que declaró la extracción. NO_COINCIDE bloquea la conciliación
+  // hasta que el usuario lo confirme o elimine el resumen (ver service).
+  const verificacion = verificarTitular({
+    texto,
+    titularCuenta: extraccion.titularCuenta,
+    cuitTitularCuenta: extraccion.cuitTitularCuenta,
+    empresa: { razonSocial: resumen.empresa.razonSocial, cuit: resumen.empresa.cuit },
+  });
 
   const anclaPeriodo = new Date(Date.UTC(extraccion.periodoAnio, extraccion.periodoMes - 1, 1));
   const periodo = await getOrCreatePeriodo(db, anclaPeriodo);
@@ -165,6 +178,9 @@ export async function procesarExtraccionResumen(payload: { resumenId: string; em
       fechaCierre: extraccion.fechaCierre ? new Date(`${extraccion.fechaCierre}T00:00:00Z`) : null,
       totalDeclarado: extraccion.totalDeclarado,
       extraccionRaw: extraccion as never,
+      // Una confirmación manual previa (reintento de extracción) se respeta.
+      ...(resumen.verificacionTitular === 'CONFIRMADA' ? {} : { verificacionTitular: verificacion.resultado as never }),
+      titularDetectado: verificacion.titularDetectado,
       tokensEntrada: uso?.entrada ?? null,
       tokensSalida: uso?.salida ?? null,
       tokensCacheCreacion: uso?.cacheCreacion ?? null,
@@ -176,7 +192,13 @@ export async function procesarExtraccionResumen(payload: { resumenId: string; em
     entidad: 'Resumen',
     entidadId: resumen.id,
     accion: 'EXTRAER',
-    despues: { lineas: extraccion.lineas.length, periodo: `${extraccion.periodoAnio}-${extraccion.periodoMes}`, totalDeclarado: extraccion.totalDeclarado },
+    despues: {
+      lineas: extraccion.lineas.length,
+      periodo: `${extraccion.periodoAnio}-${extraccion.periodoMes}`,
+      totalDeclarado: extraccion.totalDeclarado,
+      verificacionTitular: verificacion.resultado,
+      titularDetectado: verificacion.titularDetectado,
+    },
   });
 }
 

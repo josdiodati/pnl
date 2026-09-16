@@ -5,15 +5,17 @@ import type { Prisma } from '@prisma/client';
 export const MOVIMIENTOS_CONCILIABLES = ['ASIGNADO', 'VALIDADO', 'PENDIENTE_VALIDACION'] as const;
 
 /**
- * Where del buscador manual del panel de conciliación: movimientos todavía
- * conciliables (sin línea de resumen conciliada/imputada encima), con texto
- * libre sobre los mismos campos que la búsqueda del libro. Sin texto, lista
- * los más recientes.
+ * Where del buscador manual del panel de conciliación: movimientos en estado
+ * conciliable, con texto libre sobre los mismos campos que la búsqueda del
+ * libro. Sin texto, lista los más recientes. Los que ya tienen una línea de
+ * resumen vinculada SÍ aparecen (un comprobante puede pagarse en varias
+ * líneas): el buscador los marca y la conciliación exige confirmación. Los
+ * nacidos de una imputación no se comparten, así que quedan afuera.
  */
 export function buildWhereMovimientoConciliable(q: string): Prisma.MovimientoWhereInput {
   const where: Prisma.MovimientoWhereInput = {
     estado: { in: [...MOVIMIENTOS_CONCILIABLES] as never },
-    lineasResumen: { none: { estado: { in: ['CONCILIADA', 'IMPUTADA'] as never } } },
+    vinculosResumen: { none: { linea: { estado: 'IMPUTADA' as never } } },
   };
   const texto = q.trim();
   if (texto) {

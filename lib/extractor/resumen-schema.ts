@@ -20,6 +20,9 @@ export const lineaResumenSchema = z.object({
 export const resumenExtraccionSchema = z.object({
   tipo: z.enum(['TARJETA', 'BANCO']),
   emisor: z.string(),
+  /** Titular de la cuenta/tarjeta (razón social o nombre) tal como figura en el encabezado; verifica que el resumen sea de la empresa. */
+  titularCuenta: z.string().nullable().default(null),
+  cuitTitularCuenta: z.string().nullable().default(null),
   periodoAnio: z.number().int(),
   periodoMes: z.number().int().min(1).max(12),
   fechaCierre: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
@@ -37,6 +40,8 @@ export const resumenExtraccionJsonSchema = {
   properties: {
     tipo: { type: 'string', enum: ['TARJETA', 'BANCO'] },
     emisor: { type: 'string', description: 'Banco/tarjeta y cuenta, ej. "Visa Business BBVA", "Santander CC $ 000-039152/2"' },
+    titularCuenta: { type: ['string', 'null'], description: 'Titular de la cuenta o tarjeta (razón social o nombre) TAL CUAL figura en el encabezado del resumen; null si no figura' },
+    cuitTitularCuenta: { type: ['string', 'null'], description: 'CUIT/CUIL del titular si figura en el resumen' },
     periodoAnio: { type: 'integer' },
     periodoMes: { type: 'integer', description: '1-12, período al que corresponde el resumen' },
     fechaCierre: { type: ['string', 'null'], description: 'YYYY-MM-DD' },

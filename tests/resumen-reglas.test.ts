@@ -132,7 +132,8 @@ describe('aplicación de reglas de resumen (integración)', () => {
     const r = await aplicarReglasResumen(ctx.db, resumenId, usuarioId);
     expect(r.imputadas).toBe(1);
 
-    const imputada = await prisma.resumenLinea.findUnique({ where: { id: lPend.id }, include: { movimiento: { include: { lineas: true } } } });
+    const imputadaLinea = await prisma.resumenLinea.findUnique({ where: { id: lPend.id }, include: { vinculos: { include: { movimiento: { include: { lineas: true } } } } } });
+    const imputada = { ...imputadaLinea!, movimiento: imputadaLinea!.vinculos[0]?.movimiento ?? null };
     expect(imputada!.estado).toBe('IMPUTADA');
     expect(imputada!.reglaAplicada).toBe('Sircreb');
     expect(imputada!.movimiento!.origen).toBe('RESUMEN');

@@ -11,6 +11,7 @@ import { MontoArsHint } from '@/components/monto-ars-hint';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { HistorialComprobante } from '@/components/historial-comprobante';
 import { BuscadorMovimiento } from '@/components/buscador-movimiento';
+import { EliminarResumen } from '@/components/eliminar-resumen';
 import { MenuRapido } from '@/components/menu-rapido';
 import { MOTIVOS_IGNORO_RAPIDO, MOTIVOS_IGNORO_PNL } from '@/lib/resumenes/motivos';
 import {
@@ -23,6 +24,8 @@ import {
   rechazarCandidatoAction,
   aplicarReglasAction,
   editarLineaAction,
+  desvincularAction,
+  confirmarTitularAction,
 } from '../actions';
 
 // Bandeja de conciliación de un resumen: lista de líneas con su estado de
@@ -50,6 +53,14 @@ const ESTADOS_RESUELTOS = new Set(['CONCILIADA', 'IMPUTADA', 'IGNORADA']);
 
 type Candidato = { movimientoId: string; score: number; motivo: string; rechazado?: boolean };
 
+// Vínculo de un comprobante con una línea de OTRO lado (para avisar que ya
+// está vinculado antes de compartirlo: pago parcial / en cuotas).
+type VinculoAjeno = { lineaId: string; linea: { descriptor: string; fecha: Date | null; resumen: { emisor: string } } };
+function ocupadoPor(mov: { vinculosResumen: VinculoAjeno[] } | undefined, lineaId: string): string | null {
+  const otro = mov?.vinculosResumen.find((v) => v.lineaId !== lineaId);
+  return otro ? `línea «${otro.linea.descriptor}» (${formatFecha(otro.linea.fecha)}) del resumen ${otro.linea.resumen.emisor}` : null;
+}
+
 export default async function ResumenDetallePage({
   params,
   searchParams,
@@ -64,10 +75,14 @@ export default async function ResumenDetallePage({
     where: { id: params.id },
     include: {
       periodo: true,
-      lineas: { orderBy: { orden: 'asc' }, include: { movimiento: { include: { contraparte: true } } } },
+      lineas: {
+        orderBy: { orden: 'asc' },
+        include: { vinculos: { orderBy: { createdAt: 'asc' }, include: { movimiento: { include: { contraparte: true } } } } },
+      },
     },
   });
   if (!resumen) notFound();
+  const bloqueadoPorTitular = resumen.verificacionTitular === 'NO_COINCIDE';
 
   // Movimientos referenciados como candidatos (de cualquier línea): se
   // resuelven de un saque para mostrar nombre/total/fecha en los chips y el
@@ -77,8 +92,9 @@ export default async function ResumenDetallePage({
     const cands = (l.candidatos as Candidato[] | null) ?? [];
     for (const c of cands) candidatoIds.add(c.movimientoId);
   }
+  const incluirVinculos = { vinculosResumen: { include: { linea: { include: { resumen: true } } } } } as const;
   const movsCandidatos = candidatoIds.size
-    ? await ctx.db.movimiento.findMany({ where: { id: { in: [...candidatoIds] } }, include: { contraparte: true } })
+    ? await ctx.db.movimiento.findMany({ where: { id: { in: [...candidatoIds] } }, include: { contraparte: true, ...incluirVinculos } })
     : [];
   const movPorId = new Map(movsCandidatos.map((m) => [m.id, m]));
 
@@ -109,6 +125,12 @@ export default async function ResumenDetallePage({
     if (linea) {
       const candidatosLinea = (linea.candidatos as Candidato[] | null) ?? [];
       const editable = linea.estado === 'PENDIENTE' || linea.estado === 'SUGERIDA';
+      // Una línea conciliada puede sumar comprobantes (una transferencia por
+      // varias facturas) y quitar alguno; una imputada, no (se deshace).
+      const puedeSumar = linea.estado === 'CONCILIADA';
+      const sumaVinculos = linea.vinculos.reduce((acc, v) => acc + (v.movimiento.total != null ? Number(v.movimiento.total) : 0), 0);
+      const montoLinea = linea.monto != null ? Math.abs(Number(linea.monto)) : null;
+      const diferenciaVinculos = montoLinea != null ? montoLinea - sumaVinculos : null;
 
       panel = (
         <div className="card p-4 border-sky-200 space-y-3">
@@ -213,7 +235,16 @@ export default async function ResumenDetallePage({
                       </span>
                       <span className="text-xs text-slate-400 w-40 truncate" title={c.motivo}>{c.motivo} · {c.score}</span>
                     </Link>
-                    {editable && (
+                    {editable && ocupadoPor(mov, linea.id) && (
+                      <Link
+                        href={`${base}?linea=${linea.id}&ver=${c.movimientoId}`}
+                        className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 whitespace-nowrap"
+                        title={`Ya vinculado a la ${ocupadoPor(mov, linea.id)}: revisalo antes de compartirlo`}
+                      >
+                        ya vinculado
+                      </Link>
+                    )}
+                    {editable && !ocupadoPor(mov, linea.id) && (
                       <form action={conciliarAction}>
                         <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                         <input type="hidden" name="resumenId" value={resumen.id} />
@@ -240,12 +271,55 @@ export default async function ResumenDetallePage({
             </div>
           </div>
 
-          {editable && (
+          {linea.vinculos.length > 0 && (
+            <div className="border-t border-slate-100 pt-3 space-y-1">
+              <p className="text-xs font-semibold text-slate-500">
+                Comprobante{linea.vinculos.length !== 1 ? 's' : ''} vinculado{linea.vinculos.length !== 1 ? 's' : ''}
+                {linea.estado === 'IMPUTADA' ? ' (creado desde esta línea)' : ''}
+              </p>
+              {linea.vinculos.map((v) => (
+                <div key={v.id} className="flex items-center gap-2 text-sm border border-emerald-100 rounded px-2 py-1">
+                  <Link href={`/${params.empresaSlug}/validacion/${v.movimientoId}`} className="flex-1 truncate underline text-sky-700">
+                    {nombreContraparte(v.movimiento).nombre ?? 'Sin identificar'}
+                  </Link>
+                  <span className="text-xs text-slate-500 w-24 text-right tabular-nums">
+                    {v.movimiento.total != null ? `${v.movimiento.moneda !== 'ARS' ? `${v.movimiento.moneda} ` : ''}${formatMoney(Number(v.movimiento.total))}` : '—'}
+                  </span>
+                  <span className="text-xs text-slate-500 w-20 whitespace-nowrap">
+                    {formatFecha(v.movimiento.fechaDevengamiento ?? v.movimiento.createdAt)}
+                  </span>
+                  {puedeSumar && (
+                    <form action={desvincularAction}>
+                      <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                      <input type="hidden" name="resumenId" value={resumen.id} />
+                      <input type="hidden" name="lineaId" value={linea.id} />
+                      <input type="hidden" name="movimientoId" value={v.movimientoId} />
+                      <button className="text-xs text-slate-500 underline" title="Quitar este comprobante de la línea">quitar</button>
+                    </form>
+                  )}
+                </div>
+              ))}
+              {linea.vinculos.length > 1 && montoLinea != null && (
+                <p className={`text-xs tabular-nums ${Math.abs(diferenciaVinculos ?? 0) > 1 ? 'text-amber-700' : 'text-slate-500'}`}>
+                  Suma de los comprobantes: {formatMoney(sumaVinculos)} · línea: {formatMoney(montoLinea)}
+                  {Math.abs(diferenciaVinculos ?? 0) > 1 ? ` · diferencia ${formatMoney(Math.abs(diferenciaVinculos ?? 0))}` : ' · coinciden'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {(editable || puedeSumar) && (
             <form action={conciliarAction} className="flex items-end gap-2 border-t border-slate-100 pt-3">
               <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
               <input type="hidden" name="resumenId" value={resumen.id} />
               <input type="hidden" name="lineaId" value={linea.id} />
-              <BuscadorMovimiento empresaSlug={params.empresaSlug} />
+              <input type="hidden" name="volverAlPanel" value="1" />
+              <BuscadorMovimiento
+                empresaSlug={params.empresaSlug}
+                lineaId={linea.id}
+                etiqueta={puedeSumar ? 'Agregar comprobante' : 'Conciliar'}
+                titulo={puedeSumar ? 'Agregar otro comprobante pagado con este movimiento' : 'Buscar movimiento manualmente'}
+              />
             </form>
           )}
 
@@ -339,8 +413,10 @@ export default async function ResumenDetallePage({
           ) : (
             <p className="text-xs text-slate-500 border-t border-slate-100 pt-3">
               Esta línea ya está resuelta ({ESTADO_LABEL[linea.estado]}
-              {linea.estado === 'IGNORADA' && linea.motivoIgnorada ? `: ${linea.motivoIgnorada}` : ''}). Para
-              modificarla, deshacela desde la lista.
+              {linea.estado === 'IGNORADA' && linea.motivoIgnorada ? `: ${linea.motivoIgnorada}` : ''}).
+              {puedeSumar
+                ? ' Podés agregar o quitar comprobantes acá arriba; para imputarla o ignorarla, deshacela desde la lista.'
+                : ' Para modificarla, deshacela desde la lista.'}
             </p>
           )}
         </div>
@@ -350,10 +426,12 @@ export default async function ResumenDetallePage({
       if (searchParams.ver) {
         const mov = await ctx.db.movimiento.findFirst({
           where: { id: searchParams.ver },
-          include: { contraparte: true, categoria: true },
+          include: { contraparte: true, categoria: true, ...incluirVinculos },
         });
         if (mov) {
           const candidato = candidatosLinea.find((c) => c.movimientoId === mov.id);
+          const yaVinculadoA = ocupadoPor(mov, linea.id);
+          const yaEnEstaLinea = linea.vinculos.some((v) => v.movimientoId === mov.id);
           const pdfUrl = mov.archivoKey ? await getFileStorage().getSignedUrl(mov.archivoKey) : null;
           const numeroComprobante = [mov.puntoVenta, mov.numero].filter(Boolean).join('-');
           const cerrar = `${base}?linea=${linea.id}`;
@@ -405,14 +483,31 @@ export default async function ResumenDetallePage({
                   </p>
                 )}
 
-                {editable && (
+                {yaEnEstaLinea && (
+                  <p className="text-xs text-emerald-700">Este comprobante ya está vinculado a esta línea.</p>
+                )}
+                {(editable || puedeSumar) && !yaEnEstaLinea && (
                   <div className="flex items-center gap-2 flex-wrap">
-                    <form action={conciliarAction}>
+                    <form action={conciliarAction} className="space-y-2">
                       <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                       <input type="hidden" name="resumenId" value={resumen.id} />
                       <input type="hidden" name="lineaId" value={linea.id} />
                       <input type="hidden" name="movimientoId" value={mov.id} />
-                      <button className="btn-primary text-sm">Aceptar y conciliar</button>
+                      {yaVinculadoA && (
+                        <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-1">
+                          <p>
+                            <strong>Ojo:</strong> este comprobante ya está vinculado a la {yaVinculadoA}. Sólo corresponde
+                            vincularlo también acá si se pagó en más de un movimiento (pago parcial o en cuotas).
+                          </p>
+                          <label className="flex items-center gap-2">
+                            <input type="checkbox" name="confirmarCompartido" value="1" required />
+                            Estoy seguro: este comprobante se pagó en más de un movimiento y esta línea es uno de ellos.
+                          </label>
+                        </div>
+                      )}
+                      <button className="btn-primary text-sm">
+                        {puedeSumar ? 'Agregar comprobante a la línea' : 'Aceptar y conciliar'}
+                      </button>
                     </form>
                     {candidato && !candidato.rechazado && (
                       <form action={rechazarCandidatoAction}>
@@ -474,6 +569,32 @@ export default async function ResumenDetallePage({
       <ErrorBanner mensaje={searchParams.error} />
       <OkBanner mensaje={searchParams.ok} />
 
+      {bloqueadoPorTitular && (
+        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 space-y-2">
+          <p>
+            <strong>Este resumen parece ser de otra empresa.</strong> El PDF no menciona a {ctx.empresa.razonSocial} ni
+            su CUIT {ctx.empresa.cuit}
+            {resumen.titularDetectado ? <>: el titular que figura es <strong>{resumen.titularDetectado}</strong></> : ''}.
+            Mientras tanto no se puede conciliar, imputar ni ignorar líneas.
+          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <form action={confirmarTitularAction}>
+              <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+              <input type="hidden" name="resumenId" value={resumen.id} />
+              <button className="btn-secondary text-xs" title="Revisé el PDF y sí es de esta empresa">
+                Confirmar que pertenece a {ctx.empresa.razonSocial}
+              </button>
+            </form>
+            <span className="text-xs">Si se subió a la empresa equivocada, eliminalo (abajo) y subilo en la que corresponde.</span>
+          </div>
+        </div>
+      )}
+      {resumen.verificacionTitular === 'SIN_DATOS' && resumen.estado === 'EXTRAIDO' && (
+        <p className="text-xs text-slate-500">
+          No se pudo verificar el titular del resumen (sin capa de texto ni titular legible): revisá que sea de {ctx.empresa.razonSocial}.
+        </p>
+      )}
+
       <div className="card p-4 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
@@ -520,6 +641,16 @@ export default async function ResumenDetallePage({
             <DocViewer url={fileUrl} mime={resumen.archivoMime} nombre={resumen.archivoNombre} />
           </div>
         </details>
+
+        <div className="flex items-start justify-end border-t border-slate-100 pt-3">
+          <EliminarResumen
+            empresaSlug={params.empresaSlug}
+            resumenId={resumen.id}
+            emisor={resumen.emisor}
+            lineas={total}
+            lineasConComprobantes={resumen.lineas.filter((l) => l.vinculos.length > 0).length}
+          />
+        </div>
       </div>
 
       {panel}
@@ -618,21 +749,36 @@ export default async function ResumenDetallePage({
                     >
                       → {topMov ? nombreContraparte(topMov).nombre ?? 'Sin identificar' : '—'} · {top.score}
                     </Link>
-                    <form action={conciliarAction}>
-                      <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
-                      <input type="hidden" name="resumenId" value={resumen.id} />
-                      <input type="hidden" name="lineaId" value={l.id} />
-                      <input type="hidden" name="movimientoId" value={top.movimientoId} />
-                      <button className="btn-secondary !py-0.5 !px-2 text-xs">Conciliar</button>
-                    </form>
+                    {ocupadoPor(topMov ?? undefined, l.id) ? (
+                      <Link
+                        href={`${base}?linea=${l.id}&ver=${top.movimientoId}`}
+                        className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 whitespace-nowrap"
+                        title="Ya vinculado a otra línea: revisalo antes de compartirlo"
+                      >
+                        ya vinculado
+                      </Link>
+                    ) : (
+                      <form action={conciliarAction}>
+                        <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                        <input type="hidden" name="resumenId" value={resumen.id} />
+                        <input type="hidden" name="lineaId" value={l.id} />
+                        <input type="hidden" name="movimientoId" value={top.movimientoId} />
+                        <button className="btn-secondary !py-0.5 !px-2 text-xs">Conciliar</button>
+                      </form>
+                    )}
                   </div>
                 )}
 
-                {(l.estado === 'CONCILIADA' || l.estado === 'IMPUTADA') && l.movimientoId && (
-                  <div className="mt-1 flex items-center gap-2 text-xs">
-                    <Link href={`/${params.empresaSlug}/validacion/${l.movimientoId}`} className="underline text-sky-700 truncate">
-                      {l.movimiento ? nombreContraparte(l.movimiento).nombre ?? 'Ver movimiento' : 'Ver movimiento'}
-                    </Link>
+                {(l.estado === 'CONCILIADA' || l.estado === 'IMPUTADA') && l.vinculos.length > 0 && (
+                  <div className="mt-1 flex items-center gap-2 text-xs flex-wrap">
+                    {l.vinculos.map((v, i) => (
+                      <Link key={v.id} href={`/${params.empresaSlug}/validacion/${v.movimientoId}`} className="underline text-sky-700 truncate max-w-[180px]">
+                        {i > 0 ? '+ ' : ''}{nombreContraparte(v.movimiento).nombre ?? 'Ver movimiento'}
+                      </Link>
+                    ))}
+                    {l.vinculos.length > 1 && (
+                      <span className="rounded bg-emerald-50 px-1 text-[10px] text-emerald-700" title="Esta línea paga varios comprobantes">×{l.vinculos.length}</span>
+                    )}
                     <form action={deshacerAction}>
                       <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                       <input type="hidden" name="resumenId" value={resumen.id} />

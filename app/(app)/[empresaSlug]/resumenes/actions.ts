@@ -5,7 +5,17 @@ import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isDomainError, isForbidden } from '@/lib/errors';
 import { parsearImporteAr } from '@/lib/format';
 import { ingestarResumen, rematchearResumen } from '@/lib/resumenes/ingesta';
-import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea, rechazarCandidato, editarLinea } from '@/lib/resumenes/service';
+import {
+  conciliarLinea,
+  imputarLinea,
+  ignorarLinea,
+  deshacerLinea,
+  rechazarCandidato,
+  editarLinea,
+  desvincularLinea,
+  eliminarResumen,
+  confirmarTitularResumen,
+} from '@/lib/resumenes/service';
 import { aplicarReglasResumen, crearReglaDesdeLinea } from '@/lib/resumenes/reglas';
 
 // Actions de Resúmenes: exigen VALIDADOR (misma frontera que Validación /
@@ -81,19 +91,71 @@ export async function subirResumenAction(formData: FormData): Promise<SubirResum
   }
 }
 
+/**
+ * Vincula un comprobante a la línea. `confirmarCompartido` (checkbox) es
+ * obligatorio cuando el comprobante ya está vinculado a otra línea (se pagó en
+ * varios movimientos). Una línea CONCILIADA suma otro comprobante.
+ */
 export async function conciliarAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const resumenId = String(formData.get('resumenId'));
+  const lineaId = String(formData.get('lineaId'));
+  // Desde el panel de la línea se vuelve al panel; desde la lista, a la lista.
+  const volverA = formData.get('volverAlPanel') ? `resumenes/${resumenId}?linea=${lineaId}` : `resumenes/${resumenId}`;
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    await conciliarLinea(ctx, {
+      lineaId,
+      movimientoId: String(formData.get('movimientoId')),
+      confirmarCompartido: Boolean(formData.get('confirmarCompartido')),
+    });
+  } catch (err) {
+    volverConError(slug, volverA, err);
+  }
+  redirect(`/${slug}/${volverA}${volverA.includes('?') ? '&' : '?'}ok=${encodeURIComponent('Comprobante vinculado a la línea')}`);
+}
+
+/** Quita un comprobante de una línea conciliada (sin comprobantes vuelve a pendiente). */
+export async function desvincularAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const resumenId = String(formData.get('resumenId'));
+  const lineaId = String(formData.get('lineaId'));
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    await desvincularLinea(ctx, { lineaId, movimientoId: String(formData.get('movimientoId')) });
+  } catch (err) {
+    volverConError(slug, `resumenes/${resumenId}?linea=${lineaId}`, err);
+  }
+  redirect(`/${slug}/resumenes/${resumenId}?linea=${lineaId}&ok=${encodeURIComponent('Comprobante desvinculado')}`);
+}
+
+/** Confirma a mano que un resumen marcado como de otra empresa sí es de esta. */
+export async function confirmarTitularAction(formData: FormData): Promise<void> {
   const slug = String(formData.get('empresaSlug'));
   const resumenId = String(formData.get('resumenId'));
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
-    await conciliarLinea(ctx, {
-      lineaId: String(formData.get('lineaId')),
-      movimientoId: String(formData.get('movimientoId')),
-    });
+    await confirmarTitularResumen(ctx, { resumenId });
   } catch (err) {
     volverConError(slug, `resumenes/${resumenId}`, err);
   }
-  redirect(`/${slug}/resumenes/${resumenId}?ok=${encodeURIComponent('Línea conciliada')}`);
+  redirect(`/${slug}/resumenes/${resumenId}?ok=${encodeURIComponent('Resumen confirmado como de esta empresa')}`);
+}
+
+/**
+ * Borra un resumen (doble validación: el usuario escribe ELIMINAR y el
+ * servicio lo revalida). Sólo sin comprobantes vinculados.
+ */
+export async function eliminarResumenAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const resumenId = String(formData.get('resumenId'));
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    await eliminarResumen(ctx, { resumenId, confirmacion: String(formData.get('confirmacion') ?? '') });
+  } catch (err) {
+    volverConError(slug, `resumenes/${resumenId}`, err);
+  }
+  redirect(`/${slug}/resumenes?ok=${encodeURIComponent('Resumen eliminado')}`);
 }
 
 export async function imputarAction(formData: FormData): Promise<void> {

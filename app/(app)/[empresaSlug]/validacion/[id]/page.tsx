@@ -48,14 +48,15 @@ export default async function ValidacionDetallePage({
       lineas: true,
       creadoPor: true,
       validadoPor: true,
-      lineasResumen: {
-        where: { estado: { in: ['CONCILIADA', 'IMPUTADA'] } },
-        include: { resumen: { include: { periodo: true } } },
+      vinculosResumen: {
+        include: { linea: { include: { resumen: { include: { periodo: true } } } } },
+        orderBy: { createdAt: 'asc' },
       },
     },
   });
   if (!mov) notFound();
-  const lineaResumen = mov.lineasResumen[0] ?? null;
+  // Un comprobante puede pagarse en varias líneas (pago parcial): se listan todas.
+  const lineasResumen = mov.vinculosResumen.map((v) => v.linea);
 
   const [contrapartes, categorias, centros, clientes, proyectos, plantillas, reglas] = await Promise.all([
     ctx.db.contraparte.findMany({ where: { activa: true }, orderBy: { razonSocial: 'asc' } }),
@@ -149,13 +150,20 @@ export default async function ValidacionDetallePage({
       <ErrorBanner mensaje={searchParams.error} />
       <OkBanner mensaje={searchParams.ok} />
 
-      {lineaResumen && (
-        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-          Conciliado con la línea &quot;{lineaResumen.descriptor}&quot; del resumen {lineaResumen.resumen.emisor} (
-          {MES_LABEL[lineaResumen.resumen.periodo.mes]} {lineaResumen.resumen.periodo.anio}) —{' '}
-          <Link href={`/${params.empresaSlug}/resumenes/${lineaResumen.resumenId}?linea=${lineaResumen.id}`} className="underline">
-            ver en la bandeja
-          </Link>
+      {lineasResumen.length > 0 && (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800 space-y-1">
+          {lineasResumen.length > 1 && (
+            <p className="font-medium">Pagado en {lineasResumen.length} movimientos de resumen:</p>
+          )}
+          {lineasResumen.map((lineaResumen) => (
+            <p key={lineaResumen.id}>
+              Conciliado con la línea &quot;{lineaResumen.descriptor}&quot; del resumen {lineaResumen.resumen.emisor} (
+              {MES_LABEL[lineaResumen.resumen.periodo.mes]} {lineaResumen.resumen.periodo.anio}) —{' '}
+              <Link href={`/${params.empresaSlug}/resumenes/${lineaResumen.resumenId}?linea=${lineaResumen.id}`} className="underline">
+                ver en la bandeja
+              </Link>
+            </p>
+          ))}
         </div>
       )}
       {Boolean(flags.errorProcesamiento) && (

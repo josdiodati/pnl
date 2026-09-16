@@ -20,7 +20,8 @@ Reglas estrictas:
 - Fechas en formato YYYY-MM-DD (inferí el año del período del resumen).
 - "periodoAnio"/"periodoMes": el mes al que corresponden los movimientos (no la fecha de emisión).
 - "totalDeclarado": el saldo/total del resumen si figura (firmado), para control de completitud.
-- Los pagos del resumen anterior ("SU PAGO EN PESOS") SÍ van como líneas (positivas): el usuario las ignora en la conciliación.`;
+- Los pagos del resumen anterior ("SU PAGO EN PESOS") SÍ van como líneas (positivas): el usuario las ignora en la conciliación.
+- "titularCuenta"/"cuitTitularCuenta": el titular de la cuenta o tarjeta (razón social o nombre) y su CUIT, tal como figuran en el encabezado. Sirven para verificar que el resumen sea de la empresa correcta: no los inventes, null si no figuran.`;
 
 class AnthropicResumenExtractor implements ResumenExtractor {
   private client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });

@@ -35,6 +35,7 @@ const RELATION_SCOPE: Record<string, (empresaId: string) => object> = {
   PrepagaEmpleado: (empresaId) => ({ empleado: { empresaId } }),
   MovimientoEmpleado: (empresaId) => ({ movimiento: { empresaId } }),
   ResumenLinea: (empresaId) => ({ resumen: { empresaId } }),
+  ResumenLineaVinculo: (empresaId) => ({ linea: { resumen: { empresaId } } }),
 };
 
 const READ_OPS = new Set(['findMany', 'findFirst', 'findFirstOrThrow', 'count', 'aggregate', 'groupBy']);

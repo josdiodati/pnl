@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import type { ScopedDb } from '@/lib/empresa/scope';
+import { liberarLineasDeMovimiento } from '@/lib/resumenes/service';
 import { DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import { assertTransicion, esEstadoInicialValido, ESTADOS_BLOQUEAN_CIERRE } from './estados';
@@ -444,7 +445,7 @@ export function originalDeDuplicado(flags: unknown): string | null {
 export async function eliminarDuplicado(ctx: EmpresaContext, id: string): Promise<void> {
   const mov = await getMovimientoOrThrow(ctx, id);
   if (mov.estado !== 'DUPLICADO') throw new DomainError('Sólo se puede borrar un comprobante en estado Duplicado.');
-  await ctx.db.resumenLinea.updateMany({ where: { movimientoId: id }, data: { movimientoId: null } });
+  await liberarLineasDeMovimiento(ctx, id); // las líneas de resumen que lo tenían vuelven a PENDIENTE
   await ctx.db.movimiento.delete({ where: { id } });
   // El lote de ingesta esperaba ese archivo: descontarlo, si no la pantalla de
   // Carga lo mostraría "procesando" para siempre (total < archivos esperados).

@@ -97,6 +97,14 @@ export default async function ResumenesPage({
                     {r.estado === 'PROCESANDO' && (
                       <span className="ml-1 text-[11px] font-normal text-slate-400">(nombre del archivo)</span>
                     )}
+                    {r.verificacionTitular === 'NO_COINCIDE' && (
+                      <span
+                        className="ml-1 inline-block rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800 whitespace-nowrap"
+                        title={`El PDF no menciona a ${ctx.empresa.razonSocial} ni su CUIT${r.titularDetectado ? ` (titular: ${r.titularDetectado})` : ''}: abrilo para confirmarlo o eliminarlo`}
+                      >
+                        ⚠ ¿otra empresa?
+                      </span>
+                    )}
                   </td>
                   <td>
                     {/* Tipo y emisor los declara el PDF: hasta extraer, el que hay es provisorio. */}

@@ -87,22 +87,22 @@ enum TipoCategoria {
 }
 
 model Categoria {
-  id              String        @id @default(cuid())
-  empresaId       String
-  nombre          String
-  tipo            TipoCategoria
-  padreId         String? // hierarchy, max 2 levels
-  activa          Boolean       @default(true)
+  id                  String        @id @default(cuid())
+  empresaId           String
+  nombre              String
+  tipo                TipoCategoria
+  padreId             String? // hierarchy, max 2 levels
+  activa              Boolean       @default(true)
   // Sus movimientos computan dentro del bloque "Costos de personal" del libro
   // (ej. Prepagas) y salen del resumen general — sin doble conteo.
-  esCostoPersonal Boolean       @default(false)
+  esCostoPersonal     Boolean       @default(false)
   // Sus movimientos son impuestos (ej. Sircreb): en el Reporte P&L van al memo
   // de impuestos indirectos y NO modifican el resultado.
-  esImpuestoIndirecto Boolean   @default(false)
-  empresa         Empresa       @relation(fields: [empresaId], references: [id])
-  padre           Categoria?    @relation("jerarquia", fields: [padreId], references: [id])
-  hijas           Categoria[]   @relation("jerarquia")
-  movimientos     Movimiento[]
+  esImpuestoIndirecto Boolean       @default(false)
+  empresa             Empresa       @relation(fields: [empresaId], references: [id])
+  padre               Categoria?    @relation("jerarquia", fields: [padreId], references: [id])
+  hijas               Categoria[]   @relation("jerarquia")
+  movimientos         Movimiento[]
 
   @@unique([empresaId, nombre])
 }
@@ -348,8 +348,8 @@ model Movimiento {
   qrEstado            String? // QR AFIP/ARCA: OK | ILEGIBLE | SIN_QR | null (no aplica / imagen)
 
   // Assignment (double dimension, percentage split)
-  lineas        MovimientoLinea[]
-  lineasResumen ResumenLinea[]
+  lineas          MovimientoLinea[]
+  vinculosResumen ResumenLineaVinculo[]
 
   flags           Json? // future metadata (e.g. recurring template id, pending "I/O" flag)
   periodoId       String?
@@ -450,6 +450,13 @@ enum EstadoResumen {
   ERROR_PROCESAMIENTO
 }
 
+enum VerificacionTitular {
+  COINCIDE
+  NO_COINCIDE
+  SIN_DATOS
+  CONFIRMADA // el usuario confirmó a mano que pertenece a la empresa
+}
+
 enum EstadoLineaResumen {
   PENDIENTE
   SUGERIDA
@@ -459,15 +466,20 @@ enum EstadoLineaResumen {
 }
 
 model Resumen {
-  id             String        @id @default(cuid())
-  empresaId      String
-  tipo           TipoResumen
-  emisor         String // "VISA Santander", "Cuenta Frances"
-  periodoId      String
-  fechaCierre    DateTime?
-  totalDeclarado Decimal?      @db.Decimal(18, 2) // control de completitud
-  estado         EstadoResumen @default(PROCESANDO)
-  nota           String? // error de extracción u observaciones
+  id                  String              @id @default(cuid())
+  empresaId           String
+  tipo                TipoResumen
+  emisor              String // "VISA Santander", "Cuenta Frances"
+  periodoId           String
+  fechaCierre         DateTime?
+  totalDeclarado      Decimal?            @db.Decimal(18, 2) // control de completitud
+  estado              EstadoResumen       @default(PROCESANDO)
+  nota                String? // error de extracción u observaciones
+  // Verificación de que el resumen pertenece a la empresa: se busca el CUIT o
+  // la razón social en el texto del PDF y en el titular que declara la
+  // extracción. NO_COINCIDE bloquea la conciliación hasta confirmar a mano.
+  verificacionTitular VerificacionTitular @default(SIN_DATOS)
+  titularDetectado    String? // titular/CUIT que declaró la extracción, para mostrar el conflicto
 
   archivoKey    String
   archivoNombre String
@@ -502,18 +514,35 @@ model ResumenLinea {
   cuenta         String? // cuenta/tarjeta dentro del PDF (BBVA consolida varias)
   titular        String? // resúmenes de tarjeta agrupan por titular
   estado         EstadoLineaResumen @default(PENDIENTE)
-  movimientoId   String? // conciliado (existente) o imputado (creado)
+  // LEGACY: reemplazado por `vinculos` (N:M). Queda una release para no perder
+  // datos en el `db push` de producción; se elimina en la próxima.
+  movimientoId   String?
   candidatos     Json? // [{movimientoId, score, motivo, rechazado?}] del matching
   motivoIgnorada String?
   centroCostoId  String? // obligatorio al ignorar con motivo que computa al P&L (cargo 100% a un centro)
   reglaAplicada  String? // nombre de la ReglaResumen que la resolvió automáticamente
 
-  resumen     Resumen      @relation(fields: [resumenId], references: [id], onDelete: Cascade)
-  movimiento  Movimiento?  @relation(fields: [movimientoId], references: [id])
-  centroCosto CentroCosto? @relation("cargosResumen", fields: [centroCostoId], references: [id])
-  createdAt   DateTime     @default(now())
+  resumen     Resumen               @relation(fields: [resumenId], references: [id], onDelete: Cascade)
+  vinculos    ResumenLineaVinculo[]
+  centroCosto CentroCosto?          @relation("cargosResumen", fields: [centroCostoId], references: [id])
+  createdAt   DateTime              @default(now())
 
   @@index([resumenId])
+}
+
+// Vínculo línea de resumen ↔ comprobante (Movimiento), N:M: un comprobante
+// puede pagarse en varias líneas (pagos parciales) y una línea puede pagar
+// varios comprobantes (una transferencia por varias facturas). CONCILIADA e
+// IMPUTADA tienen al menos un vínculo; IMPUTADA exactamente uno (el creado).
+model ResumenLineaVinculo {
+  id           String       @id @default(cuid())
+  lineaId      String
+  movimientoId String
+  linea        ResumenLinea @relation(fields: [lineaId], references: [id], onDelete: Cascade)
+  movimiento   Movimiento   @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
+  createdAt    DateTime     @default(now())
+
+  @@unique([lineaId, movimientoId])
   @@index([movimientoId])
 }
 

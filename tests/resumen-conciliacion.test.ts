@@ -58,12 +58,12 @@ describe('conciliación de líneas de resumen (integración)', () => {
     const antes = await prisma.movimiento.count({ where: { empresaId } });
     await conciliarLinea(ctx, { lineaId: l.id, movimientoId: movExistente });
     expect(await prisma.movimiento.count({ where: { empresaId } })).toBe(antes);
-    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
+    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id }, include: { vinculos: true } });
     expect(actual!.estado).toBe('CONCILIADA');
-    expect(actual!.movimientoId).toBe(movExistente);
+    expect(actual!.vinculos.map((v) => v.movimientoId)).toEqual([movExistente]);
   });
 
-  it('un movimiento admite UNA sola línea conciliada', async () => {
+  it('un movimiento ya conciliado con otra línea no se comparte sin confirmación', async () => {
     const l2 = await linea();
     await expect(conciliarLinea(ctx, { lineaId: l2.id, movimientoId: movExistente })).rejects.toThrow(DomainError);
   });
@@ -71,20 +71,22 @@ describe('conciliación de líneas de resumen (integración)', () => {
   it('imputar crea un movimiento ASIGNADO origen RESUMEN', async () => {
     const l = await linea({ descriptor: 'SIRCREB', monto: -2210576.35 });
     await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] });
-    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id }, include: { movimiento: true } });
+    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id }, include: { vinculos: { include: { movimiento: true } } } });
     expect(actual!.estado).toBe('IMPUTADA');
-    expect(actual!.movimiento!.origen).toBe('RESUMEN');
-    expect(actual!.movimiento!.estado).toBe('ASIGNADO');
-    expect(Number(actual!.movimiento!.total)).toBeCloseTo(2210576.35, 2);
-    expect(actual!.movimiento!.moneda).toBe('ARS');
+    expect(actual!.vinculos).toHaveLength(1);
+    const movimiento = actual!.vinculos[0].movimiento;
+    expect(movimiento.origen).toBe('RESUMEN');
+    expect(movimiento.estado).toBe('ASIGNADO');
+    expect(Number(movimiento.total)).toBeCloseTo(2210576.35, 2);
+    expect(movimiento.moneda).toBe('ARS');
   });
 
   it('imputar una línea USD sin pesos exige montoArs', async () => {
     const l = await linea({ monto: null, moneda: 'USD', montoOrigen: -50 });
     await expect(imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] })).rejects.toThrow(/pesos/);
     await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }], montoArs: 76000 });
-    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id }, include: { movimiento: true } });
-    expect(Number(actual!.movimiento!.total)).toBe(76000);
+    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id }, include: { vinculos: { include: { movimiento: true } } } });
+    expect(Number(actual!.vinculos[0].movimiento.total)).toBe(76000);
   });
 
   it('ignorar y deshacer', async () => {
@@ -133,7 +135,7 @@ describe('conciliación de líneas de resumen (integración)', () => {
   it('deshacer una imputación anula el movimiento creado', async () => {
     const l = await linea({ descriptor: 'COMISION', monto: -500 });
     await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] });
-    const movId = (await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.movimientoId!;
+    const movId = (await prisma.resumenLineaVinculo.findFirstOrThrow({ where: { lineaId: l.id } })).movimientoId;
     await deshacerLinea(ctx, { lineaId: l.id });
     expect((await prisma.movimiento.findUnique({ where: { id: movId } }))!.estado).toBe('ANULADO');
     expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
@@ -142,7 +144,7 @@ describe('conciliación de líneas de resumen (integración)', () => {
   it('imputar deja el evento de creación en el historial del MOVIMIENTO (no solo del resumen)', async () => {
     const l = await linea({ descriptor: 'ESPEJO CREAR', monto: -800 });
     await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] });
-    const movId = (await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.movimientoId!;
+    const movId = (await prisma.resumenLineaVinculo.findFirstOrThrow({ where: { lineaId: l.id } })).movimientoId;
     const evento = await prisma.auditLog.findFirst({
       where: { empresaId, entidad: 'Movimiento', entidadId: movId, accion: 'CREAR' },
     });
@@ -156,7 +158,7 @@ describe('conciliación de líneas de resumen (integración)', () => {
   it('deshacer deja el evento ANULAR en el historial del MOVIMIENTO', async () => {
     const l = await linea({ descriptor: 'ESPEJO ANULAR', monto: -900 });
     await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] });
-    const movId = (await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.movimientoId!;
+    const movId = (await prisma.resumenLineaVinculo.findFirstOrThrow({ where: { lineaId: l.id } })).movimientoId;
     await deshacerLinea(ctx, { lineaId: l.id });
     const evento = await prisma.auditLog.findFirst({
       where: { empresaId, entidad: 'Movimiento', entidadId: movId, accion: 'ANULAR' },
@@ -184,7 +186,7 @@ describe('conciliación de líneas de resumen (integración)', () => {
   it('deshacer una imputación cuyo movimiento ya estaba ANULADO no re-anula (no-op) y libera la línea', async () => {
     const l = await linea({ descriptor: 'YA ANULADO', monto: -300 });
     await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] });
-    const movId = (await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.movimientoId!;
+    const movId = (await prisma.resumenLineaVinculo.findFirstOrThrow({ where: { lineaId: l.id } })).movimientoId;
     await prisma.movimiento.update({ where: { id: movId }, data: { estado: 'ANULADO', motivoAnulacion: 'anulado manualmente antes' } });
     await expect(deshacerLinea(ctx, { lineaId: l.id })).resolves.toBeUndefined();
     const mov = await prisma.movimiento.findUnique({ where: { id: movId } });
@@ -196,7 +198,7 @@ describe('conciliación de líneas de resumen (integración)', () => {
   it('un movimiento IMPUTADA no es conciliable ni candidato para otra línea', async () => {
     const lA = await linea({ descriptor: 'OCUPA TEST', monto: -5000, fecha: new Date('2031-05-15T00:00:00Z') });
     await imputarLinea(ctx, { lineaId: lA.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] });
-    const movId = (await prisma.resumenLinea.findUnique({ where: { id: lA.id } }))!.movimientoId!;
+    const movId = (await prisma.resumenLineaVinculo.findFirstOrThrow({ where: { lineaId: lA.id } })).movimientoId;
 
     const lB = await linea({ descriptor: 'OCUPA TEST', monto: -5000, fecha: new Date('2031-05-15T00:00:00Z') });
     await expect(conciliarLinea(ctx, { lineaId: lB.id, movimientoId: movId })).rejects.toThrow(DomainError);
@@ -278,7 +280,7 @@ describe('conciliación de líneas de resumen (integración)', () => {
     ).rejects.toThrow(/cerrado/);
     const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
     expect(actual!.estado).toBe('PENDIENTE');
-    expect(actual!.movimientoId).toBeNull();
+    expect(await prisma.resumenLineaVinculo.count({ where: { lineaId: l.id } })).toBe(0);
     await prisma.periodo.updateMany({ where: { empresaId }, data: { estado: 'ABIERTO' } });
   });
 });
