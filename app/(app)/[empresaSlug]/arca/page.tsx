@@ -219,7 +219,7 @@ export default async function ArcaPage({
         <span className="text-slate-300">|</span>
         {[
           { v: 'todos', l: 'Todos' },
-          { v: 'faltantes', l: 'Sin cargar en el libro' },
+          { v: 'faltantes', l: 'Sin cargar en PNL' },
           { v: 'cruzados', l: 'Cruzados' },
         ].map((e) => (
           <Link key={e.v} href={filtro({ estado: e.v })} className={`rounded px-2 py-0.5 ${estado === e.v ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600'}`}>
@@ -238,7 +238,7 @@ export default async function ArcaPage({
               <th>Número</th>
               <th>{origen === 'EMITIDO' ? 'Receptor' : origen === 'RECIBIDO' ? 'Emisor' : 'Contraparte'}</th>
               <th className="text-right">Total</th>
-              <th>En el libro</th>
+              <th>En PNL</th>
             </tr>
           </thead>
           <tbody>
@@ -261,7 +261,7 @@ export default async function ArcaPage({
                       ✔ cargado{c.movimiento?.estado ? ` (${c.movimiento.estado.toLowerCase()})` : ''}
                     </Link>
                   ) : (
-                    <span className="text-red-700">Falta en el libro</span>
+                    <span className="text-red-700">Falta en PNL</span>
                   )}
                 </td>
               </tr>
@@ -283,7 +283,7 @@ export default async function ArcaPage({
       {ventana && (
         <div className="card p-4 space-y-2">
           <h2 className="font-medium text-sm">
-            En el libro pero no en ARCA
+            En PNL pero no en ARCA
             <span className="ml-2 text-xs font-normal text-slate-500">
               comprobantes con CAE del {formatFecha(ventana.desde)} al {formatFecha(ventana.hasta)} que ARCA no listó en la última sincronización
             </span>
