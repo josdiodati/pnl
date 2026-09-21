@@ -19,6 +19,7 @@ import { guardarReglaDesdeAsignacion } from '@/lib/reglas/guardar-desde-asignaci
 import { nombreContraparte, cuitContraparteDe } from '@/lib/movimientos/nombre-contraparte';
 import { cuitEsValido, normalizarCuit } from '@/lib/checks';
 import { esIdentificadorExterno, generarIdentificadorExterno } from '@/lib/checks/cuit';
+import { buscarExternaPorNombre } from '@/lib/contrapartes/externa';
 import { writeAudit } from '@/lib/audit';
 import type { Moneda } from '@prisma/client';
 
@@ -65,10 +66,16 @@ export async function validarAction(formData: FormData): Promise<void> {
       const tipo = (String(formData.get('nuevaContraparte_tipo') ?? 'PROVEEDOR')) as 'PROVEEDOR' | 'CLIENTE' | 'AMBOS';
       if (!razonSocial) throw new DomainError('Ingresá la razón social de la contraparte nueva.');
       // Override no fiscal / extranjero: sin CUIT se genera un identificador
-      // distintivo EXT- (AWS, Anthropic, etc. no tienen CUIT argentino).
+      // distintivo EXT- (AWS, Anthropic, etc. no tienen CUIT argentino). Como
+      // el EXT- es aleatorio, antes se busca por nombre entre las externas que
+      // ya existen para no dar de alta el mismo proveedor dos veces.
       let cuit: string;
       if (!cuitCrudo && formData.get('overrideNoFiscal') === 'on') {
-        cuit = generarIdentificadorExterno();
+        const externas = await ctx.db.contraparte.findMany({
+          where: { cuit: { startsWith: 'EXT-' } },
+          select: { id: true, cuit: true, razonSocial: true },
+        });
+        cuit = buscarExternaPorNombre(razonSocial, externas)?.cuit ?? generarIdentificadorExterno();
       } else if (esIdentificadorExterno(cuitCrudo)) {
         cuit = cuitCrudo;
       } else {
