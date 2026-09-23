@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { subirResumenAction, type SubirResumenesResultado } from '@/app/(app)/[empresaSlug]/resumenes/actions';
+import { mensajeSinRespuesta } from '@/lib/carga/subir-en-tandas';
 
 // Carga de resúmenes de tarjeta/banco: varios PDFs de una, sin declarar tipo
 // ni emisor (los declara el propio PDF y los completa la extracción). Se manda
@@ -25,7 +26,8 @@ export function ResumenesUpload({ empresaSlug }: { empresaSlug: string }) {
         const fd = new FormData();
         fd.set('empresaSlug', empresaSlug);
         fd.append('archivos', file);
-        const r = await subirResumenAction(fd);
+        // Sin respuesta (rechazo delante de la app): error legible, no crash.
+        const r = (await subirResumenAction(fd)) ?? { ok: 0, errores: [mensajeSinRespuesta([file.name])] };
         total.ok += r.ok;
         total.errores.push(...r.errores);
         setProgreso({ hechos: i + 1, total: lista.length });
