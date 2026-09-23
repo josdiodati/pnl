@@ -218,6 +218,7 @@ export default async function MovimientosPage({
             <tr>
               <th>Fecha</th>
               <th>Descripción / contraparte</th>
+              <th>Comprobante</th>
               <th>Categoría</th>
               <th>Asignación</th>
               <th>Origen</th>
@@ -239,11 +240,13 @@ export default async function MovimientosPage({
                     {(m.vinculosEmpleados?.length ?? 0) > 0 && (
                       <span className="text-[10px] text-slate-400 ml-1">· vinculado a empleados</span>
                     )}
-                    {m.numero && (
-                      <span className="text-xs text-slate-400 ml-1">
+                  </td>
+                  <td className="whitespace-nowrap font-mono text-[12.5px] text-slate-600">
+                    {m.numero ? (
+                      <>
                         {m.tipoComprobante?.replace(/_/g, ' ')} {m.puntoVenta ? `${m.puntoVenta}-` : ''}{m.numero}
-                      </span>
-                    )}
+                      </>
+                    ) : '—'}
                   </td>
                   <td>{m.categoria?.nombre ?? '—'}</td>
                   <td className="text-xs text-slate-500">
@@ -282,12 +285,12 @@ export default async function MovimientosPage({
               );
             })}
             {movimientos.length === 0 && (
-              <tr><td colSpan={7} className="text-center text-slate-400 py-8">Sin movimientos para los filtros elegidos</td></tr>
+              <tr><td colSpan={8} className="text-center text-slate-400 py-8">Sin movimientos para los filtros elegidos</td></tr>
             )}
           </tbody>
           <tfoot>
             <tr className="bg-slate-50 font-medium">
-              <td colSpan={6} className="text-right text-sm text-slate-500">
+              <td colSpan={7} className="text-right text-sm text-slate-500">
                 Total de la selección ({movimientos.length} mov.):
               </td>
               <td className={`num ${resumen.resultado < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
