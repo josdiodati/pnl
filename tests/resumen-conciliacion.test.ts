@@ -98,7 +98,7 @@ describe('conciliación de líneas de resumen (integración)', () => {
   });
 
   it('los motivos rápidos que NO computan al P&L se ignoran sin centro de costo', async () => {
-    for (const motivo of ['Cobros', 'Rendimientos']) {
+    for (const motivo of ['Cobros', 'Rendimientos', 'Pagos ARCA']) {
       expect(MOTIVOS_IGNORO_RAPIDO as readonly string[]).toContain(motivo);
       expect(MOTIVOS_IGNORO_PNL as readonly string[]).not.toContain(motivo);
       const l = await linea();

@@ -11,5 +11,6 @@ export const MOTIVOS_IGNORO_RAPIDO = [
   'Movimiento sin consumo',
   'Cobros',
   'Rendimientos',
+  'Pagos ARCA', // impuestos pagados al fisco: no son gasto del P&L (ya computan por sus comprobantes)
   ...MOTIVOS_IGNORO_PNL,
 ] as const;

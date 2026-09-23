@@ -20,6 +20,16 @@ describe('reglaResumenMatchea (puro)', () => {
     expect(reglaResumenMatchea(regla as never, { descriptor: 'ANTHROPIC CLAUD' }, resumen)).toBe(false);
   });
 
+  it('"Pago de servicios Imp.afip" matchea los débitos de ARCA del Santander, con o sin número al frente', () => {
+    // Regla real de Ewwo (motivo "Pagos ARCA"): el punto de "Imp.afip" se
+    // normaliza a espacio en los dos lados, y el banco a veces antepone un número.
+    const regla = { ...base, descriptorContiene: 'Pago de servicios Imp.afip' };
+    const banco = { emisor: 'Santander CC $', tipo: 'BANCO' };
+    expect(reglaResumenMatchea(regla as never, { descriptor: 'Pago de servicios Imp.afip: 3071209348631419408 - tarj nro. 2856' }, banco)).toBe(true);
+    expect(reglaResumenMatchea(regla as never, { descriptor: '61767994 Pago de servicios Imp.afip: 3071209348631419408 - tarj nro. 2856' }, banco)).toBe(true);
+    expect(reglaResumenMatchea(regla as never, { descriptor: 'Debito automatico Afip -30712093486' }, banco)).toBe(false);
+  });
+
   it('condición vacía no matchea nunca (evita atrapa-todo)', () => {
     expect(reglaResumenMatchea({ ...base, descriptorContiene: '  ' } as never, { descriptor: 'CUALQUIERA' }, resumen)).toBe(false);
   });
