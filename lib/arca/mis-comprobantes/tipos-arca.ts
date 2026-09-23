@@ -22,3 +22,17 @@ export function esNotaCreditoArca(codigo: number): boolean {
 export function numeroComprobanteArca(puntoVenta: number, numero: number): string {
   return `${String(puntoVenta).padStart(5, '0')}-${String(numero).padStart(8, '0')}`;
 }
+
+/** Tipo de comprobante de PNL → código de ARCA (para cruzar con Mis Comprobantes). */
+export const CODIGO_ARCA: Record<string, number> = {
+  FACTURA_A: 1,
+  NOTA_DEBITO_A: 2,
+  NOTA_CREDITO_A: 3,
+  FACTURA_B: 6,
+  NOTA_DEBITO_B: 7,
+  NOTA_CREDITO_B: 8,
+  FACTURA_C: 11,
+  NOTA_DEBITO_C: 12,
+  NOTA_CREDITO_C: 13,
+  FACTURA_E: 19,
+};

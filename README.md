@@ -58,8 +58,6 @@ El seed deja: 3 meses de movimientos (el más viejo **cerrado**, con un comproba
 | `EXTRACTOR_MODE` | No | `mock` | `mock` \| `real` (real requiere `ANTHROPIC_API_KEY`) |
 | `ANTHROPIC_API_KEY` | No | — | API key para el extractor real |
 | `EXTRACTOR_MODEL` | No | `claude-sonnet-4-6` | Modelo del extractor real |
-| `ARCA_MODE` | No | `mock` | `mock` \| `ws` (ws requiere certificado, ver abajo) |
-| `ARCA_CERT_PATH` / `ARCA_KEY_PATH` | No | — | Certificado X.509 + clave privada (PEM) emitidos por ARCA |
 | `ARCA_CUIT` | No | — | CUIT representado ante el WS |
 | `ARCA_ENV` | No | `homo` | `homo` \| `prod` |
 | `INBOUND_EMAIL_SECRET` | No | — | Habilita el webhook de email entrante (sin esto responde 503) |
@@ -80,13 +78,8 @@ El seed deja: 3 meses de movimientos (el más viejo **cerrado**, con un comproba
 2. `.env`: `EXTRACTOR_MODE=real` + `ANTHROPIC_API_KEY=sk-ant-…` (opcional `EXTRACTOR_MODEL`).
 3. Reiniciá el **worker**. PDFs con capa de texto se mandan como texto (más barato); imágenes y escaneos van con visión. Las "instrucciones de extracción" por contraparte se inyectan al prompt automáticamente.
 
-### ARCA (constatación de comprobantes, ex wscdc)
-Trámites necesarios:
-1. **Certificado digital**: generá un CSR y obtené un certificado X.509 asociado a tu CUIT en el portal de ARCA (Administrador de Relaciones de Clave Fiscal → WSASS para homologación).
-2. **Alta del servicio**: autorizá el web service *Constatación de Comprobantes* (`wscdc`) para ese certificado/CUIT.
-3. `.env`: `ARCA_MODE=ws`, `ARCA_CERT_PATH`, `ARCA_KEY_PATH`, `ARCA_CUIT`, `ARCA_ENV=homo` (probá en homologación primero).
-
-Estado del código: `lib/arca/ws.ts` trae el esqueleto completo (TRA, llamada SOAP a `ComprobanteConstatar`, parseo de respuesta y mapeo de códigos de comprobante). **Falta la firma CMS/PKCS#7 del ticket WSAA** (marcada con `// TODO: requiere certificado ARCA`): implementala con `openssl smime -sign -outform DER -nodetach` vía child process o una librería PKCS#7. Sin eso, el modo `ws` degrada a `ERROR_CONSULTA` sin romper nada.
+### ARCA (tag "ARCA válido")
+El tag sale **únicamente** del cruce con **Mis Comprobantes** de ARCA: un comprobante queda válido cuando figura en lo bajado (emitidos o recibidos), por CAE o por CUIT emisor + tipo + punto de venta + número. Se cruza al ingresar cada comprobante (contra lo ya bajado), al corregirlo en validación, y con cada sincronización diaria (06:30) o importación manual del CSV/ZIP. No hay web service de constatación ni simulador; lo que no figura queda "no verificado" hasta que aparezca. La credencial de Clave Fiscal se carga cifrada en Configuración.
 
 ### Email entrante
 1. `.env`: `INBOUND_EMAIL_SECRET=<un secreto largo>`.
@@ -121,7 +114,7 @@ curl -X POST http://localhost:3000/api/telegram -H 'Content-Type: application/js
 
 ## Criterios de aceptación (doc 10) — resultado de la verificación
 
-Verificados sobre la base seedeada, con `EXTRACTOR_MODE=mock`, `ARCA_MODE=mock`, sin token de Telegram ni proveedor de email. Los criterios 3–11 se ejercitan con `npx tsx scripts/verify-acceptance.ts`; el 1 además con `npm test` (suite de integración) y el 1, 2 y 12 por HTTP.
+Verificados sobre la base seedeada, con `EXTRACTOR_MODE=mock`, sin token de Telegram ni proveedor de email. Los criterios 3–11 se ejercitan con `npx tsx scripts/verify-acceptance.ts`; el 1 además con `npm test` (suite de integración) y el 1, 2 y 12 por HTTP.
 
 | # | Criterio | Resultado | Evidencia |
 |---|---|---|---|
@@ -156,7 +149,7 @@ Verificados sobre la base seedeada, con `EXTRACTOR_MODE=mock`, `ARCA_MODE=mock`,
 
 ## Limitaciones conocidas
 
-- La firma CMS del ticket WSAA (modo `ARCA_MODE=ws`) es un punto de extensión documentado, no implementado.
+- La constatación por web service de ARCA (wscdc) se descartó: Mis Comprobantes es la única fuente del tag ARCA.
 - `FILE_STORAGE=s3` está definido en la interfaz pero sin implementación (LocalFileStorage cubre dev y deploy en una VM).
 - PDF multipágina = un solo comprobante (el split automático es fast-follow declarado en doc 04).
 - El visor PDF usa el visor nativo del navegador (zoom/rotación manual solo para imágenes).

@@ -27,9 +27,10 @@ export function EstadoBadge({ estado }: { estado: EstadoMovimiento }) {
 
 export function ArcaBadge({ estado }: { estado: string }) {
   const estilos: Record<string, [string, string]> = {
+    // Única fuente del tag: el cruce con Mis Comprobantes de ARCA.
     VALIDO: ['bg-accent-soft text-accent-strong', 'ARCA válido'],
     INVALIDO: ['bg-red-100 text-red-800', 'ARCA INVÁLIDO'],
-    ERROR_CONSULTA: ['bg-line/60 text-ink-mute', 'ARCA: error de consulta'],
+    ERROR_CONSULTA: ['bg-line/60 text-ink-mute', 'ARCA no verificado'],
     NO_VERIFICADO: ['bg-line/40 text-ink-mute/80', 'ARCA no verificado'],
   };
   const [clase, label] = estilos[estado] ?? estilos.NO_VERIFICADO;

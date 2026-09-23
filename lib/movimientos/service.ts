@@ -46,7 +46,7 @@ export function esConstatable(cae: string | null | undefined): boolean {
   return Boolean(cae && cae.trim());
 }
 
-/** Gate de ARCA: un comprobante solo se valida si ARCA dice VALIDO, salvo override.
+/** Gate de ARCA: un comprobante solo se valida si figura en Mis Comprobantes (VALIDO), salvo override.
  *
  *  Excepción: un comprobante CON CAE que todavía no se constató está *pendiente*,
  *  no es *no constatable*. Puede haber destiempo (el job no corrió, el webservice
@@ -297,12 +297,12 @@ export async function validarMovimiento(ctx: EmpresaContext, id: string, datos: 
     },
   });
 
-  // Reencolar la constatación si quedó pendiente. El job de ARCA se encola una
-  // sola vez, en la extracción, y sólo si el OCR sacó el CAE: sin esto, un CAE
-  // cargado a mano no se constata NUNCA.
+  // Volver a cruzar con Mis Comprobantes si todavía no figura: el validador
+  // puede haber corregido el CAE, el número o el CUIT, y con el dato bueno el
+  // cruce cierra sin esperar la próxima sync.
   if (
     (actualizado.origen === 'COMPROBANTE' || actualizado.origen === 'VENTA_COMPROBANTE') &&
-    esConstatable(actualizado.cae) &&
+    (esConstatable(actualizado.cae) || (actualizado.cuitEmisor && actualizado.puntoVenta && actualizado.numero)) &&
     actualizado.arcaEstado !== 'VALIDO'
   ) {
     await enqueueJob('ARCA', { movimientoId: mov.id, empresaId: ctx.empresa.id }, ctx.empresa.id);

@@ -1,5 +1,5 @@
 // Job queue worker: polls the Job table and runs the async pipeline
-// (extraction, ARCA verification, channel ingestion). Run with `npm run worker`
+// (extraction, cruce con Mis Comprobantes de ARCA, channel ingestion). Run with `npm run worker`
 // alongside `npm run dev`/`start`. Single DB, no Redis.
 import { claimNextJob, completeJob, failJob } from '@/lib/jobs';
 import { procesarExtraccion, procesarArca, marcarErrorProcesamiento } from '@/lib/pipeline';
@@ -91,7 +91,7 @@ async function correrProgramador(): Promise<void> {
 }
 
 async function main() {
-  console.log('[worker] iniciado. EXTRACTOR_MODE=%s ARCA_MODE=%s', process.env.EXTRACTOR_MODE ?? 'mock', process.env.ARCA_MODE ?? 'mock');
+  console.log('[worker] iniciado. EXTRACTOR_MODE=%s', process.env.EXTRACTOR_MODE ?? 'mock');
   process.on('SIGINT', () => { corriendo = false; });
   process.on('SIGTERM', () => { corriendo = false; });
   while (corriendo) {

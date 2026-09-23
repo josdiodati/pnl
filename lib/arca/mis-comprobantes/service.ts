@@ -1,12 +1,13 @@
-import type { Empresa } from '@prisma/client';
+import type { ComprobanteArca, Empresa } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { scopedDb, type ScopedDb } from '@/lib/empresa/scope';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import { DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
+import { assertTransicion } from '@/lib/movimientos/estados';
 import { enqueueJob } from '@/lib/jobs';
 import { cuitEsValido, formatearCuit, normalizarCuit } from '@/lib/checks/cuit';
-import { CODIGO_ARCA } from '@/lib/arca';
+import { CODIGO_ARCA } from './tipos-arca';
 import { cifrarSecreto, descifrarSecreto } from './cifrado';
 import { parsearCsvMisComprobantes } from './csv';
 import { extraerCsvDeZip } from './zip';
@@ -202,7 +203,13 @@ export async function guardarFilasArca(
   return { nuevos, actualizados };
 }
 
-// ---------- cruce con el libro ----------
+// ---------- cruce con el libro: la ÚNICA fuente del tag ARCA ----------
+//
+// El tag "ARCA válido" de un comprobante significa una sola cosa: figura en
+// Mis Comprobantes de ARCA (emitidos o recibidos) y quedó vinculado a esa
+// fila. No hay web service ni simulador: si no cruza, queda NO_VERIFICADO.
+// El cruce corre al sincronizar/importar (todo lo bajado contra el libro) y
+// al ingresar o corregir un comprobante (ese comprobante contra lo ya bajado).
 
 const TIPO_POR_CODIGO: Record<number, string> = Object.fromEntries(Object.entries(CODIGO_ARCA).map(([tipo, codigo]) => [codigo, tipo]));
 
@@ -212,23 +219,42 @@ function numero(s: string | null | undefined): number | null {
   return Number.isFinite(n) && String(s).trim() ? n : null;
 }
 
+const SELECT_MOV_CRUZABLE = {
+  id: true, estado: true, origen: true, cuitEmisor: true, tipoComprobante: true, puntoVenta: true, numero: true, cae: true,
+  arcaEstado: true, arcaDetalle: true, flags: true,
+} as const;
+
+export type MovimientoCruzable = {
+  id: string;
+  estado: string;
+  origen: string;
+  cuitEmisor: string | null;
+  tipoComprobante: string | null;
+  puntoVenta: string | null;
+  numero: string | null;
+  cae: string | null;
+  arcaEstado: string;
+  arcaDetalle: string | null;
+  flags: unknown;
+};
+
+export type ComprobanteCruzable = Pick<ComprobanteArca, 'id' | 'origen' | 'fechaEmision' | 'tipoComprobante' | 'puntoVenta' | 'numeroDesde' | 'codigoAutorizacion' | 'nroDocContraparte'>;
+
 /**
- * Cruza los comprobantes de ARCA sin cruzar contra el libro: por código de
- * autorización, o por CUIT emisor + tipo + punto de venta + número. Los que
- * cruzan marcan al movimiento como VALIDO ante ARCA (fuente: Mis
- * Comprobantes) en vez de la constatación por web service.
+ * Empareja (puro) comprobantes de ARCA con movimientos del libro: por código
+ * de autorización (CAE/CAI), o por CUIT emisor + tipo + punto de venta +
+ * número. Cada movimiento cruza con una sola fila.
  */
-export async function cruzarComprobantesArca(db: ScopedDb, empresa: Pick<Empresa, 'id' | 'cuit'>, usuarioId: string | null): Promise<{ cruzados: number }> {
-  const pendientes = await db.comprobanteArca.findMany({ where: { movimientoId: null } });
-  if (pendientes.length === 0) return { cruzados: 0 };
-  const movimientos = await db.movimiento.findMany({
-    where: { estado: { notIn: ['ANULADO', 'DUPLICADO'] }, OR: [{ cae: { not: null } }, { AND: [{ puntoVenta: { not: null } }, { numero: { not: null } }] }] },
-    select: { id: true, cuitEmisor: true, tipoComprobante: true, puntoVenta: true, numero: true, cae: true, arcaEstado: true, origen: true },
-  });
-  const porCae = new Map<string, typeof movimientos>();
-  const porClave = new Map<string, typeof movimientos>();
+export function emparejarConLibro(
+  comprobantes: ComprobanteCruzable[],
+  movimientos: MovimientoCruzable[],
+  cuitEmpresaRaw: string,
+): { comprobante: ComprobanteCruzable; movimiento: MovimientoCruzable }[] {
+  const cuitEmpresa = normalizarCuit(cuitEmpresaRaw);
+  const porCae = new Map<string, MovimientoCruzable[]>();
+  const porClave = new Map<string, MovimientoCruzable[]>();
   for (const m of movimientos) {
-    if (m.cae) porCae.set(m.cae.trim(), [...(porCae.get(m.cae.trim()) ?? []), m]);
+    if (m.cae?.trim()) porCae.set(m.cae.trim(), [...(porCae.get(m.cae.trim()) ?? []), m]);
     const pv = numero(m.puntoVenta);
     const nro = numero(m.numero);
     if (m.cuitEmisor && m.tipoComprobante && pv != null && nro != null) {
@@ -236,10 +262,10 @@ export async function cruzarComprobantesArca(db: ScopedDb, empresa: Pick<Empresa
       porClave.set(k, [...(porClave.get(k) ?? []), m]);
     }
   }
-  const cuitEmpresa = normalizarCuit(empresa.cuit);
-  let cruzados = 0;
-  for (const c of pendientes) {
-    const cuitEmisor = c.origen === 'RECIBIDO' ? c.nroDocContraparte : cuitEmpresa;
+  const usados = new Set<string>();
+  const pares: { comprobante: ComprobanteCruzable; movimiento: MovimientoCruzable }[] = [];
+  for (const c of comprobantes) {
+    const cuitEmisor = c.origen === 'RECIBIDO' ? normalizarCuit(c.nroDocContraparte) : cuitEmpresa;
     let candidatos = c.codigoAutorizacion ? (porCae.get(c.codigoAutorizacion.trim()) ?? []) : [];
     // Con CAE, el CUIT emisor tiene que coincidir si el movimiento lo tiene.
     candidatos = candidatos.filter((m) => !m.cuitEmisor || !cuitEmisor || normalizarCuit(m.cuitEmisor) === cuitEmisor);
@@ -247,14 +273,29 @@ export async function cruzarComprobantesArca(db: ScopedDb, empresa: Pick<Empresa
       const tipo = TIPO_POR_CODIGO[c.tipoComprobante];
       if (tipo) candidatos = porClave.get(`${cuitEmisor}|${tipo}|${c.puntoVenta}|${c.numeroDesde}`) ?? [];
     }
-    if (c.origen === 'EMITIDO') candidatos = candidatos.filter((m) => m.origen === 'VENTA_COMPROBANTE' || m.origen === 'VENTA_MANUAL' || normalizarCuit(m.cuitEmisor ?? '') === cuitEmpresa);
-    const mov = candidatos[0];
+    if (c.origen === 'EMITIDO') {
+      candidatos = candidatos.filter((m) => m.origen === 'VENTA_COMPROBANTE' || m.origen === 'VENTA_MANUAL' || normalizarCuit(m.cuitEmisor ?? '') === cuitEmpresa);
+    }
+    const mov = candidatos.find((m) => !usados.has(m.id));
     if (!mov) continue;
-    await db.comprobanteArca.update({ where: { id: c.id }, data: { movimientoId: mov.id } });
-    cruzados++;
+    usados.add(mov.id);
+    pares.push({ comprobante: c, movimiento: mov });
+  }
+  return pares;
+}
+
+function detalleMisComprobantes(c: Pick<ComprobanteArca, 'origen' | 'fechaEmision'>): string {
+  return `Figura en Mis Comprobantes de ARCA (${c.origen === 'EMITIDO' ? 'emitido' : 'recibido'}, ${c.fechaEmision.toISOString().slice(0, 10)})`;
+}
+
+/** Vincula la fila de ARCA al movimiento y marca el tag VALIDO (con auditoría). */
+async function vincular(db: ScopedDb, par: { comprobante: ComprobanteCruzable; movimiento: MovimientoCruzable }, usuarioId: string | null): Promise<void> {
+  const { comprobante: c, movimiento: mov } = par;
+  await db.comprobanteArca.update({ where: { id: c.id }, data: { movimientoId: mov.id } });
+  const detalle = detalleMisComprobantes(c);
+  if (mov.arcaEstado !== 'VALIDO' || mov.arcaDetalle !== detalle) {
+    await db.movimiento.update({ where: { id: mov.id }, data: { arcaEstado: 'VALIDO', arcaDetalle: detalle, arcaConsultadoAt: new Date() } });
     if (mov.arcaEstado !== 'VALIDO') {
-      const detalle = `Figura en Mis Comprobantes de ARCA (${c.origen === 'EMITIDO' ? 'emitido' : 'recibido'}, ${c.fechaEmision.toISOString().slice(0, 10)})`;
-      await db.movimiento.update({ where: { id: mov.id }, data: { arcaEstado: 'VALIDO', arcaDetalle: detalle, arcaConsultadoAt: new Date() } });
       await writeAudit(db, {
         usuarioId,
         entidad: 'Movimiento',
@@ -265,7 +306,118 @@ export async function cruzarComprobantesArca(db: ScopedDb, empresa: Pick<Empresa
       });
     }
   }
+  // La extracción detectó un posible duplicado (mismo CUIT + tipo + PV + número)
+  // pero no hubo QR para confirmarlo: que ARCA lo tenga registrado lo confirma.
+  const dupIds = (mov.flags as { duplicados?: string[] } | null)?.duplicados ?? [];
+  if (dupIds.length > 0 && mov.estado === 'PENDIENTE_VALIDACION') {
+    assertTransicion(mov.estado as never, 'DUPLICADO');
+    await db.movimiento.update({ where: { id: mov.id }, data: { estado: 'DUPLICADO' } });
+    await writeAudit(db, {
+      usuarioId,
+      entidad: 'Movimiento',
+      entidadId: mov.id,
+      accion: 'AUTO_DUPLICADO',
+      despues: { estado: 'DUPLICADO', duplicados: dupIds, confirmadoPor: 'MIS_COMPROBANTES' },
+    });
+  }
+}
+
+const WHERE_MOV_CRUZABLE = {
+  estado: { notIn: ['ANULADO', 'DUPLICADO'] },
+  OR: [{ cae: { not: null } }, { AND: [{ puntoVenta: { not: null } }, { numero: { not: null } }] }],
+} as const;
+
+/**
+ * Cruza todo lo bajado de ARCA que todavía no cruzó contra el libro, y al
+ * final reconcilia el tag de todos los comprobantes. Corre tras cada sync e
+ * importación manual.
+ */
+export async function cruzarComprobantesArca(db: ScopedDb, empresa: Pick<Empresa, 'id' | 'cuit'>, usuarioId: string | null): Promise<{ cruzados: number }> {
+  const pendientes = await db.comprobanteArca.findMany({ where: { movimientoId: null } });
+  let cruzados = 0;
+  if (pendientes.length > 0) {
+    const movimientos = await db.movimiento.findMany({ where: WHERE_MOV_CRUZABLE as never, select: SELECT_MOV_CRUZABLE });
+    for (const par of emparejarConLibro(pendientes, movimientos, empresa.cuit)) {
+      await vincular(db, par, usuarioId);
+      cruzados++;
+    }
+  }
+  await reconciliarTagArca(db, usuarioId);
   return { cruzados };
+}
+
+/**
+ * Cruza UN comprobante del libro (recién ingresado o corregido a mano) contra
+ * lo ya bajado de ARCA, sin esperar la próxima sync.
+ */
+export async function cruzarMovimientoConArca(
+  db: ScopedDb,
+  empresa: Pick<Empresa, 'id' | 'cuit'>,
+  movimientoId: string,
+  usuarioId: string | null,
+): Promise<{ cruzado: boolean }> {
+  const mov = await db.movimiento.findFirst({ where: { id: movimientoId, ...WHERE_MOV_CRUZABLE } as never, select: SELECT_MOV_CRUZABLE });
+  if (!mov) return { cruzado: false };
+  const yaVinculado = await db.comprobanteArca.findFirst({ where: { movimientoId: mov.id } });
+  if (yaVinculado) {
+    await vincular(db, { comprobante: yaVinculado, movimiento: mov }, usuarioId);
+    return { cruzado: true };
+  }
+  const pendientes = await db.comprobanteArca.findMany({ where: { movimientoId: null } });
+  const par = emparejarConLibro(pendientes, [mov], empresa.cuit)[0];
+  if (!par) return { cruzado: false };
+  await vincular(db, par, usuarioId);
+  return { cruzado: true };
+}
+
+/**
+ * Reconcilia el tag con su única fuente: VALIDO si y sólo si el comprobante
+ * está vinculado a una fila de Mis Comprobantes; cualquier otro valor
+ * (heredado del simulador viejo, o de una fila que se desvinculó) vuelve a
+ * NO_VERIFICADO. No toca el estado del libro (un OBSERVADO lo resuelve una
+ * persona). Idempotente.
+ */
+export async function reconciliarTagArca(db: ScopedDb, usuarioId: string | null): Promise<{ corregidos: number }> {
+  const vinculados = await db.comprobanteArca.findMany({ where: { movimientoId: { not: null } }, select: { id: true, movimientoId: true, origen: true, fechaEmision: true } });
+  const porMov = new Map<string, (typeof vinculados)[number]>();
+  for (const c of vinculados) if (c.movimientoId && !porMov.has(c.movimientoId)) porMov.set(c.movimientoId, c);
+  const movs = await db.movimiento.findMany({
+    where: { origen: { in: ['COMPROBANTE', 'VENTA_COMPROBANTE'] } },
+    select: { id: true, arcaEstado: true, arcaDetalle: true },
+  });
+  let corregidos = 0;
+  for (const m of movs) {
+    const c = porMov.get(m.id);
+    if (c) {
+      const detalle = detalleMisComprobantes(c);
+      if (m.arcaEstado === 'VALIDO' && m.arcaDetalle === detalle) continue;
+      await db.movimiento.update({ where: { id: m.id }, data: { arcaEstado: 'VALIDO', arcaDetalle: detalle, arcaConsultadoAt: new Date() } });
+      if (m.arcaEstado !== 'VALIDO') {
+        await writeAudit(db, {
+          usuarioId,
+          entidad: 'Movimiento',
+          entidadId: m.id,
+          accion: 'ARCA_CONSTATAR',
+          antes: { arcaEstado: m.arcaEstado },
+          despues: { arcaEstado: 'VALIDO', fuente: 'MIS_COMPROBANTES', detalle, comprobanteArcaId: c.id },
+        });
+      }
+      corregidos++;
+    } else if (m.arcaEstado !== 'NO_VERIFICADO') {
+      const detalle = 'No figura (todavía) en lo bajado de Mis Comprobantes de ARCA';
+      await db.movimiento.update({ where: { id: m.id }, data: { arcaEstado: 'NO_VERIFICADO', arcaDetalle: detalle, arcaConsultadoAt: new Date() } });
+      await writeAudit(db, {
+        usuarioId,
+        entidad: 'Movimiento',
+        entidadId: m.id,
+        accion: 'ARCA_CONSTATAR',
+        antes: { arcaEstado: m.arcaEstado, arcaDetalle: m.arcaDetalle },
+        despues: { arcaEstado: 'NO_VERIFICADO', fuente: 'MIS_COMPROBANTES', detalle },
+      });
+      corregidos++;
+    }
+  }
+  return { corregidos };
 }
 
 // ---------- importación manual ----------

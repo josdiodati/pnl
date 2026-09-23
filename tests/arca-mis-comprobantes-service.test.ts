@@ -9,6 +9,8 @@ import {
   probarCredencialArca,
   importarMisComprobantes,
   cruzarComprobantesArca,
+  cruzarMovimientoConArca,
+  reconciliarTagArca,
   sincronizarMisComprobantes,
   encolarSyncsPendientes,
   ventanaSyncDiaria,
@@ -213,6 +215,72 @@ describe('Mis Comprobantes: servicio (integración)', () => {
     const r = await cruzarComprobantesArca(ctx.db, ctx.empresa, usuarioId);
     expect(r.cruzados).toBe(1);
     expect((await prisma.comprobanteArca.findFirstOrThrow({ where: { empresaId } })).movimientoId).toBe(venta.id);
+  });
+
+  // ---------- el cruce es la ÚNICA fuente del tag ARCA ----------
+
+  const arcaRecibido = (over: Record<string, unknown>) =>
+    prisma.comprobanteArca.create({
+      data: { empresaId, origen: 'RECIBIDO', fechaEmision: new Date('2026-08-01T00:00:00Z'), tipoComprobante: 1, puntoVenta: 1, numeroDesde: 9, numeroHasta: 9, codigoAutorizacion: '86294874222078', nroDocContraparte: '30656631615', fuente: 'CSV', sincronizadoAt: new Date(), ...(over as object) } as never,
+    });
+
+  it('cruzarMovimientoConArca: un comprobante recién ingresado cruza contra lo ya bajado, sin esperar la próxima sync', async () => {
+    const c = await arcaRecibido({});
+    const mov = await movimiento({ cuitEmisor: '30656631615', tipoComprobante: 'FACTURA_A', puntoVenta: '1', numero: '9', cae: '86294874222078', arcaEstado: 'NO_VERIFICADO' });
+    const r = await cruzarMovimientoConArca(ctx.db, ctx.empresa, mov.id, usuarioId);
+    expect(r.cruzado).toBe(true);
+    expect((await prisma.comprobanteArca.findUniqueOrThrow({ where: { id: c.id } })).movimientoId).toBe(mov.id);
+    const actual = await prisma.movimiento.findUniqueOrThrow({ where: { id: mov.id } });
+    expect(actual.arcaEstado).toBe('VALIDO');
+    expect(actual.arcaDetalle).toContain('Mis Comprobantes');
+  });
+
+  it('cruzarMovimientoConArca: sin comprobante de ARCA que coincida, no toca el tag', async () => {
+    await arcaRecibido({ numeroDesde: 500, numeroHasta: 500, codigoAutorizacion: '11111111111111' });
+    const mov = await movimiento({ cuitEmisor: '30656631615', tipoComprobante: 'FACTURA_A', puntoVenta: '1', numero: '9', cae: '86294874222078', arcaEstado: 'NO_VERIFICADO' });
+    const r = await cruzarMovimientoConArca(ctx.db, ctx.empresa, mov.id, usuarioId);
+    expect(r.cruzado).toBe(false);
+    expect((await prisma.movimiento.findUniqueOrThrow({ where: { id: mov.id } })).arcaEstado).toBe('NO_VERIFICADO');
+  });
+
+  it('el cruce confirma un duplicado detectado en la extracción: el pendiente con flag pasa a DUPLICADO', async () => {
+    const original = await movimiento({ cuitEmisor: '30656631615', tipoComprobante: 'FACTURA_A', puntoVenta: '1', numero: '9', cae: '86294874222078', arcaEstado: 'VALIDO' });
+    const repetido = await movimiento({ estado: 'PENDIENTE_VALIDACION', cuitEmisor: '30656631615', tipoComprobante: 'FACTURA_A', puntoVenta: '1', numero: '9', cae: '86294874222078', arcaEstado: 'NO_VERIFICADO', flags: { duplicados: [original.id] } });
+    await arcaRecibido({});
+    await cruzarMovimientoConArca(ctx.db, ctx.empresa, repetido.id, usuarioId);
+    const actual = await prisma.movimiento.findUniqueOrThrow({ where: { id: repetido.id } });
+    expect(actual.arcaEstado).toBe('VALIDO');
+    expect(actual.estado).toBe('DUPLICADO');
+  });
+
+  it('reconciliarTagArca: VALIDO si y sólo si cruza con Mis Comprobantes; lo demás vuelve a NO_VERIFICADO', async () => {
+    // Herencia del simulador viejo: "válido" sin respaldo, e "inválido" con respaldo.
+    const sinRespaldo = await movimiento({ cae: '86000000000001', arcaEstado: 'VALIDO', arcaDetalle: 'Comprobante autorizado (mock)' });
+    const conRespaldo = await movimiento({ cae: '86373175667100', arcaEstado: 'INVALIDO', arcaDetalle: 'mock: CAE termina en 00', estado: 'OBSERVADO' });
+    const yaBien = await movimiento({ cae: '86294874222078', arcaEstado: 'VALIDO', arcaDetalle: 'Comprobante autorizado (mock)' });
+    const errorConsulta = await movimiento({ cae: null, arcaEstado: 'ERROR_CONSULTA' });
+    await arcaRecibido({ codigoAutorizacion: '86373175667100', movimientoId: conRespaldo.id });
+    await arcaRecibido({ numeroDesde: 10, numeroHasta: 10, codigoAutorizacion: '86294874222078', movimientoId: yaBien.id });
+
+    const r = await reconciliarTagArca(ctx.db, usuarioId);
+    expect(r.corregidos).toBe(4);
+    const leer = (id: string) => prisma.movimiento.findUniqueOrThrow({ where: { id } });
+    expect((await leer(sinRespaldo.id)).arcaEstado).toBe('NO_VERIFICADO');
+    const arreglado = await leer(conRespaldo.id);
+    expect(arreglado.arcaEstado).toBe('VALIDO');
+    expect(arreglado.arcaDetalle).toContain('Mis Comprobantes');
+    expect(arreglado.estado).toBe('OBSERVADO'); // el estado del libro no se toca: lo resuelve una persona
+    expect((await leer(yaBien.id)).arcaDetalle).toContain('Mis Comprobantes'); // el detalle "mock" se reescribe
+    expect((await leer(errorConsulta.id)).arcaEstado).toBe('NO_VERIFICADO');
+
+    // Idempotente: una segunda corrida no cambia nada.
+    expect((await reconciliarTagArca(ctx.db, usuarioId)).corregidos).toBe(0);
+  });
+
+  it('cruzarComprobantesArca reconcilia al final: un "válido" sin respaldo cae en la misma corrida', async () => {
+    const fantasma = await movimiento({ cae: '86000000000002', arcaEstado: 'VALIDO', arcaDetalle: 'Comprobante autorizado (mock)' });
+    await cruzarComprobantesArca(ctx.db, ctx.empresa, usuarioId);
+    expect((await prisma.movimiento.findUniqueOrThrow({ where: { id: fantasma.id } })).arcaEstado).toBe('NO_VERIFICADO');
   });
 
   // ---------- sync ----------

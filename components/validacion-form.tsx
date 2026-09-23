@@ -172,8 +172,8 @@ export function ValidacionForm({
 
       {(mov.arcaEstado === 'NO_VERIFICADO' || mov.arcaEstado === 'ERROR_CONSULTA') && cae.trim() && (
         <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-          <strong>ARCA: pendiente de constatación.</strong> El comprobante tiene CAE, así que se
-          constata en segundo plano. Podés validarlo: si ARCA lo rechaza, se aparta solo a Observado.
+          <strong>ARCA: todavía no figura en Mis Comprobantes.</strong> El comprobante tiene CAE; se
+          cruza con cada sincronización diaria de Mis Comprobantes y queda válido apenas aparece. Podés validarlo igual.
         </div>
       )}
 

@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db';
 import { scopedDb } from '@/lib/empresa/scope';
 import { getFileStorage } from '@/lib/storage';
 import { getExtractor } from '@/lib/extractor';
-import { getArca } from '@/lib/arca';
+import { cruzarMovimientoConArca } from '@/lib/arca/mis-comprobantes/service';
 import { evaluarCampos, buscarDuplicados, normalizarCuit } from '@/lib/checks';
 import { assertTransicion } from '@/lib/movimientos/estados';
 import { getOrCreatePeriodo } from '@/lib/periodos';
@@ -490,88 +490,24 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     });
   }
 
-  // Solo se constata por ARCA un comprobante fiscal argentino con CAE. Los no
-  // fiscales/extranjeros (esComprobanteFiscalArg=false) quedan NO_VERIFICADO y
-  // exigen overrideNoFiscal en la validación.
-  if (extraccion.cae && extraccion.esComprobanteFiscalArg) {
+  // El tag ARCA sale sólo del cruce con Mis Comprobantes: se intenta apenas hay
+  // con qué cruzar (CAE, o CUIT emisor + punto de venta + número). Sin eso queda
+  // NO_VERIFICADO y la validación exige overrideNoFiscal.
+  if (extraccion.cae || (extraccion.cuitEmisor && extraccion.puntoVenta && extraccion.numero)) {
     await enqueueJob('ARCA', { movimientoId: mov.id, empresaId: payload.empresaId }, payload.empresaId);
   }
 }
 
-/** Verifies the voucher against ARCA and stores the badge state. */
+/**
+ * Job ARCA: cruza el comprobante con lo bajado de Mis Comprobantes, la única
+ * fuente del tag "ARCA válido". Si no figura (todavía), no cambia nada: la
+ * próxima sync diaria vuelve a intentar con lo que baje.
+ */
 export async function procesarArca(payload: { movimientoId: string; empresaId: string }): Promise<void> {
   const db = scopedDb(payload.empresaId);
-  const mov = await db.movimiento.findFirst({ where: { id: payload.movimientoId } });
-  if (!mov) throw new Error(`Movimiento ${payload.movimientoId} inexistente`);
-
-  const resultado = await getArca().constatar({
-    cuitEmisor: mov.cuitEmisor ?? '',
-    tipoComprobante: mov.tipoComprobante ?? 'OTRO',
-    puntoVenta: Number(mov.puntoVenta ?? 0),
-    numero: Number(mov.numero ?? 0),
-    fecha: mov.fechaDevengamiento?.toISOString().slice(0, 10) ?? '',
-    importeTotal: Number(mov.total ?? 0),
-    cae: mov.cae ?? '',
-  });
-
-  await db.movimiento.update({
-    where: { id: mov.id },
-    data: {
-      arcaEstado: resultado.estado,
-      arcaDetalle: resultado.detalle ?? null,
-      arcaConsultadoAt: resultado.consultadoAt,
-    },
-  });
-
-  await writeAudit(db, {
-    entidad: 'Movimiento',
-    entidadId: mov.id,
-    accion: 'ARCA_CONSTATAR',
-    despues: { estado: resultado.estado, detalle: resultado.detalle },
-  });
-
-  // ARCA responde INVALIDO sobre algo que ya se había validado (o asignado)
-  // mientras la constatación estaba pendiente: se aparta a OBSERVADO. Deja de
-  // impactar el P&L hasta que alguien lo resuelva — ningún comprobante inválido
-  // queda callado en el libro.
-  if (
-    resultado.estado === 'INVALIDO' &&
-    (mov.estado === 'VALIDADO' || mov.estado === 'ASIGNADO')
-  ) {
-    assertTransicion(mov.estado, 'OBSERVADO');
-    await db.movimiento.update({
-      where: { id: mov.id },
-      data: {
-        estado: 'OBSERVADO',
-        flags: {
-          ...((mov.flags as object | null) ?? {}),
-          notaObservacion: `ARCA constató el comprobante como INVÁLIDO: ${resultado.detalle ?? 'sin detalle'}`,
-        } as never,
-      },
-    });
-    await writeAudit(db, {
-      entidad: 'Movimiento',
-      entidadId: mov.id,
-      accion: 'AUTO_OBSERVAR',
-      antes: { estado: mov.estado },
-      despues: { estado: 'OBSERVADO', motivo: 'ARCA INVALIDO post-validación', detalle: resultado.detalle },
-    });
-    return;
-  }
-
-  // Si ARCA confirma el comprobante (VALIDO) y había duplicado detectado (cuando
-  // no hubo QR para confirmarlo en la extracción), apartarlo a DUPLICADO.
-  const dupIds = (mov.flags as { duplicados?: string[] } | null)?.duplicados ?? [];
-  if (resultado.estado === 'VALIDO' && dupIds.length > 0 && mov.estado === 'PENDIENTE_VALIDACION') {
-    assertTransicion(mov.estado, 'DUPLICADO');
-    await db.movimiento.update({ where: { id: mov.id }, data: { estado: 'DUPLICADO' } });
-    await writeAudit(db, {
-      entidad: 'Movimiento',
-      entidadId: mov.id,
-      accion: 'AUTO_DUPLICADO',
-      despues: { estado: 'DUPLICADO', duplicados: dupIds, confirmadoPor: 'ARCA' },
-    });
-  }
+  const empresa = await prisma.empresa.findUnique({ where: { id: payload.empresaId }, select: { id: true, cuit: true } });
+  if (!empresa) throw new Error(`Empresa ${payload.empresaId} inexistente`);
+  await cruzarMovimientoConArca(db, empresa, payload.movimientoId, null);
 }
 
 /** Final-failure hook: the worker flips the movement to ERROR_PROCESAMIENTO. */

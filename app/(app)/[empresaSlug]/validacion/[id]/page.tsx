@@ -358,7 +358,7 @@ export default async function ValidacionDetallePage({
               <form action={reArcaAction}>
                 <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                 <input type="hidden" name="movimientoId" value={mov.id} />
-                <button className="btn-secondary">Re-consultar ARCA</button>
+                <button className="btn-secondary" title="Vuelve a cruzar este comprobante con lo ya bajado de Mis Comprobantes">Cruzar con Mis Comprobantes</button>
               </form>
             )}
             {['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO', 'VALIDADO', 'DUPLICADO'].includes(mov.estado) && (

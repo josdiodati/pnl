@@ -61,7 +61,6 @@ DATABASE_URL=
 NEXTAUTH_SECRET=
 ANTHROPIC_API_KEY=                 # si falta → EXTRACTOR_MODE=mock obligatorio
 EXTRACTOR_MODE=real|mock           # default mock
-ARCA_MODE=mock|ws                  # default mock
 ARCA_CERT_PATH= ARCA_KEY_PATH= ARCA_CUIT= ARCA_ENV=homo|prod
 INBOUND_EMAIL_SECRET=              # valida el webhook de email
 TELEGRAM_BOT_TOKEN=                # si falta → canal Telegram deshabilitado
