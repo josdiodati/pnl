@@ -5,7 +5,7 @@ import { EstadoBadge } from '@/components/badges';
 import { PageHeader } from '@/components/page-header';
 import { Icono } from '@/components/iconos';
 import { formatMoney, formatMoneyFirmado, formatFecha } from '@/lib/format';
-import { buildWhereVentas, resumirVentas, type FiltrosVentas } from '@/lib/ventas/query';
+import { buildWhereVentas, resumirVentas, netoVentaCentavos, type FiltrosVentas } from '@/lib/ventas/query';
 
 // Registro de ventas: tabla + tarjeta con el total de LO FILTRADO (la tarjeta
 // sigue a los filtros, nunca a un mes fijo). La lectura automática desde ARCA
@@ -37,7 +37,10 @@ export default async function VentasPage({
     // El resumen cubre TODO lo filtrado, aunque la tabla corte en MAX_FILAS.
     ctx.db.movimiento.findMany({
       where,
-      select: { estado: true, total: true, tipoComprobante: true, moneda: true, tipoCambio: true },
+      select: {
+        estado: true, total: true, tipoComprobante: true, moneda: true, tipoCambio: true,
+        iva21: true, iva105: true, iva27: true, percepcionesIva: true, percepcionesIibb: true, otrosTributos: true,
+      },
     }),
   ]);
 
@@ -57,13 +60,14 @@ export default async function VentasPage({
 
       <div className="reveal reveal-2 mb-4 grid gap-3 sm:grid-cols-3">
         <div className="card p-4">
-          <p className="label !mb-0.5">{hayFiltros ? 'Total de lo filtrado' : 'Total de ventas'}</p>
+          <p className="label !mb-0.5">{hayFiltros ? 'Neto de lo filtrado' : 'Neto de ventas'} <span className="font-normal normal-case">(sin IVA)</span></p>
           <p className="font-mono text-2xl font-semibold tabular-nums text-accent-strong">
-            {formatMoneyFirmado(resumen.totalCentavos)}
+            {formatMoneyFirmado(resumen.netoCentavos)}
           </p>
           <p className="mt-1 text-[11px] text-ink-mute">
             {resumen.cantidad} comprobante{resumen.cantidad !== 1 ? 's' : ''}
-            {' · '}asignadas: <span className="tabular-nums">{formatMoneyFirmado(resumen.asignadoCentavos)}</span> ({resumen.asignadas})
+            {' · '}con IVA: <span className="tabular-nums">{formatMoneyFirmado(resumen.totalCentavos)}</span>
+            {' · '}neto asignado: <span className="tabular-nums">{formatMoneyFirmado(resumen.asignadoCentavos)}</span> ({resumen.asignadas})
             {resumen.sinTipoCambio > 0 && (
               <span className="text-amber-700"> · {resumen.sinTipoCambio} en moneda extranjera sin TC, fuera del total</span>
             )}
@@ -118,7 +122,7 @@ export default async function VentasPage({
               <th>Categoría</th>
               <th>Asignación</th>
               <th>Estado</th>
-              <th className="text-right">Total</th>
+              <th className="text-right">Neto</th>
               <th></th>
             </tr>
           </thead>
@@ -143,7 +147,18 @@ export default async function VentasPage({
                   ))}
                 </td>
                 <td><EstadoBadge estado={v.estado} /></td>
-                <td className="num font-medium text-accent-strong">{formatMoney(v.total ? Number(v.total) : null)}</td>
+                <td className="num font-medium text-accent-strong">
+                  {(() => {
+                    const neto = netoVentaCentavos(v);
+                    return neto != null ? formatMoneyFirmado(neto) : formatMoney(v.total ? Number(v.total) : null);
+                  })()}
+                  {v.total != null && (
+                    <span className="block text-[10px] font-normal text-ink-mute">
+                      con IVA {formatMoney(Number(v.total))}
+                      {v.moneda !== 'ARS' && ` ${v.moneda}${v.tipoCambio != null ? ` · TC ${Number(v.tipoCambio).toLocaleString('es-AR')}` : ' · sin TC'}`}
+                    </span>
+                  )}
+                </td>
                 <td className="text-right">
                   {esValidador && (
                     <Link href={`/${params.empresaSlug}/validacion/${v.id}`} className="text-[12.5px] underline underline-offset-2 text-accent-strong hover:text-accent">
@@ -172,7 +187,7 @@ export default async function VentasPage({
             {resumen.cantidad > ventas.length && (
               <tr>
                 <td colSpan={8} className="py-3 text-center text-[12px] text-ink-mute">
-                  Se muestran las {ventas.length} más recientes de {resumen.cantidad}; el total de arriba las incluye a todas. Afiná el filtro para ver el resto.
+                  Se muestran las {ventas.length} más recientes de {resumen.cantidad}; el neto de arriba las incluye a todas. Afiná el filtro para ver el resto.
                 </td>
               </tr>
             )}

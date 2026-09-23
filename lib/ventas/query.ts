@@ -47,40 +47,76 @@ export type VentaResumible = {
   tipoComprobante: string | null;
   moneda?: string | null;
   tipoCambio?: unknown;
+  iva21?: unknown;
+  iva105?: unknown;
+  iva27?: unknown;
+  percepcionesIva?: unknown;
+  percepcionesIibb?: unknown;
+  otrosTributos?: unknown;
 };
 
 export type ResumenVentas = {
-  /** Suma firmada en centavos de lo listado (sin anuladas), unificada en ARS. */
+  /** Neto de IVA firmado en centavos de lo listado (sin anuladas), unificado en ARS. */
+  netoCentavos: number;
+  /** Total con IVA firmado en centavos, como referencia. */
   totalCentavos: number;
   /** Cantidad de comprobantes listados, anuladas incluidas. */
   cantidad: number;
-  /** Porción ya asignada: lo único que impacta el resultado. */
+  /** Neto ya asignado: lo único que impacta el resultado. */
   asignadoCentavos: number;
   asignadas: number;
   /** Ventas en moneda extranjera sin tipo de cambio: no se pudieron sumar. */
   sinTipoCambio: number;
 };
 
-/** Total de lo filtrado. Una venta siempre es ingreso, así que el signo sale
- *  sólo del tipo de comprobante (nota de crédito resta) y no hace falta que
- *  esté categorizada: las pendientes también cuentan. */
+const n = (v: unknown) => (v == null ? 0 : Number(v));
+
+/** Pesos por unidad de la moneda del comprobante; null si no es computable. */
+function tipoCambioDe(v: VentaResumible): number | null {
+  if (!v.moneda || v.moneda === 'ARS') return 1;
+  const tc = v.tipoCambio == null ? null : Number(v.tipoCambio);
+  return tc && tc > 0 ? tc : null;
+}
+
+/** Una venta siempre es ingreso: el signo sale sólo del tipo de comprobante
+ *  (nota de crédito resta), sin necesidad de categoría. */
+function firmar(v: VentaResumible, pesos: number): number {
+  return signoMovimiento('INGRESO', v.tipoComprobante) * Math.round(pesos * 100);
+}
+
+/** Total con IVA firmado en centavos ARS; null si no es computable. */
+export function totalVentaCentavos(v: VentaResumible): number | null {
+  const tc = tipoCambioDe(v);
+  if (v.total == null || tc == null) return null;
+  return firmar(v, Number(v.total) * tc);
+}
+
+/** Neto de IVA firmado en centavos ARS: la misma base imponible que usa el
+ *  reporte P&L (total menos IVA, percepciones y otros tributos), así la vista
+ *  de Ventas y el reporte cuentan lo mismo. Sin desglose, neto = total. */
+export function netoVentaCentavos(v: VentaResumible): number | null {
+  const tc = tipoCambioDe(v);
+  if (v.total == null || tc == null) return null;
+  const neto =
+    Number(v.total) - n(v.iva21) - n(v.iva105) - n(v.iva27) - n(v.percepcionesIva) - n(v.percepcionesIibb) - n(v.otrosTributos);
+  return firmar(v, neto * tc);
+}
+
+/** Total de lo filtrado: las pendientes también cuentan; las anuladas no. */
 export function resumirVentas(ventas: VentaResumible[]): ResumenVentas {
-  const r: ResumenVentas = { totalCentavos: 0, cantidad: ventas.length, asignadoCentavos: 0, asignadas: 0, sinTipoCambio: 0 };
+  const r: ResumenVentas = { netoCentavos: 0, totalCentavos: 0, cantidad: ventas.length, asignadoCentavos: 0, asignadas: 0, sinTipoCambio: 0 };
   for (const v of ventas) {
     if (v.estado === 'ANULADO' || v.total == null) continue;
-    let totalArs = Number(v.total);
-    if (v.moneda && v.moneda !== 'ARS') {
-      const tc = v.tipoCambio == null ? null : Number(v.tipoCambio);
-      if (!tc || !(tc > 0)) {
-        r.sinTipoCambio += 1;
-        continue;
-      }
-      totalArs *= tc;
+    const neto = netoVentaCentavos(v);
+    const total = totalVentaCentavos(v);
+    if (neto == null || total == null) {
+      r.sinTipoCambio += 1;
+      continue;
     }
-    const firmado = signoMovimiento('INGRESO', v.tipoComprobante) * Math.round(totalArs * 100);
-    r.totalCentavos += firmado;
+    r.netoCentavos += neto;
+    r.totalCentavos += total;
     if (v.estado === 'ASIGNADO') {
-      r.asignadoCentavos += firmado;
+      r.asignadoCentavos += neto;
       r.asignadas += 1;
     }
   }

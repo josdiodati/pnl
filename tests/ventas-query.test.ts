@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildWhereVentas, resumirVentas, ORIGENES_VENTA, type VentaResumible } from '@/lib/ventas/query';
+import { buildWhereVentas, resumirVentas, netoVentaCentavos, ORIGENES_VENTA, type VentaResumible } from '@/lib/ventas/query';
+import { baseImponibleFirmada } from '@/lib/reportes/pnl';
 
 const opts = { esValidador: true, usuarioId: 'u1' };
 
@@ -44,44 +45,79 @@ describe('buildWhereVentas', () => {
   });
 });
 
-describe('resumirVentas — total de lo filtrado', () => {
-  const venta = (over: Partial<VentaResumible>): VentaResumible => ({
-    estado: 'ASIGNADO',
-    total: 1000,
-    tipoComprobante: 'FACTURA_A',
-    moneda: 'ARS',
-    tipoCambio: null,
-    ...over,
+const venta = (over: Partial<VentaResumible>): VentaResumible => ({
+  estado: 'ASIGNADO',
+  total: 1210,
+  iva21: 210,
+  tipoComprobante: 'FACTURA_A',
+  moneda: 'ARS',
+  tipoCambio: null,
+  ...over,
+});
+
+describe('netoVentaCentavos — neto de IVA por línea', () => {
+  it('descuenta el IVA discriminado del total', () => {
+    expect(netoVentaCentavos(venta({ total: 1210, iva21: 210 }))).toBe(100_000);
+    expect(netoVentaCentavos(venta({ total: 1000, iva21: null, iva105: 50, iva27: 30 }))).toBe(92_000);
   });
 
-  it('suma en centavos todas las ventas listadas, no sólo las asignadas', () => {
+  it('usa la misma base que el reporte P&L: también descuenta percepciones y otros tributos', () => {
+    const v = venta({ total: 1300, iva21: 210, percepcionesIva: 30, percepcionesIibb: 40, otrosTributos: 20 });
+    const esperado = baseImponibleFirmada({
+      anio: 2026, mes: 9, categoriaId: 'c', tipoCategoria: 'INGRESO', esCostoPersonal: false,
+      tipoComprobante: 'FACTURA_A', moneda: 'ARS', tipoCambio: null, total: 1300,
+      iva21: 210, iva105: null, iva27: null, percepcionesIva: 30, percepcionesIibb: 40, otrosTributos: 20,
+    });
+    expect(netoVentaCentavos(v)).toBe(esperado);
+    expect(netoVentaCentavos(v)).toBe(100_000);
+  });
+
+  it('sin desglose de IVA el neto es el total (no hay nada que descontar)', () => {
+    expect(netoVentaCentavos(venta({ total: 500, iva21: null }))).toBe(50_000);
+  });
+
+  it('las notas de crédito dan neto negativo', () => {
+    expect(netoVentaCentavos(venta({ tipoComprobante: 'NOTA_CREDITO_A' }))).toBe(-100_000);
+  });
+
+  it('moneda extranjera convierte con TC; sin TC o sin total es null', () => {
+    expect(netoVentaCentavos(venta({ total: 121, iva21: 21, moneda: 'USD', tipoCambio: 1000 }))).toBe(10_000_000);
+    expect(netoVentaCentavos(venta({ moneda: 'USD', tipoCambio: null }))).toBeNull();
+    expect(netoVentaCentavos(venta({ total: null }))).toBeNull();
+  });
+});
+
+describe('resumirVentas — total de lo filtrado, neto de IVA', () => {
+  it('el número principal es el neto; el total con IVA queda como referencia', () => {
     const r = resumirVentas([
-      venta({ estado: 'ASIGNADO', total: 1000 }),
-      venta({ estado: 'PENDIENTE_VALIDACION', total: 250.5 }),
-      venta({ estado: 'VALIDADO', total: 100 }),
+      venta({ estado: 'ASIGNADO', total: 1210, iva21: 210 }),
+      venta({ estado: 'PENDIENTE_VALIDACION', total: 605, iva21: 105 }),
+      venta({ estado: 'VALIDADO', total: 100, iva21: null }),
     ]);
-    expect(r.totalCentavos).toBe(135_050);
+    expect(r.netoCentavos).toBe(160_000);
+    expect(r.totalCentavos).toBe(191_500);
     expect(r.cantidad).toBe(3);
   });
 
   it('las notas de crédito restan, sin necesidad de categoría', () => {
     const r = resumirVentas([
-      venta({ total: 1000 }),
-      venta({ total: 300, tipoComprobante: 'NOTA_CREDITO_A' }),
+      venta({ total: 1210, iva21: 210 }),
+      venta({ total: 363, iva21: 63, tipoComprobante: 'NOTA_CREDITO_A' }),
     ]);
-    expect(r.totalCentavos).toBe(70_000);
+    expect(r.netoCentavos).toBe(70_000);
+    expect(r.totalCentavos).toBe(84_700);
   });
 
   it('las anuladas no suman pero sí se cuentan como listadas', () => {
-    const r = resumirVentas([venta({ total: 1000 }), venta({ total: 999, estado: 'ANULADO' })]);
-    expect(r.totalCentavos).toBe(100_000);
+    const r = resumirVentas([venta({}), venta({ total: 999, estado: 'ANULADO' })]);
+    expect(r.netoCentavos).toBe(100_000);
     expect(r.cantidad).toBe(2);
   });
 
-  it('desglosa cuánto de eso ya está asignado (lo único que impacta el resultado)', () => {
+  it('desglosa el neto ya asignado (lo único que impacta el resultado)', () => {
     const r = resumirVentas([
-      venta({ estado: 'ASIGNADO', total: 1000 }),
-      venta({ estado: 'VALIDADO', total: 500 }),
+      venta({ estado: 'ASIGNADO', total: 1210, iva21: 210 }),
+      venta({ estado: 'VALIDADO', total: 605, iva21: 105 }),
     ]);
     expect(r.asignadoCentavos).toBe(100_000);
     expect(r.asignadas).toBe(1);
@@ -89,16 +125,17 @@ describe('resumirVentas — total de lo filtrado', () => {
 
   it('moneda extranjera se convierte con el tipo de cambio; sin TC queda fuera y se avisa', () => {
     const r = resumirVentas([
-      venta({ total: 10, moneda: 'USD', tipoCambio: 1325.5 }),
-      venta({ total: 10, moneda: 'USD', tipoCambio: null }),
+      venta({ total: 12.1, iva21: 2.1, moneda: 'USD', tipoCambio: 1000 }),
+      venta({ total: 10, iva21: null, moneda: 'USD', tipoCambio: null }),
     ]);
-    expect(r.totalCentavos).toBe(1_325_500);
+    expect(r.netoCentavos).toBe(1_000_000);
+    expect(r.totalCentavos).toBe(1_210_000);
     expect(r.sinTipoCambio).toBe(1);
   });
 
   it('ignora ventas sin total', () => {
     const r = resumirVentas([venta({ total: null })]);
-    expect(r.totalCentavos).toBe(0);
+    expect(r.netoCentavos).toBe(0);
     expect(r.cantidad).toBe(1);
   });
 });
