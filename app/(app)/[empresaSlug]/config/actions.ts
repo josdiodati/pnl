@@ -10,6 +10,7 @@ import { writeAudit } from '@/lib/audit';
 import { cuitEsValido, normalizarCuit } from '@/lib/checks';
 import { generarCodigoVinculo } from '@/lib/canales/telegram';
 import { guardarCredencialArca, probarCredencialArca, borrarCredencialArca, cambiarSyncAutomatico } from '@/lib/arca/mis-comprobantes/service';
+import { restablecerPassword } from '@/lib/usuarios/password';
 import type { Rol } from '@prisma/client';
 
 // Company configuration: ADMINISTRADOR only (doc 08).
@@ -112,6 +113,23 @@ export async function cambiarRolAction(formData: FormData): Promise<void> {
     volver(slug, err);
   }
   volver(slug, undefined, 'Rol actualizado');
+}
+
+/** Restablece la contraseña de un miembro (o la propia). Es la clave de la cuenta: vale para todas sus empresas. */
+export async function restablecerPasswordAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  let email = '';
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    ({ email } = await restablecerPassword(ctx, {
+      usuarioId: String(formData.get('usuarioId') ?? ''),
+      nueva: String(formData.get('password') ?? ''),
+      repetir: String(formData.get('password2') ?? ''),
+    }));
+  } catch (err) {
+    volver(slug, err);
+  }
+  volver(slug, undefined, `Contraseña de ${email} restablecida`);
 }
 
 export async function generarCodigoTelegramAction(formData: FormData): Promise<void> {

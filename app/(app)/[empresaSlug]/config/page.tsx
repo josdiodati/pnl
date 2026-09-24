@@ -10,6 +10,7 @@ import {
   editarEmpresaAction,
   invitarUsuarioAction,
   cambiarRolAction,
+  restablecerPasswordAction,
   generarCodigoTelegramAction,
   guardarCredencialArcaAction,
   probarCredencialArcaAction,
@@ -95,11 +96,30 @@ export default async function ConfigPage({
                     </select>
                     <button className="btn-secondary text-xs">Cambiar</button>
                   </form>
+                  <details className="inline-block ml-2 align-middle text-left">
+                    <summary className="btn-secondary text-xs cursor-pointer list-none inline-block">Contraseña</summary>
+                    <form action={restablecerPasswordAction} className="mt-2 flex flex-wrap items-end gap-2 rounded border border-line bg-paper p-2">
+                      <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                      <input type="hidden" name="usuarioId" value={m.usuarioId} />
+                      <label className="text-xs">
+                        Nueva contraseña
+                        <input name="password" type="password" required minLength={8} autoComplete="new-password" className="input mt-1 !w-44 text-xs" />
+                      </label>
+                      <label className="text-xs">
+                        Repetir
+                        <input name="password2" type="password" required minLength={8} autoComplete="new-password" className="input mt-1 !w-44 text-xs" />
+                      </label>
+                      <button className="btn-primary text-xs">Restablecer</button>
+                    </form>
+                  </details>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        <p className="text-xs text-ink-mute -mt-2 mb-4">
+          La contraseña es de la cuenta: si el usuario también pertenece a otra empresa, le cambia para todas.
+        </p>
 
         <h3 className="text-sm font-medium mb-2">Invitar usuario</h3>
         <form action={invitarUsuarioAction} className="flex flex-wrap items-end gap-3 mb-3">
