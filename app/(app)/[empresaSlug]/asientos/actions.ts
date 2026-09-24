@@ -65,6 +65,7 @@ export async function crearAsientoAction(formData: FormData): Promise<void> {
       lineas: leerLineas(formData),
       validarAlGuardar: formData.get('validarAlGuardar') === 'on',
       archivo,
+      relacionadoId: String(formData.get('relacionadoId') ?? '') || null,
     });
   } catch (err) {
     volver(slug, err);

@@ -3,7 +3,9 @@ import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { rolAlcanza } from '@/lib/roles';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { AsientoManualForm, VentaManualForm } from '@/components/asiento-forms';
-import { formatMoney } from '@/lib/format';
+import { formatMoney, formatFecha } from '@/lib/format';
+import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
+import { etiquetaComprobante } from '@/lib/movimientos/etiqueta';
 import { guardarPlantillaRecurrente, togglePlantillaRecurrente, generarRecurrentesAction } from './actions';
 
 export default async function AsientosPage({
@@ -16,7 +18,7 @@ export default async function AsientosPage({
   const ctx = await requireEmpresaPage(params.empresaSlug, 'CARGADOR');
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
 
-  const [categorias, contrapartes, centros, clientes, proyectos, plantillasDist, recurrentes] = await Promise.all([
+  const [categorias, contrapartes, centros, clientes, proyectos, plantillasDist, recurrentes, comprobantesLibro] = await Promise.all([
     ctx.db.categoria.findMany({ where: { activa: true }, orderBy: [{ tipo: 'asc' }, { nombre: 'asc' }] }),
     ctx.db.contraparte.findMany({ where: { activa: true }, orderBy: { razonSocial: 'asc' } }),
     ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
@@ -24,6 +26,13 @@ export default async function AsientosPage({
     ctx.db.proyecto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
     esValidador ? ctx.db.plantillaRecurrente.findMany({ orderBy: { nombre: 'asc' } }) : Promise.resolve([]),
+    // Candidatos a "comprobante relacionado": lo vivo del libro, lo más reciente primero.
+    ctx.db.movimiento.findMany({
+      where: { estado: { notIn: ['ANULADO', 'DUPLICADO', 'ERROR_PROCESAMIENTO'] } },
+      include: { contraparte: true },
+      orderBy: [{ fechaDevengamiento: 'desc' }, { createdAt: 'desc' }],
+      take: 400,
+    }),
   ]);
 
   const tab = searchParams.tab === 'venta' ? 'venta' : searchParams.tab === 'recurrentes' && esValidador ? 'recurrentes' : 'asiento';
@@ -79,7 +88,21 @@ export default async function AsientosPage({
           <p className="text-sm text-slate-500 mb-3">
             Para movimientos que no nacen de una factura: sueldos, cargas sociales, impuestos, ajustes.
           </p>
-          <AsientoManualForm {...propsForms} />
+          <AsientoManualForm
+            {...propsForms}
+            comprobantes={comprobantesLibro.map((m) => ({
+              id: m.id,
+              etiqueta: etiquetaComprobante({
+                fecha: formatFecha(m.fechaDevengamiento),
+                contraparte: nombreContraparte(m).nombre,
+                tipo: m.tipoComprobante,
+                puntoVenta: m.puntoVenta,
+                numero: m.numero,
+                total: formatMoney(m.total ? Number(m.total) : null),
+                origen: m.origen,
+              }),
+            }))}
+          />
         </div>
       )}
 

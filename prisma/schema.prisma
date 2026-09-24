@@ -361,6 +361,9 @@ model Movimiento {
   motivoAnulacion String?
   canalIngreso    String? // WEB | FOTO | EMAIL | TELEGRAM | MANUAL
   loteId          String? // lote de ingesta (un drop web / un mail / un mensaje)
+  // Asiento manual que referencia a otro movimiento (ajuste, complemento,
+  // diferencia de cambio…). Sólo trazabilidad: los dos computan al P&L.
+  relacionadoId   String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -372,9 +375,12 @@ model Movimiento {
   validadoPor       Usuario?             @relation("validadoPor", fields: [validadoPorId], references: [id])
   vinculosEmpleados MovimientoEmpleado[]
   lote              LoteIngesta?         @relation(fields: [loteId], references: [id])
+  relacionado       Movimiento?          @relation("relacionados", fields: [relacionadoId], references: [id])
+  relacionados      Movimiento[]         @relation("relacionados")
 
   @@index([empresaId, estado])
   @@index([empresaId, fechaDevengamiento])
+  @@index([relacionadoId])
 }
 
 // Lote de ingesta: agrupa los movimientos de "una vez que se procesaron

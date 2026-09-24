@@ -9,7 +9,8 @@ import { ComprobanteDetalle } from '@/components/comprobante-detalle';
 import { HistorialComprobante } from '@/components/historial-comprobante';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
-import { fechaInputValue } from '@/lib/format';
+import { fechaInputValue, formatFecha, formatMoney } from '@/lib/format';
+import { etiquetaComprobante } from '@/lib/movimientos/etiqueta';
 import { MES_LABEL } from '@/lib/periodos';
 import { elegirRegla, textoDeMatching, textoDocumentoDe } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
@@ -49,6 +50,8 @@ export default async function ValidacionDetallePage({
       lineas: true,
       creadoPor: true,
       validadoPor: true,
+      relacionado: { include: { contraparte: true } },
+      relacionados: { include: { contraparte: true }, orderBy: { fechaDevengamiento: 'asc' } },
       vinculosResumen: {
         include: { linea: { include: { resumen: { include: { periodo: true } } } } },
         orderBy: { createdAt: 'asc' },
@@ -58,6 +61,16 @@ export default async function ValidacionDetallePage({
   if (!mov) notFound();
   // Un comprobante puede pagarse en varias líneas (pago parcial): se listan todas.
   const lineasResumen = mov.vinculosResumen.map((v) => v.linea);
+  const etiquetaDe = (m: { fechaDevengamiento: Date | null; tipoComprobante: string | null; puntoVenta: string | null; numero: string | null; total: unknown; origen: string; contraparte: { razonSocial: string } | null; extraccionRaw: unknown; cuitEmisor: string | null }) =>
+    etiquetaComprobante({
+      fecha: formatFecha(m.fechaDevengamiento),
+      contraparte: nombreContraparte(m as never).nombre,
+      tipo: m.tipoComprobante,
+      puntoVenta: m.puntoVenta,
+      numero: m.numero,
+      total: formatMoney(m.total ? Number(m.total) : null),
+      origen: m.origen,
+    });
 
   const [contrapartes, categorias, centros, clientes, proyectos, plantillas, reglas, miembros] = await Promise.all([
     ctx.db.contraparte.findMany({ where: { activa: true }, orderBy: { razonSocial: 'asc' } }),
@@ -168,6 +181,35 @@ export default async function ValidacionDetallePage({
               </Link>
             </p>
           ))}
+        </div>
+      )}
+      {(mov.relacionado || mov.relacionados.length > 0) && (
+        <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700 space-y-1">
+          {mov.relacionado && (
+            <p>
+              Relacionado con{' '}
+              <Link href={`/${params.empresaSlug}/validacion/${mov.relacionado.id}`} className="underline">
+                {etiquetaDe(mov.relacionado)}
+              </Link>
+            </p>
+          )}
+          {mov.relacionados.length > 0 && (
+            <>
+              <p className="font-medium">
+                {mov.relacionados.length === 1 ? 'Asiento relacionado' : `${mov.relacionados.length} asientos relacionados`} (computan aparte en el P&amp;L):
+              </p>
+              <ul className="list-disc pl-4">
+                {mov.relacionados.map((r) => (
+                  <li key={r.id}>
+                    <Link href={`/${params.empresaSlug}/validacion/${r.id}`} className="underline">
+                      {etiquetaDe(r)}
+                    </Link>
+                    {r.descripcion ? ` — ${r.descripcion}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
       {Boolean(flags.errorProcesamiento) && (

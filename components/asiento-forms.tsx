@@ -6,6 +6,10 @@ import { DistribucionEditor, type OpcionId, type OpcionCliente, type OpcionProye
 
 export type CategoriaOpcion = { id: string; nombre: string; tipo: 'INGRESO' | 'EGRESO'; padreId: string | null };
 export type ContraparteOpcion = { id: string; razonSocial: string; tipo: 'PROVEEDOR' | 'CLIENTE' | 'AMBOS' };
+/** Movimiento del libro elegible como "comprobante relacionado" de un asiento. */
+export type ComprobanteOpcion = { id: string; etiqueta: string };
+
+const MAX_COINCIDENCIAS = 50;
 
 // Manual entry (salaries, taxes, adjustments — the biggest chunk of the real
 // P&L) and manual sale. Both share the distribution editor with live amounts.
@@ -19,6 +23,7 @@ export function AsientoManualForm({
   proyectos,
   plantillas,
   puedeValidar,
+  comprobantes = [],
 }: {
   empresaSlug: string;
   categorias: CategoriaOpcion[];
@@ -28,9 +33,22 @@ export function AsientoManualForm({
   proyectos: OpcionProyecto[];
   plantillas: PlantillaOpcion[];
   puedeValidar: boolean;
+  comprobantes?: ComprobanteOpcion[];
 }) {
   const [categoriaId, setCategoriaId] = useState('');
   const [total, setTotal] = useState('');
+  const [filtro, setFiltro] = useState('');
+  const [relacionadoId, setRelacionadoId] = useState('');
+  // Buscador simple sobre la etiqueta (fecha · contraparte · tipo nro · total):
+  // todas las palabras del filtro tienen que aparecer, sin distinguir mayúsculas.
+  const coincidencias = useMemo(() => {
+    const palabras = filtro.toLowerCase().split(/\s+/).filter(Boolean);
+    const lista = palabras.length
+      ? comprobantes.filter((c) => palabras.every((w) => c.etiqueta.toLowerCase().includes(w)))
+      : comprobantes;
+    return lista.slice(0, MAX_COINCIDENCIAS);
+  }, [filtro, comprobantes]);
+  const elegido = comprobantes.find((c) => c.id === relacionadoId) ?? null;
   const categoriaSel = categorias.find((c) => c.id === categoriaId);
   const totalFirmado = useMemo(() => {
     const t = Number(total.replace(',', '.'));
@@ -86,6 +104,48 @@ export function AsientoManualForm({
         </div>
       </div>
       <DistribucionEditor centros={centros} clientes={clientes} proyectos={proyectos} plantillas={plantillas} totalFirmado={totalFirmado} />
+      <fieldset className="rounded-md border border-slate-200 p-3 space-y-2">
+        <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Comprobante relacionado (opcional)</legend>
+        <p className="text-xs text-slate-500">
+          Si este asiento ajusta o complementa un comprobante ya cargado, dejalo vinculado: se ve desde los dos lados.
+          Los dos siguen computando al P&amp;L cada uno por su importe.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-2">
+          <div>
+            <label className="label" htmlFor="relFiltro">Buscar</label>
+            <input
+              id="relFiltro"
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+              className="input text-xs"
+              placeholder="contraparte, número, importe, fecha…"
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="relacionadoId">
+              Comprobante{coincidencias.length === MAX_COINCIDENCIAS ? ` (primeros ${MAX_COINCIDENCIAS}: afiná la búsqueda)` : ''}
+            </label>
+            <select
+              id="relacionadoId"
+              name="relacionadoId"
+              value={relacionadoId}
+              onChange={(e) => setRelacionadoId(e.target.value)}
+              className="input text-xs"
+            >
+              <option value="">— ninguno —</option>
+              {elegido && !coincidencias.some((c) => c.id === elegido.id) && (
+                <option value={elegido.id}>{elegido.etiqueta}</option>
+              )}
+              {coincidencias.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.etiqueta}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {elegido && <p className="text-xs text-slate-600">Vinculado a: {elegido.etiqueta}</p>}
+      </fieldset>
       <div>
         <label className="label">Adjunto (opcional)</label>
         <input type="file" name="adjunto" className="text-sm" accept="application/pdf,image/jpeg,image/png,image/webp" />

@@ -544,6 +544,9 @@ export type DatosAsientoManual = {
   validarAlGuardar?: boolean;
   archivo?: { key: string; nombre: string; mime: string; hash: string } | null;
   flags?: Record<string, unknown>;
+  /** Comprobante ya cargado al que este asiento hace referencia (ajuste,
+   *  complemento…). Sólo trazabilidad: los dos computan al P&L. */
+  relacionadoId?: string | null;
 };
 
 export async function crearAsientoManual(ctx: EmpresaContext, datos: DatosAsientoManual): Promise<string> {
@@ -593,6 +596,17 @@ async function crearMovimientoManual(
   const periodoId = await assertPeriodoAbierto(ctx, fecha, 'crear el movimiento');
   validarDistribucion(datos.lineas);
 
+  // Vínculo opcional a otro movimiento de la MISMA empresa (el cliente scoped
+  // garantiza que un id ajeno no se encuentre), vivo en el libro.
+  const relacionadoId = datos.relacionadoId?.trim() || null;
+  if (relacionadoId) {
+    const rel = await ctx.db.movimiento.findFirst({ where: { id: relacionadoId }, select: { id: true, estado: true } });
+    if (!rel) throw new DomainError('El comprobante relacionado no existe en esta empresa.');
+    if (rel.estado === 'ANULADO' || rel.estado === 'DUPLICADO') {
+      throw new DomainError('El comprobante relacionado está anulado o es un duplicado: elegí el vigente.');
+    }
+  }
+
   // Only validators+ may validate at save time; loaders always create pending.
   // Manuals carry full assignment (category + lines) so they are born ASIGNADO directly.
   const validaDirecto = Boolean(datos.validarAlGuardar) && rolAlcanza(ctx.rol, 'VALIDADOR');
@@ -635,6 +649,7 @@ async function crearMovimientoManual(
           }
         : {}),
       flags: (datos.flags ?? undefined) as never,
+      relacionadoId,
       creadoPorId: ctx.usuario.id,
       validadoPorId: validaDirecto ? ctx.usuario.id : null,
     } as never,
@@ -646,7 +661,7 @@ async function crearMovimientoManual(
     entidad: 'Movimiento',
     entidadId: mov.id,
     accion: validaDirecto ? 'CREAR_Y_VALIDAR' : 'CREAR',
-    despues: { origen, estado, total: datos.total, categoriaId: datos.categoriaId, lineas: datos.lineas },
+    despues: { origen, estado, total: datos.total, categoriaId: datos.categoriaId, lineas: datos.lineas, ...(relacionadoId ? { relacionadoId } : {}) },
   });
   return mov.id;
 }
