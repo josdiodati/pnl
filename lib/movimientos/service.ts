@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import type { ScopedDb } from '@/lib/empresa/scope';
 import { liberarLineasDeMovimiento } from '@/lib/resumenes/service';
+import { assertSinCobros } from '@/lib/cobranzas/service';
 import { DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import { assertTransicion, esEstadoInicialValido, ESTADOS_BLOQUEAN_CIERRE } from './estados';
@@ -482,6 +483,7 @@ export async function anularMovimiento(ctx: EmpresaContext, id: string, motivo: 
   if (!motivo?.trim()) throw new DomainError('El motivo de anulación es obligatorio.');
   const mov = await getMovimientoOrThrow(ctx, id);
   assertTransicion(mov.estado, 'ANULADO');
+  await assertSinCobros(ctx.db, id);
   if (mov.fechaDevengamiento) {
     await assertPeriodoAbierto(ctx, mov.fechaDevengamiento, 'anular');
   }

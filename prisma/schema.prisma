@@ -50,6 +50,7 @@ model Empresa {
   reglasResumen          ReglaResumen[]
   credencialArca         CredencialArca?
   comprobantesArca       ComprobanteArca[]
+  cobros                 Cobro[]
   createdAt              DateTime                @default(now())
 }
 
@@ -191,9 +192,12 @@ model Contraparte {
   distribucionDefaultId   String? // default distribution template
   instruccionesExtraccion String? // recurring corrections, injected into the LLM prompt
   descriptoresResumen     Json? // lista de strings normalizados
+  // Días que suele tardar en pagar (override de la fecha probable de cobro).
+  plazoCobroDias          Int?
   activa                  Boolean         @default(true)
   empresa                 Empresa         @relation(fields: [empresaId], references: [id])
   movimientos             Movimiento[]
+  cobros                  Cobro[]
 
   @@unique([empresaId, cuit])
 }
@@ -354,18 +358,22 @@ model Movimiento {
   vinculosResumen  ResumenLineaVinculo[]
   comprobantesArca ComprobanteArca[]
 
-  flags           Json? // future metadata (e.g. recurring template id, pending "I/O" flag)
-  periodoId       String?
-  creadoPorId     String
-  validadoPorId   String?
-  motivoAnulacion String?
-  canalIngreso    String? // WEB | FOTO | EMAIL | TELEGRAM | MANUAL
-  loteId          String? // lote de ingesta (un drop web / un mail / un mensaje)
+  flags                Json? // future metadata (e.g. recurring template id, pending "I/O" flag)
+  periodoId            String?
+  creadoPorId          String
+  validadoPorId        String?
+  motivoAnulacion      String?
+  canalIngreso         String? // WEB | FOTO | EMAIL | TELEGRAM | MANUAL
+  loteId               String? // lote de ingesta (un drop web / un mail / un mensaje)
   // Asiento manual que referencia a otro movimiento (ajuste, complemento,
   // diferencia de cambio…). Sólo trazabilidad: los dos computan al P&L.
-  relacionadoId   String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  relacionadoId        String?
+  // Cobranzas (Spec F): vencimiento de pago impreso en la factura (extraído)
+  // y fecha probable de cobro fijada a mano (pisa a todas las derivadas).
+  fechaVencimientoPago DateTime?
+  fechaCobroEstimada   DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   empresa           Empresa              @relation(fields: [empresaId], references: [id])
   categoria         Categoria?           @relation(fields: [categoriaId], references: [id])
@@ -377,6 +385,7 @@ model Movimiento {
   lote              LoteIngesta?         @relation(fields: [loteId], references: [id])
   relacionado       Movimiento?          @relation("relacionados", fields: [relacionadoId], references: [id])
   relacionados      Movimiento[]         @relation("relacionados")
+  aplicacionesCobro CobroAplicacion[]
 
   @@index([empresaId, estado])
   @@index([empresaId, fechaDevengamiento])
@@ -533,6 +542,7 @@ model ResumenLinea {
 
   resumen     Resumen               @relation(fields: [resumenId], references: [id], onDelete: Cascade)
   vinculos    ResumenLineaVinculo[]
+  cobros      Cobro[]
   centroCosto CentroCosto?          @relation("cargosResumen", fields: [centroCostoId], references: [id])
   createdAt   DateTime              @default(now())
 
@@ -585,6 +595,77 @@ model ReglaResumen {
   updatedAt          DateTime           @updatedAt
 
   @@unique([empresaId, nombre])
+}
+
+// ---------- Cobranzas (Spec F) ----------
+
+enum InstrumentoCobro {
+  TRANSFERENCIA
+  CHEQUE
+  ECHEQ
+  EFECTIVO
+  RETENCION
+  NOTA_CREDITO
+  OTRO
+}
+
+enum EstadoCobro {
+  EN_CARTERA // cheque / e-cheq recibido, todavía no acreditado
+  ACREDITADO
+  RECHAZADO // cheque rechazado: sus aplicaciones dejan de cancelar saldo
+}
+
+enum OrigenCobro {
+  MANUAL // registrado por el usuario
+  RESUMEN // creado al conciliar una línea del banco contra ventas (se recrea)
+}
+
+// Un instrumento de cobro (transferencia, cheque, retención…). Los que se
+// registran juntos comparten `grupo` (un "recibo"). N:N con las ventas vía
+// CobroAplicacion, con importes. El cobro no impacta el P&L (devengado); sólo
+// el ajuste por diferencia de cambio de una factura en moneda extranjera.
+model Cobro {
+  id                String            @id @default(cuid())
+  empresaId         String
+  grupo             String
+  origen            OrigenCobro       @default(MANUAL)
+  contraparteId     String?
+  instrumento       InstrumentoCobro
+  estado            EstadoCobro       @default(ACREDITADO)
+  fecha             DateTime // recepción del pago
+  fechaAcreditacion DateTime // esperada (fecha del cheque) o real
+  moneda            Moneda            @default(ARS)
+  monto             Decimal           @db.Decimal(18, 2)
+  // Pesos por unidad de la moneda de las facturas (cobro en ARS de facturas USD).
+  tipoCambio        Decimal?          @db.Decimal(12, 4)
+  numero            String? // nro de cheque / referencia
+  banco             String?
+  nota              String?
+  resumenLineaId    String? // línea del banco que lo confirma
+  creadoPorId       String
+  empresa           Empresa           @relation(fields: [empresaId], references: [id])
+  contraparte       Contraparte?      @relation(fields: [contraparteId], references: [id])
+  resumenLinea      ResumenLinea?     @relation(fields: [resumenLineaId], references: [id], onDelete: SetNull)
+  aplicaciones      CobroAplicacion[]
+  createdAt         DateTime          @default(now())
+
+  @@index([empresaId, estado])
+  @@index([grupo])
+  @@index([resumenLineaId])
+}
+
+model CobroAplicacion {
+  id           String     @id @default(cuid())
+  cobroId      String
+  movimientoId String // la venta
+  importe      Decimal    @db.Decimal(18, 2) // en la moneda de la factura
+  importeArs   Decimal    @db.Decimal(18, 2) // pesos que aporta
+  ajusteId     String? // asiento de diferencia de cambio generado
+  cobro        Cobro      @relation(fields: [cobroId], references: [id], onDelete: Cascade)
+  movimiento   Movimiento @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
+
+  @@unique([cobroId, movimientoId])
+  @@index([movimientoId])
 }
 
 // ---------- Empleados (Spec D: costos de personal) ----------

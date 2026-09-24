@@ -16,6 +16,7 @@ import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { tieneAsignacionCompleta } from '@/lib/movimientos/service';
 import type { LineaDistribucion } from '@/lib/movimientos/distribucion';
 import type { EstadoMovimiento } from '@prisma/client';
+import { vencimientoPagoDesdeTexto } from '@/lib/cobranzas/vencimiento';
 
 // The single ingestion pipeline shared by ALL channels (web, photo, email,
 // telegram): store immutable file -> Movimiento INGRESADO -> Job EXTRACCION ->
@@ -414,6 +415,11 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
       numero: numeroFinal,
       cae: caeFinal,
       vencimientoCae: extraccion.vencimientoCae ? new Date(`${extraccion.vencimientoCae}T00:00:00Z`) : null,
+      // Vencimiento de pago: el del LLM; si no lo dio, el del texto del documento.
+      fechaVencimientoPago: (() => {
+        const iso = extraccion.fechaVencimientoPago ?? vencimientoPagoDesdeTexto(extraccion.textoDocumento);
+        return iso ? new Date(`${iso}T00:00:00Z`) : null;
+      })(),
       netoGravado: extraccion.netoGravado,
       iva21: extraccion.iva21,
       iva105: extraccion.iva105,

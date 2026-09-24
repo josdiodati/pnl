@@ -28,6 +28,8 @@ export const extraccionSchema = z.object({
   moneda: z.enum(['ARS', 'USD', 'EUR', 'OTRA']).default('ARS'),
   cae: z.string().nullable().default(null),
   vencimientoCae: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
+  // "Fecha de Vto. para el pago" impresa en la factura (no confundir con el vto. del CAE).
+  fechaVencimientoPago: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
   cuitReceptor: z.string().nullable().default(null),
   razonSocialReceptor: z.string().nullable().default(null),
   esComprobanteFiscalArg: z.boolean().default(false),
@@ -67,6 +69,10 @@ export const extraccionJsonSchema = {
     moneda: { type: 'string', enum: ['ARS', 'USD', 'EUR', 'OTRA'] },
     cae: { type: ['string', 'null'] },
     vencimientoCae: { type: ['string', 'null'], description: 'YYYY-MM-DD' },
+    fechaVencimientoPago: {
+      type: ['string', 'null'],
+      description: 'YYYY-MM-DD. "Fecha de Vto. para el pago" / "Fecha de Pago" / vencimiento impreso del comprobante. NO es el vencimiento del CAE. null si no figura.',
+    },
     cuitReceptor: { type: ['string', 'null'], description: 'CUIT del receptor, solo dígitos' },
     razonSocialReceptor: { type: ['string', 'null'] },
     esComprobanteFiscalArg: {
