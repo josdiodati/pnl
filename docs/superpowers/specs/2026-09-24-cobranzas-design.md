@@ -1,7 +1,7 @@
 # Spec F — Cobranzas de ventas y proyección de ingresos (diseño)
 
 Fecha: 2026-09-24
-Estado: aprobado por el usuario para implementar las 3 etapas sin revisión intermedia
+Estado: implementado y desplegado (24-sep-2026). Aprobado por el usuario para implementar las 3 etapas sin revisión intermedia
 ("decidilo vos, anotá lo que decidiste"). Las decisiones propias están en la
 sección **Registro de decisiones**, con su porqué.
 
