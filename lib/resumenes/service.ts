@@ -8,6 +8,7 @@ import { assertTransicion } from '@/lib/movimientos/estados';
 import { normalizarDescriptor } from './matching';
 import { MOTIVOS_IGNORO_PNL } from './motivos';
 import { rematchearResumen } from './ingesta';
+import { confirmarCobroRegistrado, sincronizarCobrosDeLinea } from '@/lib/cobranzas/conciliacion';
 
 // Acciones sobre líneas de resumen. Conciliar NO crea gasto (el movimiento ya
 // está en el libro): acá muere el doble conteo. Imputar crea el gasto tomando
@@ -87,6 +88,10 @@ export async function conciliarLinea(
 
   await ctx.db.resumenLineaVinculo.create({ data: { lineaId: linea.id, movimientoId: mov.id } });
   await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'CONCILIADA', motivoIgnorada: null } });
+  // Cobranzas: un crédito contra una venta confirma el cobro registrado (si lo
+  // hay) o crea los cobros de la línea. Ver lib/cobranzas/conciliacion.
+  await confirmarCobroRegistrado(ctx, linea, mov.id);
+  await sincronizarCobrosDeLinea(ctx, linea.id);
   await aprenderDescriptor(ctx, mov.contraparteId, linea.descriptor);
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,
@@ -118,6 +123,7 @@ export async function desvincularLinea(ctx: EmpresaContext, params: { lineaId: s
   if (restantes === 0) {
     await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'PENDIENTE', reglaAplicada: null } });
   }
+  await sincronizarCobrosDeLinea(ctx, linea.id);
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,
     entidad: 'Resumen',
@@ -297,6 +303,7 @@ export async function deshacerLinea(ctx: EmpresaContext, params: { lineaId: stri
     where: { id: linea.id },
     data: { estado: 'PENDIENTE', motivoIgnorada: null, centroCostoId: null, reglaAplicada: null },
   });
+  await sincronizarCobrosDeLinea(ctx, linea.id);
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,
     entidad: 'Resumen',
@@ -322,6 +329,7 @@ export async function liberarLineasDeMovimiento(ctx: EmpresaContext, movimientoI
     }
   }
   await ctx.db.resumenLineaVinculo.deleteMany({ where: { movimientoId } });
+  for (const lineaId of new Set(vinculos.map((v) => v.lineaId))) await sincronizarCobrosDeLinea(ctx, lineaId);
 }
 
 /**

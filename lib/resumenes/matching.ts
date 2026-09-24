@@ -11,6 +11,12 @@ export type MovimientoCandidato = {
   fecha: Date | null;
   nombreContraparte: string | null;
   descriptores: string[]; // aprendidos, ya normalizados
+  /** Ventas (Spec F): se comparan por SALDO pendiente y sólo contra créditos.
+   *  En pesos, un crédito entre 95% y 100% del saldo es "neto de retenciones";
+   *  en moneda extranjera, ±5% del saldo pesificado al TC de la factura. */
+  venta?: { saldo: number; saldoArs: number | null };
+  /** Prefijo del motivo (p. ej. "cobro registrado: Cheque 123"). */
+  etiqueta?: string;
 };
 
 export type LineaParaMatching = {
@@ -51,7 +57,28 @@ export function similitudTexto(a: string, b: string): number {
 const DIAS_VENTANA = 45;
 const TOL_CENTAVOS = 100;
 
+const BANDA_VENTA = 0.05;
+
+/** Señal de monto contra una venta: 'exacto', 'retencion', 'tc' o null. */
+function señalMontoVenta(linea: LineaParaMatching, mov: MovimientoCandidato): 'exacto' | 'retencion' | 'tc' | null {
+  const v = mov.venta!;
+  if (linea.monto == null || linea.monto <= 0) return null; // una venta sólo se cobra con un crédito
+  const lineaCent = Math.round(linea.monto * 100);
+  if (mov.moneda === 'ARS') {
+    const saldoCent = Math.round(v.saldo * 100);
+    if (Math.abs(lineaCent - saldoCent) <= TOL_CENTAVOS) return 'exacto';
+    if (lineaCent < saldoCent && lineaCent >= saldoCent * (1 - BANDA_VENTA)) return 'retencion';
+    return null;
+  }
+  if (linea.montoOrigen != null && linea.moneda === mov.moneda && Math.abs(Math.round(Math.abs(linea.montoOrigen) * 100) - Math.round(v.saldo * 100)) <= TOL_CENTAVOS) {
+    return 'exacto';
+  }
+  if (v.saldoArs != null && v.saldoArs > 0 && Math.abs(linea.monto - v.saldoArs) <= v.saldoArs * BANDA_VENTA) return 'tc';
+  return null;
+}
+
 function señalMonto(linea: LineaParaMatching, mov: MovimientoCandidato): boolean {
+  if (mov.venta) return señalMontoVenta(linea, mov) != null;
   if (mov.total == null) return false;
   const totalCent = Math.round(Math.abs(mov.total) * 100);
   if (linea.monto != null && Math.abs(Math.round(Math.abs(linea.monto) * 100) - totalCent) <= TOL_CENTAVOS) return true;
@@ -93,15 +120,22 @@ export function evaluarLinea(
       const fecha = señalFecha(linea, mov);
       const texto = señalTexto(linea, mov);
       const motivos: string[] = [];
-      if (monto) motivos.push('monto exacto');
+      if (monto) {
+        const tipo = mov.venta ? señalMontoVenta(linea, mov) : 'exacto';
+        motivos.push(tipo === 'retencion' ? 'monto neto de retenciones' : tipo === 'tc' ? 'monto aproximado (tipo de cambio)' : 'monto exacto');
+      }
+      if (mov.etiqueta) motivos.unshift(mov.etiqueta);
       if (fecha > 0.5) motivos.push('fecha cercana');
       if (texto > 0.4) motivos.push('texto similar');
       // Score: monto pesa 0.6; fecha y texto completan.
-      const score = (monto ? 0.6 : 0) + fecha * 0.15 + texto * 0.25;
+      // Un cobro registrado con monto que coincide es mejor evidencia que la venta sola.
+      const score = (monto ? 0.6 : 0) + fecha * 0.15 + texto * 0.25 + (monto && mov.etiqueta ? 0.1 : 0);
       return { movimientoId: mov.id, score: Math.round(score * 100) / 100, motivo: motivos.join(' + ') || 'coincidencia débil', señales: { monto, fecha, texto } };
     })
     .filter((c) => c.señales.monto || c.señales.texto > 0.4)
     .sort((a, b) => b.score - a.score)
+    // Una venta puede entrar dos veces (por su saldo y por un cobro registrado): queda la mejor.
+    .filter((c, i, arr) => arr.findIndex((x) => x.movimientoId === c.movimientoId) === i)
     .slice(0, 5);
 
   const top = puntuados[0];

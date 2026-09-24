@@ -66,3 +66,50 @@ describe('evaluarLinea', () => {
     expect(r.estado).toBe('SUGERIDA');
   });
 });
+
+describe('evaluarLinea: ventas y cobros (Spec F)', () => {
+  const comnet: MovimientoCandidato = {
+    id: 'venta-685', total: 15136816.51, moneda: 'ARS', fecha: d('2026-07-31'),
+    nombreContraparte: 'COMNET S A', descriptores: ['pago a proveedores recibido comnet sa'],
+    venta: { saldo: 15136816.51, saldoArs: 15136816.51 },
+  };
+  const credito = (monto: number, fecha = '2026-08-13', descriptor = 'Pago a proveedores recibido Comnet sa 30661571663') =>
+    ({ fecha: d(fecha), descriptor, monto, montoOrigen: null, moneda: 'ARS' });
+
+  it('un crédito neto de retenciones (≤5%) sugiere la venta', () => {
+    const r = evaluarLinea(credito(14886621.17), [comnet]);
+    expect(r.estado).toBe('SUGERIDA');
+    expect(r.candidatos[0].motivo).toContain('neto de retenciones');
+  });
+
+  it('se compara contra el saldo, no contra el total', () => {
+    const parcial = { ...comnet, venta: { saldo: 5000000, saldoArs: 5000000 } };
+    expect(evaluarLinea(credito(5000000), [parcial]).estado).toBe('SUGERIDA');
+    expect(evaluarLinea(credito(15136816.51), [parcial]).candidatos[0]?.motivo ?? '').not.toContain('monto');
+  });
+
+  it('una venta nunca matchea por monto contra un débito', () => {
+    const r = evaluarLinea(credito(-15136816.51, '2026-08-13', 'DEBITO VARIO'), [comnet]);
+    expect(r.candidatos).toHaveLength(0);
+  });
+
+  it('venta en USD: crédito en pesos dentro de ±5% del saldo pesificado', () => {
+    const cube: MovimientoCandidato = {
+      id: 'venta-170', total: 24775.17, moneda: 'USD', fecha: d('2026-08-19'),
+      nombreContraparte: 'Cubecorp', descriptores: [], venta: { saldo: 24775.17, saldoArs: 24775.17 * 1495 },
+    };
+    const r = evaluarLinea({ fecha: d('2026-08-19'), descriptor: 'Comex - cobro exportacion de serv', monto: 36505077.66, montoOrigen: null, moneda: 'ARS' }, [cube]);
+    expect(r.estado).toBe('SUGERIDA');
+    expect(r.candidatos[0].motivo).toContain('tipo de cambio');
+  });
+
+  it('un cobro registrado aparece con su etiqueta y la venta no se repite', () => {
+    const cobro: MovimientoCandidato = {
+      id: 'venta-685', total: 14886621.17, moneda: 'ARS', fecha: d('2026-08-13'),
+      nombreContraparte: 'COMNET S A', descriptores: [], etiqueta: 'cobro registrado: Transferencia',
+    };
+    const r = evaluarLinea(credito(14886621.17), [comnet, cobro]);
+    expect(r.candidatos).toHaveLength(1);
+    expect(r.candidatos[0].motivo).toMatch(/^cobro registrado: Transferencia \+ monto exacto/);
+  });
+});

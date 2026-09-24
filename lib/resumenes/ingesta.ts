@@ -9,6 +9,10 @@ import { getResumenExtractor } from '@/lib/extractor/resumen';
 import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 import { evaluarLinea, normalizarDescriptor, type MovimientoCandidato } from './matching';
 import { verificarTitular } from './titular';
+import { ORIGENES_VENTA } from '@/lib/ventas/query';
+import { aVentaCobrable } from '@/lib/cobranzas/query';
+import { esCobrable, saldoVenta } from '@/lib/cobranzas/estado';
+import { INSTRUMENTOS_BANCARIOS, INSTRUMENTO_LABEL } from '@/lib/cobranzas/service';
 
 // Pipeline de resúmenes: PDF -> Resumen PROCESANDO -> Job EXTRACCION_RESUMEN
 // -> worker extrae líneas -> matching automático -> EXTRAIDO. El período se
@@ -79,7 +83,12 @@ function ventanaMatching(fechas: (Date | null | undefined)[], ancla: Date): { de
   return { desde: new Date(min - VENTANA_MATCHING_DIAS * DIA_MS), hasta: new Date(max + VENTANA_MATCHING_DIAS * DIA_MS) };
 }
 
-/** Candidatos de matching dentro de la ventana ±45 días de las líneas del resumen. */
+/**
+ * Candidatos de matching dentro de la ventana ±45 días de las líneas del
+ * resumen. Las ventas entran por su SALDO pendiente (Spec F) y las cobradas
+ * no entran; los cobros registrados sin confirmar entran como candidato de su
+ * primera venta, con su monto y su fecha de acreditación.
+ */
 async function candidatosDeMatching(db: ScopedDb, ventana: { desde: Date; hasta: Date }): Promise<MovimientoCandidato[]> {
   const movs = await db.movimiento.findMany({
     where: {
@@ -90,20 +99,55 @@ async function candidatosDeMatching(db: ScopedDb, ventana: { desde: Date; hasta:
         { AND: [{ fechaDevengamiento: null }, { createdAt: { gte: ventana.desde, lte: ventana.hasta } }] },
       ],
     },
-    include: { contraparte: true, vinculosResumen: { select: { id: true } } },
+    include: {
+      contraparte: true,
+      vinculosResumen: { select: { id: true } },
+      aplicacionesCobro: { include: { cobro: { select: { estado: true, fechaAcreditacion: true } } } },
+    },
   });
-  return movs
+  const deMovimientos = movs
     // Un comprobante ya vinculado a alguna línea no se vuelve a sugerir: el
     // pago parcial (compartirlo) es excepcional y se hace a mano, con confirmación.
     .filter((m) => m.vinculosResumen.length === 0)
-    .map((m) => ({
-      id: m.id,
-      total: m.total != null ? Number(m.total) : null,
-      moneda: m.moneda,
-      fecha: m.fechaDevengamiento ?? m.createdAt,
-      nombreContraparte: nombreContraparte(m).nombre,
-      descriptores: ((m.contraparte?.descriptoresResumen as string[] | null) ?? []).map(normalizarDescriptor),
+    .flatMap((m): MovimientoCandidato[] => {
+      const base: MovimientoCandidato = {
+        id: m.id,
+        total: m.total != null ? Number(m.total) : null,
+        moneda: m.moneda,
+        fecha: m.fechaDevengamiento ?? m.createdAt,
+        nombreContraparte: nombreContraparte(m).nombre,
+        descriptores: ((m.contraparte?.descriptoresResumen as string[] | null) ?? []).map(normalizarDescriptor),
+      };
+      if (!(ORIGENES_VENTA as readonly string[]).includes(m.origen)) return [base];
+      const venta = aVentaCobrable(m);
+      if (!esCobrable(venta)) return [base];
+      const s = saldoVenta(venta);
+      if (s.saldo <= 0.01) return []; // ya cobrada (p. ej. con un cobro registrado)
+      return [{ ...base, venta: { saldo: s.saldo, saldoArs: s.saldoArs } }];
+    });
+
+  const cobros = await db.cobro.findMany({
+    where: {
+      origen: 'MANUAL',
+      resumenLineaId: null,
+      estado: { not: 'RECHAZADO' },
+      instrumento: { in: [...INSTRUMENTOS_BANCARIOS] as never },
+      fechaAcreditacion: { gte: ventana.desde, lte: ventana.hasta },
+    },
+    include: { contraparte: true, aplicaciones: { select: { movimientoId: true }, take: 1 } },
+  });
+  const deCobros = cobros
+    .filter((c) => c.aplicaciones.length > 0)
+    .map((c): MovimientoCandidato => ({
+      id: c.aplicaciones[0].movimientoId,
+      total: Number(c.monto),
+      moneda: c.moneda,
+      fecha: c.fechaAcreditacion,
+      nombreContraparte: c.contraparte?.razonSocial ?? null,
+      descriptores: ((c.contraparte?.descriptoresResumen as string[] | null) ?? []).map(normalizarDescriptor),
+      etiqueta: `cobro registrado: ${INSTRUMENTO_LABEL[c.instrumento] ?? c.instrumento}${c.numero ? ` ${c.numero}` : ''}`,
     }));
+  return [...deMovimientos, ...deCobros];
 }
 
 export async function procesarExtraccionResumen(payload: { resumenId: string; empresaId: string }): Promise<void> {

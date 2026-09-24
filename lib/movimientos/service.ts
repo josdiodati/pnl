@@ -447,6 +447,7 @@ export async function eliminarDuplicado(ctx: EmpresaContext, id: string): Promis
   const mov = await getMovimientoOrThrow(ctx, id);
   if (mov.estado !== 'DUPLICADO') throw new DomainError('Sólo se puede borrar un comprobante en estado Duplicado.');
   await liberarLineasDeMovimiento(ctx, id); // las líneas de resumen que lo tenían vuelven a PENDIENTE
+  await assertSinCobros(ctx.db, id); // un cobro registrado a mano no se pierde en silencio
   await ctx.db.movimiento.delete({ where: { id } });
   // El lote de ingesta esperaba ese archivo: descontarlo, si no la pantalla de
   // Carga lo mostraría "procesando" para siempre (total < archivos esperados).
