@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { CANALES_REGLA, CANAL_LABEL } from '@/lib/reglas/desde-asignacion';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { ErrorBanner } from '@/components/error-banner';
 import { guardarRegla, toggleRegla } from '../actions';
@@ -105,9 +106,9 @@ export default async function ReglasPage({
                 <label className="label" title="Por dónde entró el comprobante: web, foto, email, Telegram o carga manual">Fuente</label>
                 <select name="canal" className="input" defaultValue={editando?.canal ?? ''}>
                   <option value="">— cualquiera —</option>
-                  {['WEB', 'FOTO', 'EMAIL', 'TELEGRAM', 'MANUAL'].map((c) => (
+                  {CANALES_REGLA.map((c) => (
                     <option key={c} value={c}>
-                      {c}
+                      {CANAL_LABEL[c]}
                     </option>
                   ))}
                 </select>

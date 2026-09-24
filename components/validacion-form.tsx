@@ -102,8 +102,8 @@ export function ValidacionForm({
   razonSocialContraparte?: string | null;
   reglaVigente?: ReglaExistente | null;
   ocrRegla?: OcrParaRegla | null;
-  /** Fuente y usuario del comprobante, para acotar la regla desde el atajo. */
-  reglaContexto?: { canal: string | null; cargadoPor: { nombre: string } | null };
+  /** Fuente y usuario del comprobante + miembros elegibles, para acotar la regla desde el atajo. */
+  reglaContexto?: { canal: string | null; cargadoPorId: string | null; miembros: { id: string; nombre: string }[] };
 }) {
   const [contraparteId, setContraparteId] = useState(mov.contraparteId);
   const [categoriaId, setCategoriaId] = useState(mov.categoriaId);
@@ -421,7 +421,8 @@ export function ValidacionForm({
               existente={reglaVigente ?? null}
               ocr={ocrRegla ?? null}
               canal={reglaContexto?.canal ?? null}
-              cargadoPor={reglaContexto?.cargadoPor ?? null}
+              cargadoPorId={reglaContexto?.cargadoPorId ?? null}
+              miembros={reglaContexto?.miembros ?? []}
             />
           </div>
         )}

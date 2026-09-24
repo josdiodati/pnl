@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { plantillaQueCoincide, construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaVigenteParaPalabraClave, reglaEquivalente, prioridadParaEspecifica, type EntradaReglaDesdeAsignacion } from '@/lib/reglas/desde-asignacion';
+import { plantillaQueCoincide, construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaVigenteParaPalabraClave, reglaEquivalente, prioridadParaEspecifica, canalRegla, type EntradaReglaDesdeAsignacion } from '@/lib/reglas/desde-asignacion';
 
 // Camino inverso al de lib/reglas/aplicar.ts: de una asignación concreta a una
 // regla reutilizable. La restricción del modelo manda: ReglaAsignacion guarda un
@@ -247,5 +247,15 @@ describe('reglaEquivalente (qué regla se pisa al guardar desde el atajo)', () =
     expect(prioridadParaEspecifica(reglas, nueva({ palabraClave: 'max plan', canal: 'FOTO' }))).toBe(90);
     // sin regla amplia que adelantar
     expect(prioridadParaEspecifica(reglas, nueva({ cuit: '30111111118', canal: 'FOTO' }))).toBeNull();
+  });
+});
+
+describe('canalRegla (fuente elegida en el atajo)', () => {
+  it('acepta sólo fuentes conocidas, sin importar mayúsculas; el resto es "cualquiera"', () => {
+    expect(canalRegla('FOTO')).toBe('FOTO');
+    expect(canalRegla(' email ')).toBe('EMAIL');
+    expect(canalRegla('')).toBeNull();
+    expect(canalRegla('FAX')).toBeNull();
+    expect(canalRegla(null)).toBeNull();
   });
 });

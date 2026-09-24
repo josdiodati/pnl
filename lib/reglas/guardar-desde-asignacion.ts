@@ -1,8 +1,9 @@
+import { prisma } from '@/lib/db';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import type { LineaDistribucion } from '@/lib/movimientos/distribucion';
 import { normalizarCuit } from '@/lib/checks';
 import { writeAudit } from '@/lib/audit';
-import { construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaEquivalente, prioridadParaEspecifica } from './desde-asignacion';
+import { construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaEquivalente, prioridadParaEspecifica, canalRegla } from './desde-asignacion';
 
 // Guarda como regla la imputación que se acaba de cargar. Es best-effort por
 // diseño: la asignación del comprobante ya ocurrió y no se deshace porque la
@@ -14,7 +15,8 @@ export type ParametrosReglaDesdeAsignacion = {
   categoriaId: string;
   lineas: LineaDistribucion[];
   palabraClave: string | null;
-  /** Fuente y usuario del comprobante, sólo si el usuario marcó acotar por ellos. */
+  /** Fuente y usuario elegidos en el atajo ('' o null = cualquiera). Se
+   *  validan acá: canal conocido y usuario miembro de la empresa. */
   canal?: string | null;
   cargadoPorId?: string | null;
   nombre: string | null;
@@ -38,14 +40,20 @@ export async function guardarReglaDesdeAsignacion(
 
     const plantillas = await ctx.db.plantillaDistribucion.findMany({ include: { lineas: true } });
 
+    const cargadoPorId = p.cargadoPorId?.trim() || null;
+    const miembro = cargadoPorId
+      ? await prisma.usuarioEmpresa.findFirst({ where: { empresaId: ctx.empresa.id, usuarioId: cargadoPorId }, select: { usuarioId: true } })
+      : null;
+    if (cargadoPorId && !miembro) return 'no se creó la regla: el usuario elegido no pertenece a la empresa';
+
     const decision = construirReglaDesdeAsignacion({
       cuit: p.cuit,
       razonSocial: p.razonSocial,
       categoriaId: p.categoriaId,
       categoriaNombre: categoria.nombre,
       palabraClave: p.palabraClave,
-      canal: p.canal ?? null,
-      cargadoPorId: p.cargadoPorId ?? null,
+      canal: canalRegla(p.canal),
+      cargadoPorId: miembro?.usuarioId ?? null,
       nombrePropuesto: p.nombre,
       lineas: p.lineas,
       plantillas: plantillas.map((pl) => ({

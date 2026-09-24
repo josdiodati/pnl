@@ -87,6 +87,16 @@ export function reglaVigenteParaPalabraClave<T extends Pick<ReglaAsignacion, 'cu
   );
 }
 
+/** Fuentes (canales de ingreso) elegibles como condición. */
+export const CANALES_REGLA = ['WEB', 'FOTO', 'EMAIL', 'TELEGRAM', 'MANUAL'] as const;
+export const CANAL_LABEL: Record<string, string> = { WEB: 'Web', FOTO: 'Foto', EMAIL: 'Email', TELEGRAM: 'Telegram', MANUAL: 'Carga manual' };
+
+/** El canal tal como vino del form, o null si no es uno conocido. */
+export function canalRegla(v: unknown): string | null {
+  const t = typeof v === 'string' ? v.trim().toUpperCase() : '';
+  return (CANALES_REGLA as readonly string[]).includes(t) ? t : null;
+}
+
 type CondicionesRegla = { cuit: string | null; palabraClave: string | null; canal: string | null; cargadoPorId: string | null };
 
 /** Regla de imputación con EXACTAMENTE las mismas condiciones que la nueva:

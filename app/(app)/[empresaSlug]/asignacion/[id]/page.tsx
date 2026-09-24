@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
+import { prisma } from '@/lib/db';
 import { getFileStorage } from '@/lib/storage';
 import { DocViewer } from '@/components/doc-viewer';
 import { DistribucionEditor } from '@/components/distribucion-editor';
@@ -29,12 +30,12 @@ export default async function AsignacionDetallePage({
 
   const mov = await ctx.db.movimiento.findFirst({
     where: { id: params.id },
-    include: { contraparte: true, categoria: true, lineas: true, creadoPor: { select: { nombre: true } } },
+    include: { contraparte: true, categoria: true, lineas: true },
   });
   if (!mov) notFound();
   if (mov.estado !== 'VALIDADO' && mov.estado !== 'ASIGNADO') notFound();
 
-  const [categorias, centros, clientes, proyectos, plantillas, reglas, fileUrl] = await Promise.all([
+  const [categorias, centros, clientes, proyectos, plantillas, reglas, fileUrl, miembros] = await Promise.all([
     ctx.db.categoria.findMany({ where: { activa: true }, orderBy: [{ tipo: 'asc' }, { nombre: 'asc' }] }),
     ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.cliente.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
@@ -42,7 +43,9 @@ export default async function AsignacionDetallePage({
     ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }] }),
     mov.archivoKey ? getFileStorage().getSignedUrl(mov.archivoKey) : Promise.resolve(null),
+    prisma.usuarioEmpresa.findMany({ where: { empresaId: ctx.empresa.id }, include: { usuario: { select: { id: true, nombre: true, email: true } } }, orderBy: { usuario: { nombre: 'asc' } } }),
   ]);
+  const miembrosRegla = miembros.map((m) => ({ id: m.usuario.id, nombre: m.usuario.nombre || m.usuario.email }));
 
   const tfCents = totalFirmadoDe(mov as never);
   const totalFirmado = tfCents != null ? tfCents / 100 : null;
@@ -193,7 +196,8 @@ export default async function AsignacionDetallePage({
               existente={reglaVigente ? { nombre: reglaVigente.nombre, imputacion: imputacionDe(reglaVigente) } : null}
               ocr={ocrParaRegla({ extraccionRaw: mov.extraccionRaw, descripcion: mov.descripcion, razonSocialContraparte: nombreContraparte(mov).nombre })}
               canal={mov.canalIngreso}
-              cargadoPor={mov.creadoPor}
+              cargadoPorId={mov.creadoPorId}
+              miembros={miembrosRegla}
             />
 
             <div className="flex gap-2 pt-2">

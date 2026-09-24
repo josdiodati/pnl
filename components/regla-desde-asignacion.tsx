@@ -13,13 +13,12 @@
 
 import { OcrPopup } from './ocr-popup';
 import type { OcrParaRegla } from '@/lib/reglas/ocr-para-regla';
+import { CANALES_REGLA, CANAL_LABEL } from '@/lib/reglas/desde-asignacion';
 
 export type ReglaExistente = {
   nombre: string;
   imputacion: string;
 };
-
-export const CANAL_LABEL: Record<string, string> = { WEB: 'web', FOTO: 'foto', EMAIL: 'email', TELEGRAM: 'Telegram', MANUAL: 'carga manual' };
 
 export function ReglaDesdeAsignacion({
   cuit,
@@ -27,17 +26,19 @@ export function ReglaDesdeAsignacion({
   existente,
   ocr,
   canal,
-  cargadoPor,
+  cargadoPorId,
+  miembros,
 }: {
   cuit: string | null;
   razonSocial: string | null;
   existente: ReglaExistente | null;
   /** Lo que leyó el OCR, para elegir la palabra clave desde un pop-up. */
   ocr?: OcrParaRegla | null;
-  /** Fuente (canal de ingreso) y usuario que cargó ESTE comprobante: se
-   *  ofrecen como condiciones extra, desmarcadas. */
+  /** Fuente y usuario de ESTE comprobante (se marcan en los selectores) y
+   *  los miembros de la empresa elegibles. Por defecto: cualquiera. */
   canal?: string | null;
-  cargadoPor?: { nombre: string } | null;
+  cargadoPorId?: string | null;
+  miembros?: { id: string; nombre: string }[];
 }) {
   return (
     <fieldset className="rounded-md border border-slate-200 p-3 space-y-2">
@@ -79,23 +80,33 @@ export function ReglaDesdeAsignacion({
               : 'La regla matcheará los comprobantes cuya descripción o razón social mencione ese texto.'}
           </p>
         </div>
-        {(canal || cargadoPor) && (
-          <div className="sm:col-span-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-            {canal && (
-              <label className="flex items-center gap-1.5">
-                <input type="checkbox" name="reglaCanal" value="1" />
-                Sólo cuando entra por <strong>{CANAL_LABEL[canal] ?? canal}</strong>
-              </label>
-            )}
-            {cargadoPor && (
-              <label className="flex items-center gap-1.5">
-                <input type="checkbox" name="reglaCargadoPor" value="1" />
-                Sólo cuando lo carga <strong>{cargadoPor.nombre}</strong>
-              </label>
-            )}
-            <span className="basis-full text-[11px] text-slate-400">Sin marcar, la regla aplica a cualquier fuente y usuario.</span>
+        <div className="sm:col-span-2 grid sm:grid-cols-2 gap-2">
+          <div>
+            <label className="label" htmlFor="reglaCanal">Sólo si entra por</label>
+            <select id="reglaCanal" name="reglaCanal" className="input w-full text-xs" defaultValue="">
+              <option value="">— cualquier fuente —</option>
+              {CANALES_REGLA.map((c) => (
+                <option key={c} value={c}>
+                  {CANAL_LABEL[c]}{c === canal ? ' (este comprobante)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
+          <div>
+            <label className="label" htmlFor="reglaCargadoPorId">Sólo si lo carga</label>
+            <select id="reglaCargadoPorId" name="reglaCargadoPorId" className="input w-full text-xs" defaultValue="">
+              <option value="">— cualquier usuario —</option>
+              {(miembros ?? []).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.nombre}{m.id === cargadoPorId ? ' (este comprobante)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="sm:col-span-2 text-[11px] text-slate-400 -mt-1">
+            Condiciones extra opcionales: con «cualquiera» la regla no las evalúa.
+          </p>
+        </div>
         <div>
           <label className="label" htmlFor="reglaNombre">Nombre de la regla</label>
           <input

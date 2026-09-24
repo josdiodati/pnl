@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
+import { prisma } from '@/lib/db';
 import { getFileStorage } from '@/lib/storage';
 import { DocViewer } from '@/components/doc-viewer';
 import { ValidacionForm } from '@/components/validacion-form';
@@ -58,7 +59,7 @@ export default async function ValidacionDetallePage({
   // Un comprobante puede pagarse en varias líneas (pago parcial): se listan todas.
   const lineasResumen = mov.vinculosResumen.map((v) => v.linea);
 
-  const [contrapartes, categorias, centros, clientes, proyectos, plantillas, reglas] = await Promise.all([
+  const [contrapartes, categorias, centros, clientes, proyectos, plantillas, reglas, miembros] = await Promise.all([
     ctx.db.contraparte.findMany({ where: { activa: true }, orderBy: { razonSocial: 'asc' } }),
     ctx.db.categoria.findMany({ where: { activa: true }, orderBy: [{ tipo: 'asc' }, { nombre: 'asc' }] }),
     ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
@@ -66,7 +67,9 @@ export default async function ValidacionDetallePage({
     ctx.db.proyecto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.plantillaDistribucion.findMany({ include: { lineas: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }] }),
+    prisma.usuarioEmpresa.findMany({ where: { empresaId: ctx.empresa.id }, include: { usuario: { select: { id: true, nombre: true, email: true } } }, orderBy: { usuario: { nombre: 'asc' } } }),
   ]);
+  const miembrosRegla = miembros.map((m) => ({ id: m.usuario.id, nombre: m.usuario.nombre || m.usuario.email }));
   const fileUrl = mov.archivoKey ? await getFileStorage().getSignedUrl(mov.archivoKey) : null;
   const editable = EDITABLES.has(mov.estado);
   const flags = (mov.flags as Record<string, unknown> | null) ?? {};
@@ -263,7 +266,7 @@ export default async function ValidacionDetallePage({
               }}
               reglaSugerida={reglaSugerida}
               ocrRegla={ocrParaRegla({ extraccionRaw: mov.extraccionRaw, descripcion: mov.descripcion, razonSocialContraparte: nombreContraparte(mov).nombre })}
-              reglaContexto={{ canal: mov.canalIngreso, cargadoPor: mov.creadoPor ? { nombre: mov.creadoPor.nombre } : null }}
+              reglaContexto={{ canal: mov.canalIngreso, cargadoPorId: mov.creadoPorId, miembros: miembrosRegla }}
               categorias={categorias.map((c) => ({ id: c.id, nombre: c.nombre, tipo: c.tipo, padreId: c.padreId }))}
               centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
               clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre, centroCostoId: c.centroCostoId }))}
