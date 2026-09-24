@@ -29,7 +29,7 @@ export default async function AsignacionDetallePage({
 
   const mov = await ctx.db.movimiento.findFirst({
     where: { id: params.id },
-    include: { contraparte: true, categoria: true, lineas: true },
+    include: { contraparte: true, categoria: true, lineas: true, creadoPor: { select: { nombre: true } } },
   });
   if (!mov) notFound();
   if (mov.estado !== 'VALIDADO' && mov.estado !== 'ASIGNADO') notFound();
@@ -192,6 +192,8 @@ export default async function AsignacionDetallePage({
               razonSocial={nombreContraparte(mov).nombre}
               existente={reglaVigente ? { nombre: reglaVigente.nombre, imputacion: imputacionDe(reglaVigente) } : null}
               ocr={ocrParaRegla({ extraccionRaw: mov.extraccionRaw, descripcion: mov.descripcion, razonSocialContraparte: nombreContraparte(mov).nombre })}
+              canal={mov.canalIngreso}
+              cargadoPor={mov.creadoPor}
             />
 
             <div className="flex gap-2 pt-2">

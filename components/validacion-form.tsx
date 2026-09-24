@@ -88,6 +88,7 @@ export function ValidacionForm({
   razonSocialContraparte,
   reglaVigente,
   ocrRegla,
+  reglaContexto,
 }: {
   empresaSlug: string;
   mov: CampoMovimiento;
@@ -101,6 +102,8 @@ export function ValidacionForm({
   razonSocialContraparte?: string | null;
   reglaVigente?: ReglaExistente | null;
   ocrRegla?: OcrParaRegla | null;
+  /** Fuente y usuario del comprobante, para acotar la regla desde el atajo. */
+  reglaContexto?: { canal: string | null; cargadoPor: { nombre: string } | null };
 }) {
   const [contraparteId, setContraparteId] = useState(mov.contraparteId);
   const [categoriaId, setCategoriaId] = useState(mov.categoriaId);
@@ -417,6 +420,8 @@ export function ValidacionForm({
               razonSocial={razonSocialContraparte ?? null}
               existente={reglaVigente ?? null}
               ocr={ocrRegla ?? null}
+              canal={reglaContexto?.canal ?? null}
+              cargadoPor={reglaContexto?.cargadoPor ?? null}
             />
           </div>
         )}

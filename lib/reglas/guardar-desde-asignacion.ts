@@ -2,7 +2,7 @@ import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import type { LineaDistribucion } from '@/lib/movimientos/distribucion';
 import { normalizarCuit } from '@/lib/checks';
 import { writeAudit } from '@/lib/audit';
-import { construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaVigenteParaPalabraClave } from './desde-asignacion';
+import { construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaEquivalente, prioridadParaEspecifica } from './desde-asignacion';
 
 // Guarda como regla la imputación que se acaba de cargar. Es best-effort por
 // diseño: la asignación del comprobante ya ocurrió y no se deshace porque la
@@ -14,6 +14,9 @@ export type ParametrosReglaDesdeAsignacion = {
   categoriaId: string;
   lineas: LineaDistribucion[];
   palabraClave: string | null;
+  /** Fuente y usuario del comprobante, sólo si el usuario marcó acotar por ellos. */
+  canal?: string | null;
+  cargadoPorId?: string | null;
   nombre: string | null;
 };
 
@@ -41,6 +44,8 @@ export async function guardarReglaDesdeAsignacion(
       categoriaId: p.categoriaId,
       categoriaNombre: categoria.nombre,
       palabraClave: p.palabraClave,
+      canal: p.canal ?? null,
+      cargadoPorId: p.cargadoPorId ?? null,
       nombrePropuesto: p.nombre,
       lineas: p.lineas,
       plantillas: plantillas.map((pl) => ({
@@ -56,13 +61,13 @@ export async function guardarReglaDesdeAsignacion(
 
     if (!decision.crear) return `no se creó la regla: ${decision.motivo}`;
 
-    // Con CUIT se pisa la regla de ese CUIT; sin CUIT, la regla sin CUIT que
-    // tenga la misma palabra clave (si no hay, se crea una nueva).
+    // Se pisa la regla con exactamente las mismas condiciones (CUIT o palabra
+    // clave, más fuente y usuario). Una combinación más específica que no
+    // existe se crea aparte, con prioridad para evaluarse antes que la amplia.
     const reglas = await ctx.db.reglaAsignacion.findMany();
-    const existente = decision.regla.cuit
-      ? reglaVigenteParaCuit(reglas, decision.regla.cuit)
-      : reglaVigenteParaPalabraClave(reglas, decision.regla.palabraClave);
-    const datos = { ...decision.regla, accion: 'ASIGNAR' };
+    const existente = reglaEquivalente(reglas, decision.regla);
+    const prioridad = existente ? null : prioridadParaEspecifica(reglas, decision.regla);
+    const datos = { ...decision.regla, accion: 'ASIGNAR', ...(prioridad != null ? { prioridad } : {}) };
 
     if (existente) {
       await ctx.db.reglaAsignacion.update({ where: { id: existente.id }, data: datos as never });
@@ -85,7 +90,9 @@ export async function guardarReglaDesdeAsignacion(
       accion: 'CREAR',
       despues: { ...datos, desdeAsignacion: true },
     });
-    return `regla «${decision.regla.nombre}» creada`;
+    return prioridad != null
+      ? `regla «${decision.regla.nombre}» creada; se evalúa antes que la regla general de este emisor`
+      : `regla «${decision.regla.nombre}» creada`;
   } catch {
     // Nombre repetido (unique empresaId+nombre) o cualquier otro fallo: la
     // asignación ya está hecha y es lo que importa.

@@ -102,7 +102,7 @@ export default async function ReglasPage({
                 />
               </div>
               <div>
-                <label className="label">Canal</label>
+                <label className="label" title="Por dónde entró el comprobante: web, foto, email, Telegram o carga manual">Fuente</label>
                 <select name="canal" className="input" defaultValue={editando?.canal ?? ''}>
                   <option value="">— cualquiera —</option>
                   {['WEB', 'FOTO', 'EMAIL', 'TELEGRAM', 'MANUAL'].map((c) => (

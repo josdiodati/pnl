@@ -19,6 +19,10 @@ export type EntradaReglaDesdeAsignacion = {
   categoriaId: string;
   categoriaNombre: string;
   palabraClave: string | null;
+  /** Fuente (canal de ingreso) y usuario que cargó: condiciones extra
+   *  opcionales. Sin ellas la regla no las evalúa. */
+  canal?: string | null;
+  cargadoPorId?: string | null;
   nombrePropuesto: string | null;
   lineas: LineaDistribucion[];
   plantillas: PlantillaConLineas[];
@@ -28,6 +32,8 @@ export type ReglaNueva = {
   nombre: string;
   cuit: string | null;
   palabraClave: string | null;
+  canal: string | null;
+  cargadoPorId: string | null;
   categoriaId: string;
   distribucionId: string | null;
   centroCostoId: string | null;
@@ -81,6 +87,43 @@ export function reglaVigenteParaPalabraClave<T extends Pick<ReglaAsignacion, 'cu
   );
 }
 
+type CondicionesRegla = { cuit: string | null; palabraClave: string | null; canal: string | null; cargadoPorId: string | null };
+
+/** Regla de imputación con EXACTAMENTE las mismas condiciones que la nueva:
+ *  mismo CUIT (o, sin CUIT, misma palabra clave) y misma fuente y usuario. Es
+ *  la que se pisa al guardar desde el atajo. Una combinación más específica
+ *  (p. ej. el mismo CUIT pero sólo por foto) no pisa la regla amplia: convive
+ *  con ella. Con CUIT la palabra clave no distingue, como siempre. */
+export function reglaEquivalente<T extends Pick<ReglaAsignacion, 'cuit' | 'palabraClave' | 'canal' | 'cargadoPorId' | 'accion'>>(
+  reglas: T[],
+  nueva: CondicionesRegla,
+): T | null {
+  const cuit = nueva.cuit ? normalizarCuit(nueva.cuit) : null;
+  const palabra = limpiar(nueva.palabraClave)?.toLowerCase() ?? null;
+  if (!cuit && !palabra) return null;
+  return (
+    reglas.find((r) => {
+      if (r.accion !== 'ASIGNAR') return false;
+      if ((r.canal ?? null) !== (nueva.canal ?? null)) return false;
+      if ((r.cargadoPorId ?? null) !== (nueva.cargadoPorId ?? null)) return false;
+      if (cuit) return !!r.cuit && normalizarCuit(r.cuit) === cuit;
+      return !r.cuit && (r.palabraClave?.trim().toLowerCase() ?? null) === palabra;
+    }) ?? null
+  );
+}
+
+/** Prioridad para una regla nueva con fuente o usuario, de modo que se evalúe
+ *  ANTES que la regla amplia (sin esas condiciones) del mismo CUIT o palabra
+ *  clave. Null si no hay nada que adelantar (queda la prioridad por defecto). */
+export function prioridadParaEspecifica<T extends Pick<ReglaAsignacion, 'cuit' | 'palabraClave' | 'canal' | 'cargadoPorId' | 'accion' | 'prioridad'>>(
+  reglas: T[],
+  nueva: CondicionesRegla,
+): number | null {
+  if (!nueva.canal && !nueva.cargadoPorId) return null;
+  const amplia = reglaEquivalente(reglas, { ...nueva, canal: null, cargadoPorId: null });
+  return amplia ? amplia.prioridad - 10 : null;
+}
+
 /** Id de la plantilla cuyas líneas son exactamente este reparto, o null. */
 export function plantillaQueCoincide(lineas: LineaDistribucion[], plantillas: PlantillaConLineas[]): string | null {
   const objetivo = claveReparto(lineas);
@@ -103,6 +146,8 @@ export function construirReglaDesdeAsignacion(e: EntradaReglaDesdeAsignacion): D
     nombre,
     cuit,
     palabraClave,
+    canal: limpiar(e.canal ?? null),
+    cargadoPorId: limpiar(e.cargadoPorId ?? null),
     categoriaId: e.categoriaId,
   };
 

@@ -263,6 +263,7 @@ export default async function ValidacionDetallePage({
               }}
               reglaSugerida={reglaSugerida}
               ocrRegla={ocrParaRegla({ extraccionRaw: mov.extraccionRaw, descripcion: mov.descripcion, razonSocialContraparte: nombreContraparte(mov).nombre })}
+              reglaContexto={{ canal: mov.canalIngreso, cargadoPor: mov.creadoPor ? { nombre: mov.creadoPor.nombre } : null }}
               categorias={categorias.map((c) => ({ id: c.id, nombre: c.nombre, tipo: c.tipo, padreId: c.padreId }))}
               centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
               clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre, centroCostoId: c.centroCostoId }))}

@@ -19,17 +19,25 @@ export type ReglaExistente = {
   imputacion: string;
 };
 
+export const CANAL_LABEL: Record<string, string> = { WEB: 'web', FOTO: 'foto', EMAIL: 'email', TELEGRAM: 'Telegram', MANUAL: 'carga manual' };
+
 export function ReglaDesdeAsignacion({
   cuit,
   razonSocial,
   existente,
   ocr,
+  canal,
+  cargadoPor,
 }: {
   cuit: string | null;
   razonSocial: string | null;
   existente: ReglaExistente | null;
   /** Lo que leyó el OCR, para elegir la palabra clave desde un pop-up. */
   ocr?: OcrParaRegla | null;
+  /** Fuente (canal de ingreso) y usuario que cargó ESTE comprobante: se
+   *  ofrecen como condiciones extra, desmarcadas. */
+  canal?: string | null;
+  cargadoPor?: { nombre: string } | null;
 }) {
   return (
     <fieldset className="rounded-md border border-slate-200 p-3 space-y-2">
@@ -48,7 +56,8 @@ export function ReglaDesdeAsignacion({
       {existente && (
         <p className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5 text-xs text-amber-900">
           Ya hay una regla para este CUIT: «{existente.nombre}» → {existente.imputacion}. Si marcás la
-          casilla, se reemplaza por la imputación que estás cargando.
+          casilla, se reemplaza por la imputación que estás cargando (salvo que la acotes por fuente o
+          usuario: en ese caso se crea una regla más específica que se evalúa antes).
         </p>
       )}
 
@@ -70,6 +79,23 @@ export function ReglaDesdeAsignacion({
               : 'La regla matcheará los comprobantes cuya descripción o razón social mencione ese texto.'}
           </p>
         </div>
+        {(canal || cargadoPor) && (
+          <div className="sm:col-span-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            {canal && (
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" name="reglaCanal" value="1" />
+                Sólo cuando entra por <strong>{CANAL_LABEL[canal] ?? canal}</strong>
+              </label>
+            )}
+            {cargadoPor && (
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" name="reglaCargadoPor" value="1" />
+                Sólo cuando lo carga <strong>{cargadoPor.nombre}</strong>
+              </label>
+            )}
+            <span className="basis-full text-[11px] text-slate-400">Sin marcar, la regla aplica a cualquier fuente y usuario.</span>
+          </div>
+        )}
         <div>
           <label className="label" htmlFor="reglaNombre">Nombre de la regla</label>
           <input

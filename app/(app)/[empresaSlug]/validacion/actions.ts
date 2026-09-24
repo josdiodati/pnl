@@ -149,6 +149,9 @@ export async function validarAction(formData: FormData): Promise<void> {
         categoriaId: categoriaRegla,
         lineas: lineasRegla,
         palabraClave: String(formData.get('reglaPalabraClave') ?? '').trim() || null,
+        // Fuente y usuario salen del comprobante, nunca del form: la casilla sólo dice si acotar.
+        canal: formData.get('reglaCanal') === '1' ? (mov?.canalIngreso ?? null) : null,
+        cargadoPorId: formData.get('reglaCargadoPor') === '1' ? (mov?.creadoPorId ?? null) : null,
         nombre: String(formData.get('reglaNombre') ?? '').trim() || null,
       });
       mensajeRegla = ` — ${resultado}`;

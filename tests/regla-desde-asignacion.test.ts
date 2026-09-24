@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { plantillaQueCoincide, construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaVigenteParaPalabraClave, type EntradaReglaDesdeAsignacion } from '@/lib/reglas/desde-asignacion';
+import { plantillaQueCoincide, construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaVigenteParaPalabraClave, reglaEquivalente, prioridadParaEspecifica, type EntradaReglaDesdeAsignacion } from '@/lib/reglas/desde-asignacion';
 
 // Camino inverso al de lib/reglas/aplicar.ts: de una asignación concreta a una
 // regla reutilizable. La restricción del modelo manda: ReglaAsignacion guarda un
@@ -175,5 +175,77 @@ describe('construirReglaDesdeAsignacion', () => {
     });
     if (!r.crear) throw new Error(r.motivo);
     expect(r.regla).toMatchObject({ centroCostoId: 'cc-bpo', clienteId: 'cli-1', proyectoId: 'pry-1' });
+  });
+});
+
+// Fuente (canal) y usuario como condiciones extra desde el atajo. Sin ellas
+// todo sigue igual: la regla sólo evalúa las condiciones que tiene.
+describe('construirReglaDesdeAsignacion con fuente y usuario', () => {
+  it('sin fuente ni usuario la regla los deja en null', () => {
+    const r = construirReglaDesdeAsignacion(base);
+    if (!r.crear) throw new Error(r.motivo);
+    expect(r.regla).toMatchObject({ canal: null, cargadoPorId: null });
+  });
+
+  it('guarda fuente y usuario cuando se los pasan, descartando vacíos', () => {
+    const r = construirReglaDesdeAsignacion({ ...base, canal: 'FOTO', cargadoPorId: ' u-gaston ' });
+    if (!r.crear) throw new Error(r.motivo);
+    expect(r.regla).toMatchObject({ canal: 'FOTO', cargadoPorId: 'u-gaston' });
+    const vacio = construirReglaDesdeAsignacion({ ...base, canal: '', cargadoPorId: '  ' });
+    if (!vacio.crear) throw new Error(vacio.motivo);
+    expect(vacio.regla).toMatchObject({ canal: null, cargadoPorId: null });
+  });
+
+  it('fuente o usuario solos NO alcanzan como condición: sigue haciendo falta CUIT o palabra clave', () => {
+    const r = construirReglaDesdeAsignacion({ ...base, cuit: null, razonSocial: null, canal: 'FOTO', cargadoPorId: 'u-1' });
+    expect(r.crear).toBe(false);
+  });
+});
+
+describe('reglaEquivalente (qué regla se pisa al guardar desde el atajo)', () => {
+  type R = { id: string; cuit: string | null; palabraClave: string | null; canal: string | null; cargadoPorId: string | null; accion: string; prioridad: number };
+  const reglas: R[] = [
+    { id: 'amplia', cuit: '30-65663161-5', palabraClave: null, canal: null, cargadoPorId: null, accion: 'ASIGNAR', prioridad: 100 },
+    { id: 'foto', cuit: '30656631615', palabraClave: null, canal: 'FOTO', cargadoPorId: null, accion: 'ASIGNAR', prioridad: 90 },
+    { id: 'gaston-foto', cuit: '30656631615', palabraClave: null, canal: 'FOTO', cargadoPorId: 'u-gaston', accion: 'ASIGNAR', prioridad: 80 },
+    { id: 'maxplan', cuit: null, palabraClave: 'Max plan', canal: null, cargadoPorId: null, accion: 'ASIGNAR', prioridad: 100 },
+    { id: 'maxplan-mail', cuit: null, palabraClave: 'max plan', canal: 'EMAIL', cargadoPorId: null, accion: 'ASIGNAR', prioridad: 100 },
+    { id: 'descarte', cuit: '30656631615', palabraClave: null, canal: null, cargadoPorId: null, accion: 'OBSERVAR', prioridad: 1 },
+  ];
+  const nueva = (p: Partial<R>) => ({ cuit: null, palabraClave: null, canal: null, cargadoPorId: null, ...p });
+
+  it('misma combinación de CUIT + fuente + usuario → esa regla', () => {
+    expect(reglaEquivalente(reglas, nueva({ cuit: '30656631615' }))?.id).toBe('amplia');
+    expect(reglaEquivalente(reglas, nueva({ cuit: '30656631615', canal: 'FOTO' }))?.id).toBe('foto');
+    expect(reglaEquivalente(reglas, nueva({ cuit: '30656631615', canal: 'FOTO', cargadoPorId: 'u-gaston' }))?.id).toBe('gaston-foto');
+  });
+
+  it('una combinación más específica que no existe todavía no pisa la amplia', () => {
+    expect(reglaEquivalente(reglas, nueva({ cuit: '30656631615', cargadoPorId: 'u-gaston' }))).toBeNull();
+    expect(reglaEquivalente(reglas, nueva({ cuit: '30656631615', canal: 'EMAIL' }))).toBeNull();
+  });
+
+  it('sin CUIT compara por palabra clave (sin mayúsculas) + fuente + usuario', () => {
+    expect(reglaEquivalente(reglas, nueva({ palabraClave: 'MAX PLAN' }))?.id).toBe('maxplan');
+    expect(reglaEquivalente(reglas, nueva({ palabraClave: 'max plan', canal: 'EMAIL' }))?.id).toBe('maxplan-mail');
+    expect(reglaEquivalente(reglas, nueva({ palabraClave: 'max plan', canal: 'FOTO' }))).toBeNull();
+  });
+
+  it('con CUIT la palabra clave no distingue (se pisa la regla del CUIT como siempre)', () => {
+    expect(reglaEquivalente(reglas, nueva({ cuit: '30656631615', palabraClave: 'roaming' }))?.id).toBe('amplia');
+  });
+
+  it('nunca devuelve una regla de descarte', () => {
+    expect(reglaEquivalente([reglas[5]], nueva({ cuit: '30656631615' }))).toBeNull();
+  });
+
+  it('prioridad: una regla nueva más específica se evalúa antes que la amplia del mismo CUIT', () => {
+    expect(prioridadParaEspecifica(reglas, nueva({ cuit: '30656631615', cargadoPorId: 'u-gaston' }))).toBe(90);
+    // sin condición extra no hay nada que adelantar
+    expect(prioridadParaEspecifica(reglas, nueva({ cuit: '30656631615' }))).toBeNull();
+    // sin CUIT: adelanta a la regla amplia de la misma palabra clave
+    expect(prioridadParaEspecifica(reglas, nueva({ palabraClave: 'max plan', canal: 'FOTO' }))).toBe(90);
+    // sin regla amplia que adelantar
+    expect(prioridadParaEspecifica(reglas, nueva({ cuit: '30111111118', canal: 'FOTO' }))).toBeNull();
   });
 });
