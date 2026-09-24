@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
+import { ArcaBadge } from '@/components/badges';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { nombreContraparte, esVenta } from '@/lib/movimientos/nombre-contraparte';
 
@@ -35,6 +36,7 @@ export default async function AsignacionPage({
               <th>Comprobante</th>
               <th>Fecha</th>
               <th className="text-right">Total</th>
+              <th>ARCA</th>
               <th></th>
             </tr>
           </thead>
@@ -61,6 +63,7 @@ export default async function AsignacionPage({
                 </td>
                 <td className="whitespace-nowrap">{formatFecha(m.fechaDevengamiento)}</td>
                 <td className="num">{formatMoney(m.total ? Number(m.total) : null)}</td>
+                <td className="whitespace-nowrap"><ArcaBadge estado={m.arcaEstado} /></td>
                 <td className="text-right">
                   <Link href={`/${params.empresaSlug}/asignacion/${m.id}`} className="btn-primary text-xs">
                     Asignar
@@ -71,7 +74,7 @@ export default async function AsignacionPage({
             })}
             {movimientos.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center text-slate-400 py-8">
+                <td colSpan={7} className="text-center text-slate-400 py-8">
                   No hay comprobantes validados pendientes de asignación.
                 </td>
               </tr>

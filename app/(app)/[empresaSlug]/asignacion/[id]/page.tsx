@@ -5,6 +5,7 @@ import { getFileStorage } from '@/lib/storage';
 import { DocViewer } from '@/components/doc-viewer';
 import { DistribucionEditor } from '@/components/distribucion-editor';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
+import { ArcaBadge } from '@/components/badges';
 import { ReglaDesdeAsignacion } from '@/components/regla-desde-asignacion';
 import { HistorialComprobante } from '@/components/historial-comprobante';
 import { buscarReglaPorCuit } from '@/lib/reglas/guardar-desde-asignacion';
@@ -140,6 +141,8 @@ export default async function AsignacionDetallePage({
             <dd>{formatFecha(mov.fechaDevengamiento)}</dd>
             <dt className="text-slate-500">Total</dt>
             <dd className="tabular-nums font-medium">{formatMoney(mov.total ? Number(mov.total) : null)}</dd>
+            <dt className="text-slate-500">ARCA</dt>
+            <dd><ArcaBadge estado={mov.arcaEstado} /></dd>
           </dl>
 
           <form action={asignarAction} className="space-y-4">
