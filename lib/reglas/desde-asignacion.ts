@@ -23,6 +23,8 @@ export type EntradaReglaDesdeAsignacion = {
    *  opcionales. Sin ellas la regla no las evalúa. */
   canal?: string | null;
   cargadoPorId?: string | null;
+  /** Nombre del usuario elegido, sólo para el nombre por defecto de la regla. */
+  nombreUsuario?: string | null;
   nombrePropuesto: string | null;
   lineas: LineaDistribucion[];
   plantillas: PlantillaConLineas[];
@@ -99,39 +101,81 @@ export function canalRegla(v: unknown): string | null {
 
 type CondicionesRegla = { cuit: string | null; palabraClave: string | null; canal: string | null; cargadoPorId: string | null };
 
+function mismaPalabra(a: string | null | undefined, b: string | null | undefined): boolean {
+  return (limpiar(a ?? null)?.toLowerCase() ?? null) === (limpiar(b ?? null)?.toLowerCase() ?? null);
+}
+
+/** Todas las reglas de imputación (ASIGNAR) del CUIT, en el orden en que el
+ *  motor las evalúa. Para el aviso del atajo: un CUIT puede tener varias. */
+export function reglasDelCuit<T extends Pick<ReglaAsignacion, 'cuit' | 'accion' | 'prioridad'>>(reglas: T[], cuit: string | null): T[] {
+  const objetivo = cuit ? normalizarCuit(cuit) : null;
+  if (!objetivo) return [];
+  return reglas
+    .filter((r) => r.accion === 'ASIGNAR' && r.cuit && normalizarCuit(r.cuit) === objetivo)
+    .sort((a, b) => a.prioridad - b.prioridad);
+}
+
+/** Texto corto de las condiciones extra de una regla (además del CUIT). */
+export function describirCondiciones(
+  r: Pick<ReglaAsignacion, 'palabraClave' | 'canal' | 'cargadoPorId'>,
+  nombresUsuarios: Map<string, string>,
+): string {
+  const partes: string[] = [];
+  if (limpiar(r.palabraClave)) partes.push(`dice «${r.palabraClave!.trim()}»`);
+  if (r.canal) partes.push(`fuente ${CANAL_LABEL[r.canal] ?? r.canal}`);
+  if (r.cargadoPorId) partes.push(`usuario ${nombresUsuarios.get(r.cargadoPorId) ?? r.cargadoPorId}`);
+  return partes.length ? partes.join(' · ') : 'sin condiciones extra';
+}
+
 /** Regla de imputación con EXACTAMENTE las mismas condiciones que la nueva:
- *  mismo CUIT (o, sin CUIT, misma palabra clave) y misma fuente y usuario. Es
- *  la que se pisa al guardar desde el atajo. Una combinación más específica
- *  (p. ej. el mismo CUIT pero sólo por foto) no pisa la regla amplia: convive
- *  con ella. Con CUIT la palabra clave no distingue, como siempre. */
+ *  mismo CUIT (o, sin CUIT, misma palabra clave), misma palabra clave, misma
+ *  fuente y mismo usuario. Es la única que se pisa al guardar desde el atajo.
+ *  Cualquier diferencia es otra regla: un CUIT puede tener varias, según lo
+ *  que diga el OCR, la fuente o quién lo cargue. */
 export function reglaEquivalente<T extends Pick<ReglaAsignacion, 'cuit' | 'palabraClave' | 'canal' | 'cargadoPorId' | 'accion'>>(
   reglas: T[],
   nueva: CondicionesRegla,
 ): T | null {
   const cuit = nueva.cuit ? normalizarCuit(nueva.cuit) : null;
-  const palabra = limpiar(nueva.palabraClave)?.toLowerCase() ?? null;
-  if (!cuit && !palabra) return null;
+  if (!cuit && !limpiar(nueva.palabraClave)) return null;
   return (
     reglas.find((r) => {
       if (r.accion !== 'ASIGNAR') return false;
       if ((r.canal ?? null) !== (nueva.canal ?? null)) return false;
       if ((r.cargadoPorId ?? null) !== (nueva.cargadoPorId ?? null)) return false;
+      if (!mismaPalabra(r.palabraClave, nueva.palabraClave)) return false;
       if (cuit) return !!r.cuit && normalizarCuit(r.cuit) === cuit;
-      return !r.cuit && (r.palabraClave?.trim().toLowerCase() ?? null) === palabra;
+      return !r.cuit;
     }) ?? null
   );
 }
 
-/** Prioridad para una regla nueva con fuente o usuario, de modo que se evalúe
- *  ANTES que la regla amplia (sin esas condiciones) del mismo CUIT o palabra
- *  clave. Null si no hay nada que adelantar (queda la prioridad por defecto). */
+/** Prioridad para una regla nueva con condiciones extra (palabra clave, fuente,
+ *  usuario), de modo que se evalúe ANTES que todas las reglas menos específicas
+ *  del mismo CUIT (o, sin CUIT, de la misma palabra clave): el motor toma la
+ *  primera que matchea y una regla amplia matchearía siempre. Null si no hay
+ *  nada que adelantar (queda la prioridad por defecto). */
 export function prioridadParaEspecifica<T extends Pick<ReglaAsignacion, 'cuit' | 'palabraClave' | 'canal' | 'cargadoPorId' | 'accion' | 'prioridad'>>(
   reglas: T[],
   nueva: CondicionesRegla,
 ): number | null {
-  if (!nueva.canal && !nueva.cargadoPorId) return null;
-  const amplia = reglaEquivalente(reglas, { ...nueva, canal: null, cargadoPorId: null });
-  return amplia ? amplia.prioridad - 10 : null;
+  const cuit = nueva.cuit ? normalizarCuit(nueva.cuit) : null;
+  const palabra = limpiar(nueva.palabraClave);
+  const extras = [cuit ? palabra : null, nueva.canal, nueva.cargadoPorId].filter(Boolean).length;
+  if (extras === 0) return null;
+  const menosEspecificas = reglas.filter((r) => {
+    if (r.accion !== 'ASIGNAR') return false;
+    if (cuit ? !(r.cuit && normalizarCuit(r.cuit) === cuit) : !(!r.cuit && mismaPalabra(r.palabraClave, palabra))) return false;
+    // cada condición de r tiene que estar también en la nueva (subconjunto)...
+    if (cuit && limpiar(r.palabraClave) && !mismaPalabra(r.palabraClave, palabra)) return false;
+    if (r.canal && r.canal !== nueva.canal) return false;
+    if (r.cargadoPorId && r.cargadoPorId !== nueva.cargadoPorId) return false;
+    // ...y r tiene que tener estrictamente menos
+    const suyas = [cuit ? limpiar(r.palabraClave) : null, r.canal, r.cargadoPorId].filter(Boolean).length;
+    return suyas < extras;
+  });
+  if (menosEspecificas.length === 0) return null;
+  return Math.min(...menosEspecificas.map((r) => r.prioridad)) - 10;
 }
 
 /** Id de la plantilla cuyas líneas son exactamente este reparto, o null. */
@@ -149,15 +193,21 @@ export function construirReglaDesdeAsignacion(e: EntradaReglaDesdeAsignacion): D
     return { crear: false, motivo: 'el comprobante no tiene CUIT: cargá una palabra clave, es la única condición posible' };
   if (e.lineas.length === 0) return { crear: false, motivo: 'la asignación no tiene líneas' };
 
+  const canal = limpiar(e.canal ?? null);
+  const cargadoPorId = limpiar(e.cargadoPorId ?? null);
+  // Con CUIT, las condiciones extra van al nombre: dos reglas del mismo emisor
+  // no pueden llamarse igual (unique por empresa) y así se distinguen a simple vista.
+  const extras = cuit ? [palabraClave, canal ? (CANAL_LABEL[canal] ?? canal) : null, e.nombreUsuario ?? null].filter(Boolean) : [];
+  const sujeto = limpiar(e.razonSocial) ?? cuit ?? palabraClave;
   const nombre =
-    limpiar(e.nombrePropuesto) ?? `${limpiar(e.razonSocial) ?? cuit ?? palabraClave} → ${e.categoriaNombre}`;
+    limpiar(e.nombrePropuesto) ?? `${sujeto}${extras.length ? ` (${extras.join(', ')})` : ''} → ${e.categoriaNombre}`;
 
   const comun = {
     nombre,
     cuit,
     palabraClave,
-    canal: limpiar(e.canal ?? null),
-    cargadoPorId: limpiar(e.cargadoPorId ?? null),
+    canal,
+    cargadoPorId,
     categoriaId: e.categoriaId,
   };
 

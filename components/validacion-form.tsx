@@ -86,7 +86,7 @@ export function ValidacionForm({
   plantillas,
   reglaSugerida,
   razonSocialContraparte,
-  reglaVigente,
+  reglasVigentes,
   ocrRegla,
   reglaContexto,
 }: {
@@ -100,7 +100,7 @@ export function ValidacionForm({
   plantillas: PlantillaOpcion[];
   reglaSugerida?: string | null;
   razonSocialContraparte?: string | null;
-  reglaVigente?: ReglaExistente | null;
+  reglasVigentes?: ReglaExistente[];
   ocrRegla?: OcrParaRegla | null;
   /** Fuente y usuario del comprobante + miembros elegibles, para acotar la regla desde el atajo. */
   reglaContexto?: { canal: string | null; cargadoPorId: string | null; miembros: { id: string; nombre: string }[] };
@@ -418,7 +418,7 @@ export function ValidacionForm({
             <ReglaDesdeAsignacion
               cuit={(esVenta ? mov.cuitReceptor : mov.cuitEmisor) || null}
               razonSocial={razonSocialContraparte ?? null}
-              existente={reglaVigente ?? null}
+              existentes={reglasVigentes ?? []}
               ocr={ocrRegla ?? null}
               canal={reglaContexto?.canal ?? null}
               cargadoPorId={reglaContexto?.cargadoPorId ?? null}

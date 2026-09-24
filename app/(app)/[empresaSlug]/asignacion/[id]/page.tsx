@@ -9,7 +9,8 @@ import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { ArcaBadge } from '@/components/badges';
 import { ReglaDesdeAsignacion } from '@/components/regla-desde-asignacion';
 import { HistorialComprobante } from '@/components/historial-comprobante';
-import { buscarReglaPorCuit } from '@/lib/reglas/guardar-desde-asignacion';
+import { buscarReglasPorCuit } from '@/lib/reglas/guardar-desde-asignacion';
+import { describirCondiciones } from '@/lib/reglas/desde-asignacion';
 import { nombreContraparte, cuitContraparteDe, esVenta } from '@/lib/movimientos/nombre-contraparte';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { totalFirmadoDe } from '@/lib/movimientos/query';
@@ -69,10 +70,11 @@ export default async function AsignacionDetallePage({
     }
   }
 
-  // Regla ya vigente para este CUIT: se resuelve al renderizar (depende sólo del
-  // CUIT), así el conflicto se decide en el mismo submit que la asignación.
-  const reglaVigente = await buscarReglaPorCuit(ctx, cuitContraparteDe(mov));
-  const imputacionDe = (r: NonNullable<typeof reglaVigente>) => {
+  // Reglas ya vigentes para este CUIT (puede haber varias): se listan al
+  // renderizar para que el usuario sepa cuál se pisa y cuál se crea aparte.
+  const reglasVigentes = await buscarReglasPorCuit(ctx, cuitContraparteDe(mov));
+  const nombresUsuarios = new Map(miembrosRegla.map((m) => [m.id, m.nombre]));
+  const imputacionDe = (r: (typeof reglasVigentes)[number]) => {
     const cat = categorias.find((c) => c.id === r.categoriaId)?.nombre ?? 'sin categoría';
     const dist = r.distribucionId
       ? (plantillas.find((p) => p.id === r.distribucionId)?.nombre ?? 'plantilla')
@@ -193,7 +195,7 @@ export default async function AsignacionDetallePage({
             <ReglaDesdeAsignacion
               cuit={cuitContraparteDe(mov)}
               razonSocial={nombreContraparte(mov).nombre}
-              existente={reglaVigente ? { nombre: reglaVigente.nombre, imputacion: imputacionDe(reglaVigente) } : null}
+              existentes={reglasVigentes.map((r) => ({ nombre: r.nombre, condiciones: describirCondiciones(r, nombresUsuarios), imputacion: imputacionDe(r) }))}
               ocr={ocrParaRegla({ extraccionRaw: mov.extraccionRaw, descripcion: mov.descripcion, razonSocialContraparte: nombreContraparte(mov).nombre })}
               canal={mov.canalIngreso}
               cargadoPorId={mov.creadoPorId}

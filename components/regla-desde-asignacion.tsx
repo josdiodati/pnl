@@ -17,13 +17,14 @@ import { CANALES_REGLA, CANAL_LABEL } from '@/lib/reglas/desde-asignacion';
 
 export type ReglaExistente = {
   nombre: string;
+  condiciones: string; // describirCondiciones(): "dice «roaming» · fuente Foto"
   imputacion: string;
 };
 
 export function ReglaDesdeAsignacion({
   cuit,
   razonSocial,
-  existente,
+  existentes,
   ocr,
   canal,
   cargadoPorId,
@@ -31,7 +32,8 @@ export function ReglaDesdeAsignacion({
 }: {
   cuit: string | null;
   razonSocial: string | null;
-  existente: ReglaExistente | null;
+  /** Reglas de imputación que ya tiene este CUIT (puede haber varias). */
+  existentes: ReglaExistente[];
   /** Lo que leyó el OCR, para elegir la palabra clave desde un pop-up. */
   ocr?: OcrParaRegla | null;
   /** Fuente y usuario de ESTE comprobante (se marcan en los selectores) y
@@ -45,7 +47,7 @@ export function ReglaDesdeAsignacion({
       <label className="flex items-start gap-2 text-sm font-medium">
         <input type="checkbox" name="crearRegla" value="1" className="mt-0.5" />
         <span>
-          {existente ? 'Actualizar la regla de este emisor' : 'Crear regla para la próxima vez'}
+          Crear regla para la próxima vez
           <span className="block text-xs font-normal text-slate-500">
             {cuit
               ? `Se aplicará a los comprobantes de ${razonSocial ?? 'este emisor'} (CUIT ${cuit}).`
@@ -54,12 +56,24 @@ export function ReglaDesdeAsignacion({
         </span>
       </label>
 
-      {existente && (
-        <p className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5 text-xs text-amber-900">
-          Ya hay una regla para este CUIT: «{existente.nombre}» → {existente.imputacion}. Si marcás la
-          casilla, se reemplaza por la imputación que estás cargando (salvo que la acotes por fuente o
-          usuario: en ese caso se crea una regla más específica que se evalúa antes).
-        </p>
+      {existentes.length > 0 && (
+        <div className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5 text-xs text-amber-900 space-y-1">
+          <p>
+            Este CUIT ya tiene {existentes.length === 1 ? 'una regla' : `${existentes.length} reglas`} (en el orden en que se evalúan):
+          </p>
+          <ul className="list-disc pl-4 space-y-0.5">
+            {existentes.map((r) => (
+              <li key={r.nombre}>
+                «{r.nombre}» · {r.condiciones} → {r.imputacion}
+              </li>
+            ))}
+          </ul>
+          <p>
+            Al guardar se reemplaza sólo la que tenga exactamente las mismas condiciones que elijas acá
+            (palabra clave, fuente y usuario). Con otras condiciones se crea una regla nueva, que se evalúa
+            antes que las más generales.
+          </p>
+        </div>
       )}
 
       <div className="grid sm:grid-cols-2 gap-2">
@@ -112,7 +126,7 @@ export function ReglaDesdeAsignacion({
           <input
             id="reglaNombre"
             name="reglaNombre"
-            defaultValue={existente?.nombre ?? ''}
+            defaultValue=""
             className="input w-full text-xs"
             placeholder={`${razonSocial ?? cuit ?? 'palabra clave'} → (categoría elegida)`}
           />

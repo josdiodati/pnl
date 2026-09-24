@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { plantillaQueCoincide, construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaVigenteParaPalabraClave, reglaEquivalente, prioridadParaEspecifica, canalRegla, type EntradaReglaDesdeAsignacion } from '@/lib/reglas/desde-asignacion';
+import { plantillaQueCoincide, construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaVigenteParaPalabraClave, reglaEquivalente, prioridadParaEspecifica, canalRegla, reglasDelCuit, describirCondiciones, type EntradaReglaDesdeAsignacion } from '@/lib/reglas/desde-asignacion';
 
 // Camino inverso al de lib/reglas/aplicar.ts: de una asignación concreta a una
 // regla reutilizable. La restricción del modelo manda: ReglaAsignacion guarda un
@@ -231,22 +231,59 @@ describe('reglaEquivalente (qué regla se pisa al guardar desde el atajo)', () =
     expect(reglaEquivalente(reglas, nueva({ palabraClave: 'max plan', canal: 'FOTO' }))).toBeNull();
   });
 
-  it('con CUIT la palabra clave no distingue (se pisa la regla del CUIT como siempre)', () => {
-    expect(reglaEquivalente(reglas, nueva({ cuit: '30656631615', palabraClave: 'roaming' }))?.id).toBe('amplia');
+  it('con CUIT la palabra clave también distingue: otra palabra clave es otra regla', () => {
+    expect(reglaEquivalente(reglas, nueva({ cuit: '30656631615', palabraClave: 'roaming' }))).toBeNull();
+    const conRoaming = [...reglas, { id: 'roaming', cuit: '30656631615', palabraClave: 'Roaming', canal: null, cargadoPorId: null, accion: 'ASIGNAR', prioridad: 100 }];
+    expect(reglaEquivalente(conRoaming, nueva({ cuit: '30656631615', palabraClave: 'roaming' }))?.id).toBe('roaming');
+    expect(reglaEquivalente(conRoaming, nueva({ cuit: '30656631615' }))?.id).toBe('amplia');
   });
 
   it('nunca devuelve una regla de descarte', () => {
     expect(reglaEquivalente([reglas[5]], nueva({ cuit: '30656631615' }))).toBeNull();
   });
 
-  it('prioridad: una regla nueva más específica se evalúa antes que la amplia del mismo CUIT', () => {
+  it('prioridad: una regla nueva más específica se evalúa antes que las menos específicas del mismo CUIT', () => {
+    // sólo la amplia (p100) es menos específica que "usuario" → 90
     expect(prioridadParaEspecifica(reglas, nueva({ cuit: '30656631615', cargadoPorId: 'u-gaston' }))).toBe(90);
+    // "foto + usuario + palabra" tiene por debajo a amplia (100), foto (90) y gaston-foto (80) → 70
+    expect(prioridadParaEspecifica(reglas, nueva({ cuit: '30656631615', canal: 'FOTO', cargadoPorId: 'u-gaston', palabraClave: 'roaming' }))).toBe(70);
+    // la palabra clave también cuenta como condición extra con CUIT
+    expect(prioridadParaEspecifica(reglas, nueva({ cuit: '30656631615', palabraClave: 'roaming' }))).toBe(90);
     // sin condición extra no hay nada que adelantar
     expect(prioridadParaEspecifica(reglas, nueva({ cuit: '30656631615' }))).toBeNull();
     // sin CUIT: adelanta a la regla amplia de la misma palabra clave
     expect(prioridadParaEspecifica(reglas, nueva({ palabraClave: 'max plan', canal: 'FOTO' }))).toBe(90);
     // sin regla amplia que adelantar
     expect(prioridadParaEspecifica(reglas, nueva({ cuit: '30111111118', canal: 'FOTO' }))).toBeNull();
+  });
+
+  it('reglasDelCuit lista todas las de imputación del CUIT, por prioridad, sin descartes', () => {
+    expect(reglasDelCuit(reglas, '30-65663161-5').map((r) => r.id)).toEqual(['gaston-foto', 'foto', 'amplia']);
+    expect(reglasDelCuit(reglas, null)).toEqual([]);
+    expect(reglasDelCuit(reglas, '30111111118')).toEqual([]);
+  });
+
+  it('describirCondiciones resume las condiciones extra de una regla en texto', () => {
+    const nombres = new Map([['u-gaston', 'Gastón Garnelo']]);
+    expect(describirCondiciones(reglas[0], nombres)).toBe('sin condiciones extra');
+    expect(describirCondiciones(reglas[2], nombres)).toBe('fuente Foto · usuario Gastón Garnelo');
+    expect(describirCondiciones({ ...reglas[0], palabraClave: 'roaming' }, nombres)).toBe('dice «roaming»');
+  });
+});
+
+describe('nombre por defecto con condiciones extra', () => {
+  // Dos reglas del mismo emisor no pueden llamarse igual (unique por empresa):
+  // el nombre por defecto incluye las condiciones que la distinguen.
+  it('agrega las condiciones extra al nombre para no chocar con la regla amplia', () => {
+    const r = construirReglaDesdeAsignacion({ ...base, palabraClave: 'roaming', canal: 'FOTO' });
+    if (!r.crear) throw new Error(r.motivo);
+    expect(r.regla.nombre).toBe('AMX ARGENTINA SA (roaming, Foto) → Telefonía');
+  });
+
+  it('sin condiciones extra el nombre queda como siempre', () => {
+    const r = construirReglaDesdeAsignacion(base);
+    if (!r.crear) throw new Error(r.motivo);
+    expect(r.regla.nombre).toBe('AMX ARGENTINA SA → Telefonía');
   });
 });
 

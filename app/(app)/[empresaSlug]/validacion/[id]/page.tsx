@@ -13,7 +13,7 @@ import { fechaInputValue } from '@/lib/format';
 import { MES_LABEL } from '@/lib/periodos';
 import { elegirRegla, textoDeMatching, textoDocumentoDe } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
-import { reglaVigenteParaCuit } from '@/lib/reglas/desde-asignacion';
+import { reglasDelCuit, describirCondiciones } from '@/lib/reglas/desde-asignacion';
 import { ocrParaRegla } from '@/lib/reglas/ocr-para-regla';
 import { nombreContraparte, cuitContraparteDe, esVenta } from '@/lib/movimientos/nombre-contraparte';
 import {
@@ -75,10 +75,11 @@ export default async function ValidacionDetallePage({
   const flags = (mov.flags as Record<string, unknown> | null) ?? {};
   const n = (v: unknown) => (v == null ? null : Number(v));
 
-  // Regla ya vigente para este CUIT: si el validador marca "crear regla", esta es
-  // la que se pisa. Sale de las reglas ya cargadas, sin consulta extra.
-  const reglaVigente = reglaVigenteParaCuit(reglas, cuitContraparteDe(mov));
-  const imputacionDeRegla = (r: NonNullable<typeof reglaVigente>) => {
+  // Reglas ya vigentes para este CUIT (puede haber varias): se listan para que
+  // el validador sepa cuál se pisa y cuál se crea aparte. Sin consulta extra.
+  const reglasVigentes = reglasDelCuit(reglas, cuitContraparteDe(mov));
+  const nombresUsuarios = new Map(miembrosRegla.map((m) => [m.id, m.nombre]));
+  const imputacionDeRegla = (r: (typeof reglasVigentes)[number]) => {
     const cat = categorias.find((c) => c.id === r.categoriaId)?.nombre ?? 'sin categoría';
     const dist = r.distribucionId
       ? (plantillas.find((p) => p.id === r.distribucionId)?.nombre ?? 'plantilla')
@@ -289,11 +290,7 @@ export default async function ValidacionDetallePage({
                 instruccionesExtraccion: c.instruccionesExtraccion,
               }))}
               razonSocialContraparte={nombreContraparte(mov).nombre}
-              reglaVigente={
-                reglaVigente
-                  ? { nombre: reglaVigente.nombre, imputacion: imputacionDeRegla(reglaVigente) }
-                  : null
-              }
+              reglasVigentes={reglasVigentes.map((r) => ({ nombre: r.nombre, condiciones: describirCondiciones(r, nombresUsuarios), imputacion: imputacionDeRegla(r) }))}
             />
           ) : (
             <div className="space-y-3">

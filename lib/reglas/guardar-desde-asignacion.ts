@@ -3,7 +3,7 @@ import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import type { LineaDistribucion } from '@/lib/movimientos/distribucion';
 import { normalizarCuit } from '@/lib/checks';
 import { writeAudit } from '@/lib/audit';
-import { construirReglaDesdeAsignacion, reglaVigenteParaCuit, reglaEquivalente, prioridadParaEspecifica, canalRegla } from './desde-asignacion';
+import { construirReglaDesdeAsignacion, reglasDelCuit, reglaEquivalente, prioridadParaEspecifica, canalRegla } from './desde-asignacion';
 
 // Guarda como regla la imputación que se acaba de cargar. Es best-effort por
 // diseño: la asignación del comprobante ya ocurrió y no se deshace porque la
@@ -22,11 +22,12 @@ export type ParametrosReglaDesdeAsignacion = {
   nombre: string | null;
 };
 
-/** Regla vigente para ese CUIT, si existe (comparación normalizada). */
-export async function buscarReglaPorCuit(ctx: EmpresaContext, cuit: string | null) {
-  if (!cuit) return null;
+/** Reglas de imputación vigentes para ese CUIT (puede haber varias), en el
+ *  orden en que el motor las evalúa. */
+export async function buscarReglasPorCuit(ctx: EmpresaContext, cuit: string | null) {
+  if (!cuit) return [];
   const reglas = await ctx.db.reglaAsignacion.findMany();
-  return reglaVigenteParaCuit(reglas, cuit);
+  return reglasDelCuit(reglas, cuit);
 }
 
 /** Devuelve un mensaje corto para mostrarle al usuario. Nunca lanza. */
@@ -42,7 +43,7 @@ export async function guardarReglaDesdeAsignacion(
 
     const cargadoPorId = p.cargadoPorId?.trim() || null;
     const miembro = cargadoPorId
-      ? await prisma.usuarioEmpresa.findFirst({ where: { empresaId: ctx.empresa.id, usuarioId: cargadoPorId }, select: { usuarioId: true } })
+      ? await prisma.usuarioEmpresa.findFirst({ where: { empresaId: ctx.empresa.id, usuarioId: cargadoPorId }, include: { usuario: { select: { nombre: true, email: true } } } })
       : null;
     if (cargadoPorId && !miembro) return 'no se creó la regla: el usuario elegido no pertenece a la empresa';
 
@@ -54,6 +55,7 @@ export async function guardarReglaDesdeAsignacion(
       palabraClave: p.palabraClave,
       canal: canalRegla(p.canal),
       cargadoPorId: miembro?.usuarioId ?? null,
+      nombreUsuario: miembro ? miembro.usuario.nombre || miembro.usuario.email : null,
       nombrePropuesto: p.nombre,
       lineas: p.lineas,
       plantillas: plantillas.map((pl) => ({
@@ -69,9 +71,9 @@ export async function guardarReglaDesdeAsignacion(
 
     if (!decision.crear) return `no se creó la regla: ${decision.motivo}`;
 
-    // Se pisa la regla con exactamente las mismas condiciones (CUIT o palabra
-    // clave, más fuente y usuario). Una combinación más específica que no
-    // existe se crea aparte, con prioridad para evaluarse antes que la amplia.
+    // Se pisa SOLO la regla con exactamente las mismas condiciones (CUIT,
+    // palabra clave, fuente y usuario). Cualquier otra combinación es una
+    // regla nueva, con prioridad para evaluarse antes que las menos específicas.
     const reglas = await ctx.db.reglaAsignacion.findMany();
     const existente = reglaEquivalente(reglas, decision.regla);
     const prioridad = existente ? null : prioridadParaEspecifica(reglas, decision.regla);
@@ -99,7 +101,7 @@ export async function guardarReglaDesdeAsignacion(
       despues: { ...datos, desdeAsignacion: true },
     });
     return prioridad != null
-      ? `regla «${decision.regla.nombre}» creada; se evalúa antes que la regla general de este emisor`
+      ? `regla «${decision.regla.nombre}» creada; se evalúa antes que las reglas más generales de este emisor`
       : `regla «${decision.regla.nombre}» creada`;
   } catch {
     // Nombre repetido (unique empresaId+nombre) o cualquier otro fallo: la
