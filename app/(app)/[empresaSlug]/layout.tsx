@@ -47,6 +47,7 @@ export default async function EmpresaLayout({
       items: [
         { href: `${base}/comprobantes`, label: 'Comprobantes', icono: 'comprobante' },
         { href: `${base}/ventas`, label: 'Ventas', icono: 'venta' },
+        ...(esValidador ? [{ href: `${base}/cobranzas`, label: 'Cobranzas', icono: 'reporte' }] : []),
         { href: `${base}/asientos`, label: 'Asientos manuales', icono: 'asiento' },
         { href: `${base}/resumenes`, label: 'Resúmenes', icono: 'comprobante' },
         { href: `${base}/arca`, label: 'ARCA', icono: 'comprobante' },

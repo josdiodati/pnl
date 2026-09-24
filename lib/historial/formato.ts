@@ -320,6 +320,28 @@ function formatear(e: EventoCrudo, refs: Referencias): Omit<EventoFormateado, 'i
     case 'DESVINCULAR_EMPLEADO':
       return { titulo: 'Desvinculado del empleado', detalles, tecnico: null };
 
+    case 'COBRO_REGISTRAR': {
+      const ins = Array.isArray(d.instrumentos) ? (d.instrumentos as Obj[]) : [];
+      for (const i of ins) {
+        const tipo = str(i.instrumento)?.replace(/_/g, ' ').toLowerCase() ?? 'instrumento';
+        detalles.push(`${tipo} ${formatMoney(String(i.monto))}${str(i.moneda) && i.moneda !== 'ARS' ? ` ${i.moneda}` : ''}${str(i.numero) ? ` n° ${i.numero}` : ''}`);
+      }
+      if (d.diferenciaCambio != null && Math.abs(Number(d.diferenciaCambio)) >= 1) detalles.push(`Ajuste por diferencia de cambio: ${formatMoney(String(d.diferenciaCambio))}`);
+      const origen = d.origen === 'RESUMEN' ? ' (desde el resumen bancario)' : '';
+      return { titulo: `Cobro registrado${origen}: ${formatMoney(String(d.aplicado ?? 0))}${str(d.moneda) && d.moneda !== 'ARS' ? ` ${d.moneda}` : ''}`, detalles, tecnico: null };
+    }
+    case 'COBRO_ELIMINAR':
+      return { titulo: obj(e.despues).desdeResumen ? 'Cobro deshecho (se deshizo la conciliación del resumen)' : 'Cobro eliminado', detalles, tecnico: e.antes ?? null };
+    case 'COBRO_CHEQUE_RECHAZAR':
+      if (str(d.motivo)) detalles.push(`Motivo: ${str(d.motivo)}`);
+      return { titulo: `Cheque${str(d.numero) ? ` n° ${d.numero}` : ''} rechazado: la factura vuelve a deberse`, detalles, tecnico: null };
+    case 'COBRO_FECHA_PROBABLE':
+      return {
+        titulo: d.fechaCobroEstimada ? `Fecha probable de cobro fijada: ${formatFecha(d.fechaCobroEstimada as string)}` : 'Fecha probable de cobro: vuelve a la calculada',
+        detalles,
+        tecnico: null,
+      };
+
     default:
       return { titulo: e.accion, detalles, tecnico: e.despues ?? e.antes ?? null };
   }

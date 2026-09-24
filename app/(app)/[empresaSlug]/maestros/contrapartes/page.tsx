@@ -68,6 +68,18 @@ export default async function ContrapartesPage({
               ))}
             </select>
           </div>
+          <div>
+            <label className="label">Plazo de cobro en días (clientes, opcional)</label>
+            <input
+              name="plazoCobroDias"
+              type="number"
+              min={0}
+              max={365}
+              className="input"
+              defaultValue={editando?.plazoCobroDias ?? ''}
+              placeholder="Vacío: se calcula del histórico"
+            />
+          </div>
           <div className="md:col-span-3">
             <label className="label">Instrucciones de extracción (se inyectan al prompt del OCR para este emisor)</label>
             <textarea

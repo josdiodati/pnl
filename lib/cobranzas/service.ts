@@ -7,6 +7,7 @@ import { assertTransicion } from '@/lib/movimientos/estados';
 import { ORIGENES_VENTA } from '@/lib/ventas/query';
 import { INCLUDE_COBRANZA, aVentaCobrable } from './query';
 import { esCobrable, saldoVenta, tcFactura } from './estado';
+import { INSTRUMENTOS, ES_CHEQUE } from './labels';
 import { calcularReparto, type InstrumentoReparto, type ResultadoReparto } from './reparto';
 
 // Servicio de cobranzas (Spec F). El cobro no toca el P&L: sólo el ajuste por
@@ -16,20 +17,8 @@ import { calcularReparto, type InstrumentoReparto, type ResultadoReparto } from 
 // historial de cada venta.
 
 export const CATEGORIA_DIFERENCIA_CAMBIO = 'Diferencia de cambio';
-export const INSTRUMENTOS = ['TRANSFERENCIA', 'CHEQUE', 'ECHEQ', 'EFECTIVO', 'RETENCION', 'NOTA_CREDITO', 'OTRO'] as const;
-export type Instrumento = (typeof INSTRUMENTOS)[number];
-export const INSTRUMENTO_LABEL: Record<string, string> = {
-  TRANSFERENCIA: 'Transferencia',
-  CHEQUE: 'Cheque',
-  ECHEQ: 'E-cheq',
-  EFECTIVO: 'Efectivo',
-  RETENCION: 'Retención',
-  NOTA_CREDITO: 'Nota de crédito',
-  OTRO: 'Otro',
-};
-/** Instrumentos que pasan por el banco (se concilian con el resumen y entran en la proyección). */
-export const INSTRUMENTOS_BANCARIOS = new Set(['TRANSFERENCIA', 'CHEQUE', 'ECHEQ', 'OTRO']);
-const ES_CHEQUE = new Set(['CHEQUE', 'ECHEQ']);
+export { INSTRUMENTOS, INSTRUMENTO_LABEL, INSTRUMENTOS_BANCARIOS } from './labels';
+export type { Instrumento } from './labels';
 
 type Db = EmpresaContext['db'];
 

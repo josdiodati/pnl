@@ -12,7 +12,7 @@ import { verificarTitular } from './titular';
 import { ORIGENES_VENTA } from '@/lib/ventas/query';
 import { aVentaCobrable } from '@/lib/cobranzas/query';
 import { esCobrable, saldoVenta } from '@/lib/cobranzas/estado';
-import { INSTRUMENTOS_BANCARIOS, INSTRUMENTO_LABEL } from '@/lib/cobranzas/service';
+import { INSTRUMENTOS_BANCARIOS, INSTRUMENTO_LABEL } from '@/lib/cobranzas/labels';
 
 // Pipeline de resúmenes: PDF -> Resumen PROCESANDO -> Job EXTRACCION_RESUMEN
 // -> worker extrae líneas -> matching automático -> EXTRAIDO. El período se

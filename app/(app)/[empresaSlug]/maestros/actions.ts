@@ -234,6 +234,11 @@ export async function guardarContraparte(formData: FormData): Promise<void> {
     const categoriaDefaultId = String(formData.get('categoriaDefaultId') ?? '') || null;
     const distribucionDefaultId = String(formData.get('distribucionDefaultId') ?? '') || null;
     const instruccionesExtraccion = String(formData.get('instruccionesExtraccion') ?? '').trim() || null;
+    const plazoCrudo = String(formData.get('plazoCobroDias') ?? '').trim();
+    const plazoCobroDias = plazoCrudo === '' ? null : Number(plazoCrudo);
+    if (plazoCobroDias != null && (!Number.isInteger(plazoCobroDias) || plazoCobroDias < 0 || plazoCobroDias > 365)) {
+      throw new DomainError('El plazo de cobro va de 0 a 365 días (o vacío para calcularlo del histórico).');
+    }
 
     if (!razonSocial) throw new DomainError('La razón social es obligatoria.');
     if (!esIdentificadorExterno(cuit) && !cuitEsValido(cuit)) throw new DomainError('CUIT inválido (dígito verificador).');
@@ -244,7 +249,7 @@ export async function guardarContraparte(formData: FormData): Promise<void> {
       throw new DomainError('Plantilla de distribución inexistente.');
     }
 
-    const data = { cuit, razonSocial, tipo, condicionIva, categoriaDefaultId, distribucionDefaultId, instruccionesExtraccion };
+    const data = { cuit, razonSocial, tipo, condicionIva, categoriaDefaultId, distribucionDefaultId, instruccionesExtraccion, plazoCobroDias };
     if (id) {
       const antes = await ctx.db.contraparte.findFirst({ where: { id } });
       if (!antes) throw new DomainError('Contraparte inexistente.');

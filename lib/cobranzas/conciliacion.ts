@@ -3,7 +3,8 @@ import { writeAudit } from '@/lib/audit';
 import { ORIGENES_VENTA } from '@/lib/ventas/query';
 import { esCobrable } from './estado';
 import { calcularReparto, sugerenciaRetencion } from './reparto';
-import { cargarVentas, eliminarCobroGrupo, facturasParaReparto, persistirReparto, INSTRUMENTOS_BANCARIOS } from './service';
+import { cargarVentas, eliminarCobroGrupo, facturasParaReparto, persistirReparto } from './service';
+import { INSTRUMENTOS_BANCARIOS } from './labels';
 
 // Etapa 3 (Spec F): el resumen del banco CONFIRMA cobros en vez de descubrirlos.
 //

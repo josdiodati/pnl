@@ -70,9 +70,10 @@ export type InfoCobro = ResultadoEstadoCobro & {
   historicoDias: number | null;
 };
 
-/** Hoy a medianoche UTC (las fechas del libro son fechas puras en UTC). */
+/** Hoy (fecha de Buenos Aires) a medianoche UTC: las fechas del libro son fechas puras en UTC. */
 export function hoyUtc(ahora = new Date()): Date {
-  return new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate()));
+  const [a, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(ahora).split('-').map(Number);
+  return new Date(Date.UTC(a, m - 1, d));
 }
 
 export function calcularInfoCobros(filas: FilaVenta[], hoy: Date): Map<string, InfoCobro> {
