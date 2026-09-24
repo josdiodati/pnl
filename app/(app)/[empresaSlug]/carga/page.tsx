@@ -1,9 +1,7 @@
 import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { rolAlcanza } from '@/lib/roles';
-import { resumirLote, RESULTADO_LABEL } from '@/lib/movimientos/lotes';
-
-const LOTE_RECIENTE_MS = 30 * 60 * 1000;
+import { resumirLote, estadoLote, RESULTADO_LABEL } from '@/lib/movimientos/lotes';
 import { formatFechaHora } from '@/lib/format';
 import { UploadZone } from '@/components/upload-zone';
 import { PageHeader } from '@/components/page-header';
@@ -46,15 +44,12 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
     orderBy: { createdAt: 'desc' },
     take: 20,
   });
-  const conResumen = lotes.map((l) => ({ lote: l, resumen: resumirLote(l.movimientos) }));
-  // Faltan comprobantes respecto de lo esperado sólo cuenta como "en curso"
-  // mientras el lote es reciente: más tarde, lo que falta no va a aparecer
-  // (p. ej. duplicados borrados) y la barra quedaría procesando para siempre.
-  const loteEnCurso = (lote: { archivos: number; createdAt: Date }, resumen: { total: number; enProceso: number }) =>
-    resumen.enProceso > 0 || (resumen.total < lote.archivos && Date.now() - lote.createdAt.getTime() < LOTE_RECIENTE_MS);
-  const hayEnCurso = conResumen.some(
-    ({ lote, resumen }) => loteEnCurso(lote, resumen),
-  );
+  const ahora = Date.now();
+  const conResumen = lotes.map((l) => {
+    const resumen = resumirLote(l.movimientos);
+    return { lote: l, resumen, ...estadoLote(l, resumen, ahora) };
+  });
+  const hayEnCurso = conResumen.some((x) => x.enCurso);
 
   const destino = (estado: string) =>
     esValidador && !['INGRESADO', 'PROCESANDO'].includes(estado)
@@ -100,9 +95,10 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
           <p className="text-sm text-ink-mute">Todavía no hay lotes: subí comprobantes y acá vas a ver cómo terminó cada tanda.</p>
         ) : (
           <div className="card divide-y divide-line/60">
-            {conResumen.map(({ lote, resumen }) => {
-              const enCurso = loteEnCurso(lote, resumen);
-              const esperado = Math.max(enCurso ? lote.archivos : resumen.total, resumen.total, 1);
+            {conResumen.map(({ lote, resumen, enCurso, sinIngresar }) => {
+              // Mientras suben las tandas la barra apunta a lo declarado; si algo
+              // no llegó, a lo que realmente entró (y el faltante va aparte).
+              const esperado = Math.max(enCurso && sinIngresar === 0 ? lote.archivos : resumen.total, resumen.total, 1);
               const completados = resumen.total - resumen.enProceso;
               const pct = Math.round((completados / esperado) * 100);
               return (
@@ -119,6 +115,14 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
                     </span>
                     {enCurso && (
                       <span className="text-xs text-sky-700 tabular-nums">procesando {completados}/{esperado}…</span>
+                    )}
+                    {sinIngresar > 0 && (
+                      <span
+                        title={`Se declararon ${lote.archivos} archivos y entraron ${resumen.total}: el resto no llegó al servidor (o se borró después). Si no llegaron, volvé a subirlos: los repetidos quedan como duplicados.`}
+                        className="cursor-help inline-block rounded bg-red-100 text-red-800 px-1.5 py-0.5 text-[11px] font-medium tabular-nums"
+                      >
+                        {sinIngresar} sin ingresar
+                      </span>
                     )}
                   </div>
                   {enCurso ? (

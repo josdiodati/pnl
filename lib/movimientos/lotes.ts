@@ -86,3 +86,24 @@ export function resumirLote(movs: MovimientoDeLote[]): ResumenLote {
     resultados: ORDEN.filter((c) => cantidades.has(c)).map((c) => ({ clave: c, cantidad: cantidades.get(c)! })),
   };
 }
+
+// Estado de la tarjeta del lote en /carga. Un drop crea el lote con la primera
+// tanda y declara cuántos archivos vienen; las demás tandas llegan en segundos.
+// Durante esa ventana faltar comprobantes es normal ("en curso"). Después, lo
+// que falta no va a aparecer (una tanda que no llegó, o duplicados borrados) y
+// se informa como "sin ingresar" en vez de dejar la barra procesando.
+
+export const VENTANA_SUBIDA_MS = 3 * 60 * 1000;
+
+export function estadoLote(
+  lote: { archivos: number; createdAt: Date },
+  resumen: { total: number; enProceso: number },
+  ahora: number = Date.now(),
+): { enCurso: boolean; sinIngresar: number } {
+  const faltan = Math.max(0, lote.archivos - resumen.total);
+  const subiendo = faltan > 0 && ahora - lote.createdAt.getTime() < VENTANA_SUBIDA_MS;
+  return {
+    enCurso: resumen.enProceso > 0 || subiendo,
+    sinIngresar: subiendo ? 0 : faltan,
+  };
+}

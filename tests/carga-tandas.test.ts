@@ -52,6 +52,28 @@ describe('subirEnTandas', () => {
   });
 });
 
+describe('subirEnTandas cuando la action tira', () => {
+  // Un corte de red, un 5xx del túnel o un timeout no resuelven `undefined`:
+  // la llamada tira. Antes eso escapaba del componente y el usuario no veía
+  // ningún cartel (la subida quedaba a medias en silencio).
+  it('informa el error con los archivos que faltan y no sigue mandando', async () => {
+    let n = 0;
+    const r = await subirEnTandas(nombres(8), async (tanda) => {
+      n++;
+      if (n === 1) return { ok: tanda.length, errores: [], loteId: 'L3' };
+      throw new TypeError('Failed to fetch');
+    });
+    expect(n).toBe(2);
+    expect(r.ok).toBe(5);
+    expect(r.loteId).toBe('L3');
+    expect(r.errores).toHaveLength(1);
+    expect(r.errores[0]).toContain('f6.pdf');
+    expect(r.errores[0]).toContain('f8.pdf');
+    expect(r.errores[0]).not.toContain('f5.pdf');
+    expect(r.errores[0]).toContain('Failed to fetch');
+  });
+});
+
 describe('mensajeSinRespuesta', () => {
   it('explica que el servidor no respondió y lista los archivos', () => {
     const m = mensajeSinRespuesta(['a.pdf', 'b.jpg']);

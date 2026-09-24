@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
 import { applyEmpresaScope } from '@/lib/empresa/scope';
-import { resumirLote } from '@/lib/movimientos/lotes';
+import { estadoLote, VENTANA_SUBIDA_MS, resumirLote } from '@/lib/movimientos/lotes';
 import { ingestarComprobante } from '@/lib/pipeline';
 
 // Lotes de ingesta: cada "vez que se procesan archivos" (un drop web, un mail,
@@ -51,6 +51,32 @@ describe('resumirLote (puro)', () => {
     expect(r.total).toBe(0);
     expect(r.enProceso).toBe(0);
     expect(r.resultados).toEqual([]);
+  });
+});
+
+describe('estadoLote (puro)', () => {
+  // Un drop de 52 archivos crea el lote con la primera tanda; las siguientes
+  // llegan en segundos. Si una tanda se pierde, el lote queda con menos
+  // comprobantes que archivos: hay que decirlo, no fingir "procesando".
+  const t0 = Date.UTC(2026, 8, 24, 13, 55, 0);
+  const lote = { archivos: 52, createdAt: new Date(t0) };
+
+  it('mientras suben las tandas cuenta como en curso y no reclama faltantes', () => {
+    expect(estadoLote(lote, { total: 30, enProceso: 30 }, t0 + 10_000)).toEqual({ enCurso: true, sinIngresar: 0 });
+    expect(estadoLote(lote, { total: 30, enProceso: 0 }, t0 + 60_000)).toEqual({ enCurso: true, sinIngresar: 0 });
+  });
+
+  it('pasada la ventana de subida, lo que falta se informa como sin ingresar', () => {
+    expect(estadoLote(lote, { total: 30, enProceso: 0 }, t0 + VENTANA_SUBIDA_MS + 1)).toEqual({ enCurso: false, sinIngresar: 22 });
+    // y si todavía hay comprobantes en proceso sigue en curso, pero ya con el faltante
+    expect(estadoLote(lote, { total: 30, enProceso: 3 }, t0 + VENTANA_SUBIDA_MS + 1)).toEqual({ enCurso: true, sinIngresar: 22 });
+  });
+
+  it('lote completo: en curso sólo si hay comprobantes en proceso', () => {
+    expect(estadoLote({ archivos: 5, createdAt: new Date(t0) }, { total: 5, enProceso: 0 }, t0 + 1000)).toEqual({ enCurso: false, sinIngresar: 0 });
+    expect(estadoLote({ archivos: 5, createdAt: new Date(t0) }, { total: 5, enProceso: 2 }, t0 + 1000)).toEqual({ enCurso: true, sinIngresar: 0 });
+    // más movimientos que archivos (lotes viejos sin conteo): nunca negativo
+    expect(estadoLote({ archivos: 0, createdAt: new Date(t0) }, { total: 5, enProceso: 0 }, t0 + 1000)).toEqual({ enCurso: false, sinIngresar: 0 });
   });
 });
 
