@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isDomainError, isForbidden } from '@/lib/errors';
 import { parsearImporteAr } from '@/lib/format';
-import { ingestarResumen, rematchearResumen } from '@/lib/resumenes/ingesta';
+import { rematchearResumen } from '@/lib/resumenes/ingesta';
 import {
   conciliarLinea,
   conciliarLineaConVentas,
@@ -23,7 +23,6 @@ import { aplicarReglasResumen, crearReglaDesdeLinea } from '@/lib/resumenes/regl
 // Asignación). Contrato de FormData documentado en el brief — Task 7 (bandeja
 // de conciliación) construye los <form> contra estas mismas actions.
 
-const MAX_BYTES = 15 * 1024 * 1024;
 
 function leerLineas(formData: FormData) {
   const ccIds = formData.getAll('linea_centroCostoId').map(String);
@@ -46,50 +45,6 @@ function volverConError(slug: string, path: string, err: unknown): never {
     redirect(`/${slug}/${path}${path.includes('?') ? '&' : '?'}error=${encodeURIComponent(err.message)}`);
   }
   throw err;
-}
-
-export type SubirResumenesResultado = { ok: number; errores: string[] };
-
-/**
- * Recibe uno o varios PDFs de resumen. Ni el tipo (tarjeta/banco) ni el emisor
- * se piden: los declara el propio PDF y los completa la extracción.
- */
-export async function subirResumenAction(formData: FormData): Promise<SubirResumenesResultado> {
-  const slug = String(formData.get('empresaSlug'));
-  try {
-    const ctx = await requireEmpresa(slug, 'VALIDADOR');
-    const archivos = formData.getAll('archivos').filter((f): f is File => f instanceof File && f.size > 0);
-    if (!archivos.length) return { ok: 0, errores: ['No se recibió ningún PDF.'] };
-
-    let ok = 0;
-    const errores: string[] = [];
-    for (const archivo of archivos) {
-      if (archivo.type !== 'application/pdf') {
-        errores.push(`${archivo.name}: los resúmenes se cargan como PDF.`);
-        continue;
-      }
-      if (archivo.size > MAX_BYTES) {
-        errores.push(`${archivo.name}: supera el máximo de 15 MB.`);
-        continue;
-      }
-      try {
-        await ingestarResumen({
-          empresaId: ctx.empresa.id,
-          usuarioId: ctx.usuario.id,
-          buffer: Buffer.from(await archivo.arrayBuffer()),
-          filename: archivo.name,
-          mime: archivo.type,
-        });
-        ok++;
-      } catch (err) {
-        errores.push(`${archivo.name}: ${err instanceof Error ? err.message : 'error inesperado'}`);
-      }
-    }
-    return { ok, errores };
-  } catch (err) {
-    if (isForbidden(err) || isDomainError(err)) return { ok: 0, errores: [err.message] };
-    throw err;
-  }
 }
 
 /**

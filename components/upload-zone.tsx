@@ -2,7 +2,8 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { subirComprobantesAction, type SubirResultado } from '@/app/(app)/[empresaSlug]/carga/actions';
+import type { SubirResultado } from '@/app/(app)/[empresaSlug]/carga/subir/route';
+import { postArchivos } from '@/lib/subidas/cliente';
 import { subirEnTandas } from '@/lib/carga/subir-en-tandas';
 
 // Home upload zone: drag & drop of many files at once (mass upload) plus a
@@ -31,7 +32,11 @@ export function UploadZone({ empresaSlug }: { empresaSlug: string }) {
         fd.set('totalLote', String(lista.length));
         if (loteId) fd.set('loteId', loteId);
         for (const f of tanda) fd.append('archivos', f);
-        return subirComprobantesAction(fd);
+        // Ruta común, no server action: el WAF de Cloudflare bloquea algunos
+        // PDFs en server actions (ver lib/subidas/ruta.ts).
+        const r = await postArchivos<SubirResultado & { error?: string }>(`/${empresaSlug}/carga/subir`, fd);
+        if (r?.error) return { ok: 0, errores: [r.error] };
+        return r;
       });
       setResultado(total);
       router.refresh();

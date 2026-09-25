@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import { crearAsientoAction, crearVentaAction } from '@/app/(app)/[empresaSlug]/asientos/actions';
+import { postArchivos } from '@/lib/subidas/cliente';
+import { mensajeSinRespuesta } from '@/lib/carga/subir-en-tandas';
+import type { AdjuntoSubido } from '@/app/(app)/[empresaSlug]/archivos/adjunto/route';
 import { DistribucionEditor, type OpcionId, type OpcionCliente, type OpcionProyecto, type PlantillaOpcion } from './distribucion-editor';
 
 export type CategoriaOpcion = { id: string; nombre: string; tipo: 'INGRESO' | 'EGRESO'; padreId: string | null };
@@ -10,6 +13,38 @@ export type ContraparteOpcion = { id: string; razonSocial: string; tipo: 'PROVEE
 export type ComprobanteOpcion = { id: string; etiqueta: string };
 
 const MAX_COINCIDENCIAS = 50;
+
+/**
+ * El adjunto viaja aparte, por ruta común (el WAF de Cloudflare bloquea algunos
+ * PDFs dentro de server actions, ver lib/subidas/ruta.ts): se sube primero y
+ * la action recibe sólo la referencia (o el error, para mostrarlo).
+ */
+function conAdjuntoPrevio(empresaSlug: string, accion: (fd: FormData) => Promise<void>) {
+  return async (fd: FormData) => {
+    const archivo = fd.get('adjunto');
+    fd.delete('adjunto');
+    if (archivo instanceof File && archivo.size > 0) {
+      const envio = new FormData();
+      envio.set('archivo', archivo);
+      let r: (AdjuntoSubido & { error?: string }) | undefined;
+      try {
+        r = await postArchivos<AdjuntoSubido & { error?: string }>(`/${empresaSlug}/archivos/adjunto`, envio);
+      } catch (err) {
+        fd.set('adjuntoError', `No se pudo subir el adjunto (${err instanceof Error ? err.message : String(err)}).`);
+      }
+      if (!fd.get('adjuntoError')) {
+        if (!r) fd.set('adjuntoError', mensajeSinRespuesta([archivo.name]));
+        else if (r.error) fd.set('adjuntoError', `${archivo.name}: ${r.error}`);
+        else {
+          fd.set('adjuntoKey', r.key);
+          fd.set('adjuntoNombre', r.nombre);
+          fd.set('adjuntoMime', r.mime);
+        }
+      }
+    }
+    await accion(fd);
+  };
+}
 
 // Manual entry (salaries, taxes, adjustments — the biggest chunk of the real
 // P&L) and manual sale. Both share the distribution editor with live amounts.
@@ -57,7 +92,7 @@ export function AsientoManualForm({
   }, [total, categoriaSel]);
 
   return (
-    <form action={crearAsientoAction} className="space-y-3">
+    <form action={conAdjuntoPrevio(empresaSlug, crearAsientoAction)} className="space-y-3">
       <input type="hidden" name="empresaSlug" value={empresaSlug} />
       <div className="grid sm:grid-cols-3 gap-3">
         <div>
@@ -194,7 +229,7 @@ export function VentaManualForm({
   }, [total, tipo]);
 
   return (
-    <form action={crearVentaAction} className="space-y-3">
+    <form action={conAdjuntoPrevio(empresaSlug, crearVentaAction)} className="space-y-3">
       <input type="hidden" name="empresaSlug" value={empresaSlug} />
       <div className="grid sm:grid-cols-3 gap-3">
         <div>

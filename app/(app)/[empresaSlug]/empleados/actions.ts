@@ -4,7 +4,6 @@ import { redirect } from 'next/navigation';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isDomainError, isForbidden } from '@/lib/errors';
 import { parsearImporteAr } from '@/lib/format';
-import { ingestarRecibos } from '@/lib/empleados/ingesta';
 import {
   confirmarRecibo, anularRecibo, guardarFichaEmpleado, guardarDistribucionEmpleado,
   vincularMovimiento, desvincularMovimiento, agregarCostoManual, eliminarCostoManual, reasignarRecibo,
@@ -15,7 +14,6 @@ import type { TotalesRecibo } from '@/lib/empleados/aritmetica';
 // Todas las actions de Empleados exigen ADMINISTRADOR: los sueldos son datos
 // sensibles y esta es la primera sección con restricción por rol.
 
-const MAX_BYTES = 15 * 1024 * 1024;
 
 function leerLineas(formData: FormData) {
   const ccIds = formData.getAll('linea_centroCostoId').map(String);
@@ -38,28 +36,6 @@ function volverConError(slug: string, path: string, err: unknown): never {
     redirect(`/${slug}/${path}${path.includes('?') ? '&' : '?'}error=${encodeURIComponent(err.message)}`);
   }
   throw err;
-}
-
-export async function subirRecibosAction(formData: FormData): Promise<{ ok: boolean; paginas?: number; error?: string }> {
-  const slug = String(formData.get('empresaSlug'));
-  try {
-    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
-    const archivo = formData.get('archivo');
-    if (!(archivo instanceof File) || archivo.size === 0) return { ok: false, error: 'No se recibió el PDF.' };
-    if (archivo.type !== 'application/pdf') return { ok: false, error: 'Los recibos se cargan como PDF.' };
-    if (archivo.size > MAX_BYTES) return { ok: false, error: 'El PDF supera el máximo de 15 MB.' };
-    const { paginas } = await ingestarRecibos({
-      empresaId: ctx.empresa.id,
-      usuarioId: ctx.usuario.id,
-      buffer: Buffer.from(await archivo.arrayBuffer()),
-      filename: archivo.name,
-      mime: archivo.type,
-    });
-    return { ok: true, paginas };
-  } catch (err) {
-    if (isForbidden(err) || isDomainError(err)) return { ok: false, error: err.message };
-    throw err;
-  }
 }
 
 export async function confirmarReciboAction(formData: FormData): Promise<void> {

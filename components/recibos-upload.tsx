@@ -2,8 +2,8 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { subirRecibosAction } from '@/app/(app)/[empresaSlug]/empleados/actions';
-import { mensajeSinRespuesta } from '@/lib/carga/subir-en-tandas';
+import { mensajeSinRespuesta, mensajeErrorEnvio } from '@/lib/carga/subir-en-tandas';
+import { postArchivos } from '@/lib/subidas/cliente';
 
 // Carga de recibos de sueldo: calco de UploadZone simplificado a un solo
 // archivo PDF (multi-recibo, se separa en páginas en el pipeline).
@@ -19,7 +19,13 @@ export function RecibosUpload({ empresaSlug }: { empresaSlug: string }) {
       fd.set('empresaSlug', empresaSlug);
       fd.set('archivo', file);
       // Sin respuesta (rechazo delante de la app): error legible, no crash.
-      const r = (await subirRecibosAction(fd)) ?? { ok: false, error: mensajeSinRespuesta([file.name]) };
+      let r: { ok?: boolean; paginas?: number; error?: string };
+      try {
+        r = (await postArchivos<{ ok?: boolean; paginas?: number; error?: string }>(`/${empresaSlug}/empleados/recibos/subir`, fd))
+          ?? { ok: false, error: mensajeSinRespuesta([file.name]) };
+      } catch (err) {
+        r = { ok: false, error: mensajeErrorEnvio([file.name], err) };
+      }
       setMensaje(
         r.ok
           ? { ok: true, texto: `PDF recibido: ${r.paginas} página${r.paginas !== 1 ? 's' : ''} encoladas. El worker las está procesando.` }

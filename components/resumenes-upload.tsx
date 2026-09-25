@@ -2,8 +2,9 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { subirResumenAction, type SubirResumenesResultado } from '@/app/(app)/[empresaSlug]/resumenes/actions';
-import { mensajeSinRespuesta } from '@/lib/carga/subir-en-tandas';
+import type { SubirResumenesResultado } from '@/app/(app)/[empresaSlug]/resumenes/subir/route';
+import { postArchivos } from '@/lib/subidas/cliente';
+import { mensajeSinRespuesta, mensajeErrorEnvio } from '@/lib/carga/subir-en-tandas';
 
 // Carga de resúmenes de tarjeta/banco: varios PDFs de una, sin declarar tipo
 // ni emisor (los declara el propio PDF y los completa la extracción). Se manda
@@ -27,7 +28,13 @@ export function ResumenesUpload({ empresaSlug }: { empresaSlug: string }) {
         fd.set('empresaSlug', empresaSlug);
         fd.append('archivos', file);
         // Sin respuesta (rechazo delante de la app): error legible, no crash.
-        const r = (await subirResumenAction(fd)) ?? { ok: 0, errores: [mensajeSinRespuesta([file.name])] };
+        let r: SubirResumenesResultado;
+        try {
+          const resp = await postArchivos<SubirResumenesResultado & { error?: string }>(`/${empresaSlug}/resumenes/subir`, fd);
+          r = !resp ? { ok: 0, errores: [mensajeSinRespuesta([file.name])] } : resp.error ? { ok: 0, errores: [`${file.name}: ${resp.error}`] } : resp;
+        } catch (err) {
+          r = { ok: 0, errores: [mensajeErrorEnvio([file.name], err)] };
+        }
         total.ok += r.ok;
         total.errores.push(...r.errores);
         setProgreso({ hechos: i + 1, total: lista.length });

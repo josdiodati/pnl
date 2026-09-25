@@ -9,7 +9,7 @@ import { nombreTipoArca, numeroComprobanteArca, esNotaCreditoArca } from '@/lib/
 import { ventanaSyncDiaria } from '@/lib/arca/mis-comprobantes/service';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { AutoRefresh } from '@/components/auto-refresh';
-import { importarCsvArcaAction, sincronizarArcaAction } from './actions';
+import { sincronizarArcaAction } from './actions';
 import { resumirPorMes } from '@/lib/arca/mis-comprobantes/resumen-mensual';
 import { MES_LABEL } from '@/lib/periodos';
 
@@ -126,8 +126,8 @@ export default async function ArcaPage({
               {jobEnCurso ? 'Sincronizando…' : 'Sincronizar ahora'}
             </button>
           </form>
-          <form action={importarCsvArcaAction} className="flex items-center gap-2">
-            <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+          {/* Formulario HTML común, no server action: ver lib/subidas/ruta.ts. */}
+          <form action={`${base}/importar`} method="post" encType="multipart/form-data" className="flex items-center gap-2">
             <input type="file" name="archivo" accept=".csv,.zip,text/csv,application/zip" required className="text-xs" />
             <button className="btn-secondary text-sm" title="El CSV (o el ZIP tal cual) que baja el botón CSV de Mis Comprobantes">Importar CSV</button>
           </form>

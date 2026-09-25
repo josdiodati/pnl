@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isDomainError, isForbidden, DomainError } from '@/lib/errors';
 import { crearAsientoManual, crearVentaManual, generarRecurrentes } from '@/lib/movimientos/service';
-import { getFileStorage } from '@/lib/storage';
+import { getFileStorage, sha256 } from '@/lib/storage';
 import { writeAudit } from '@/lib/audit';
 
 function aNumero(v: FormDataEntryValue | null): number | null {
@@ -36,17 +36,26 @@ function volver(slug: string, err?: unknown, ok?: string): never {
   redirect(`/${slug}/asientos${ok ? `?ok=${encodeURIComponent(ok)}` : ''}`);
 }
 
+/**
+ * El adjunto llega ya subido por la ruta /archivos/adjunto (no viaja dentro de
+ * la server action: ver lib/subidas/ruta.ts). Se verifica que la clave sea de
+ * esta empresa y exista, y el hash se recalcula del contenido guardado.
+ */
 async function guardarAdjunto(formData: FormData, empresaId: string) {
-  const archivo = formData.get('adjunto');
-  if (!(archivo instanceof File) || archivo.size === 0) return null;
-  if (archivo.size > 15 * 1024 * 1024) throw new DomainError('El adjunto supera 15 MB.');
-  const buffer = Buffer.from(await archivo.arrayBuffer());
-  const { key, hash } = await getFileStorage().put(buffer, {
-    filename: archivo.name,
-    mime: archivo.type || 'application/octet-stream',
-    empresaId,
-  });
-  return { key, nombre: archivo.name, mime: archivo.type || 'application/octet-stream', hash };
+  const error = String(formData.get('adjuntoError') ?? '');
+  if (error) throw new DomainError(error);
+  const key = String(formData.get('adjuntoKey') ?? '');
+  if (!key) return null;
+  if (!key.startsWith(`${empresaId}/`) || key.includes('..')) throw new DomainError('Adjunto inválido.');
+  let buffer: Buffer;
+  try {
+    buffer = await getFileStorage().get(key);
+  } catch {
+    throw new DomainError('No se encontró el adjunto subido: volvé a elegirlo.');
+  }
+  const nombre = String(formData.get('adjuntoNombre') ?? '') || key.split('__').pop() || 'adjunto';
+  const mime = String(formData.get('adjuntoMime') ?? '') || 'application/octet-stream';
+  return { key, nombre, mime, hash: sha256(buffer) };
 }
 
 // Loaders (CARGADOR) can create drafts; "validar al guardar" only takes effect

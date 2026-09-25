@@ -1,28 +1,23 @@
-'use server';
-
-import { requireEmpresa } from '@/lib/empresa/require-empresa';
-import { isDomainError, isForbidden } from '@/lib/errors';
+import type { NextRequest } from 'next/server';
 import { ingestarComprobante } from '@/lib/pipeline';
+import { conEmpresaJson, archivosDe } from '@/lib/subidas/ruta';
+
+// Subida de comprobantes (UploadZone). Ruta común y no server action: ver
+// lib/subidas/ruta.ts. Un drop del usuario = un LoteIngesta, aunque lleguen en
+// tandas: la primera tanda crea el lote (con el total esperado) y las
+// siguientes lo referencian. El loteId del cliente se verifica contra la
+// empresa activa: nunca se confía en un id ajeno.
 
 const MIMES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
 const MAX_BYTES = 15 * 1024 * 1024;
 
 export type SubirResultado = { ok: number; errores: string[]; loteId?: string };
 
-/**
- * Receives one or many files (drag & drop or phone camera) and pushes each one
- * into the ingestion pipeline as its own voucher (1 file = 1 voucher, MVP).
- * Un drop del usuario = un LoteIngesta, aunque la UploadZone mande los archivos
- * en tandas: la primera tanda crea el lote (con el total esperado) y las
- * siguientes lo referencian. El loteId del cliente se verifica contra la
- * empresa activa — nunca se confía en un id ajeno.
- */
-export async function subirComprobantesAction(formData: FormData): Promise<SubirResultado> {
-  const slug = String(formData.get('empresaSlug'));
-  const canal = String(formData.get('canal')) === 'FOTO' ? 'FOTO' : 'WEB';
-  try {
-    const ctx = await requireEmpresa(slug, 'CARGADOR');
-    const archivos = formData.getAll('archivos').filter((f): f is File => f instanceof File && f.size > 0);
+export async function POST(req: NextRequest, { params }: { params: { empresaSlug: string } }) {
+  const formData = await req.formData();
+  return conEmpresaJson(params.empresaSlug, 'CARGADOR', async (ctx): Promise<SubirResultado> => {
+    const canal = String(formData.get('canal')) === 'FOTO' ? 'FOTO' : 'WEB';
+    const archivos = archivosDe(formData, 'archivos');
     if (!archivos.length) return { ok: 0, errores: ['No se recibió ningún archivo.'] };
 
     const loteIdCliente = String(formData.get('loteId') ?? '');
@@ -70,8 +65,5 @@ export async function subirComprobantesAction(formData: FormData): Promise<Subir
       }
     }
     return { ok, errores, loteId };
-  } catch (err) {
-    if (isForbidden(err) || isDomainError(err)) return { ok: 0, errores: [err.message] };
-    throw err;
-  }
+  });
 }
