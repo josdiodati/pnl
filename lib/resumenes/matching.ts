@@ -58,6 +58,14 @@ const DIAS_VENTANA = 45;
 const TOL_CENTAVOS = 100;
 
 const BANDA_VENTA = 0.05;
+/** Un cobro no precede a su factura; se toleran anticipos cortos. */
+export const ANTICIPO_MAX_DIAS = 7;
+
+/** ¿Puede este crédito cobrar esa venta? (no anterior a la emisión − 7 días). */
+export function cobroPosibleEnFecha(fechaLinea: Date | null, fechaVenta: Date | null): boolean {
+  if (!fechaLinea || !fechaVenta) return true;
+  return fechaLinea.getTime() >= fechaVenta.getTime() - ANTICIPO_MAX_DIAS * 86400000;
+}
 
 /** Señal de monto contra una venta: 'exacto', 'retencion', 'tc' o null. */
 function señalMontoVenta(linea: LineaParaMatching, mov: MovimientoCandidato): 'exacto' | 'retencion' | 'tc' | null {
@@ -115,6 +123,8 @@ export function evaluarLinea(
   candidatos: MovimientoCandidato[],
 ): { estado: 'SUGERIDA' | 'PENDIENTE'; candidatos: { movimientoId: string; score: number; motivo: string }[] } {
   const puntuados = candidatos
+    // Una venta emitida después del crédito (más allá de un anticipo corto) no es su cobro.
+    .filter((mov) => !mov.venta || cobroPosibleEnFecha(linea.fecha, mov.fecha))
     .map((mov) => {
       const monto = señalMonto(linea, mov);
       const fecha = señalFecha(linea, mov);

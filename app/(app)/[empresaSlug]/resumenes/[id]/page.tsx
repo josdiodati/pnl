@@ -155,7 +155,12 @@ export default async function ResumenDetallePage({
         const montoCredito = Number(linea.monto) - sumaVinculos;
         const delCliente = clienteId ? pendientes.filter((f) => f.contraparteId === clienteId) : [];
         const sugeridas = new Set(
-          sugerirCombinacion(montoCredito, (delCliente.length ? delCliente : pendientes).map((f) => ({ id: f.id, saldoArs: infoVentas.get(f.id)!.saldoArs }))) ?? [],
+          sugerirCombinacion(
+            montoCredito,
+            (delCliente.length ? delCliente : pendientes).map((f) => ({ id: f.id, saldoArs: infoVentas.get(f.id)!.saldoArs, fecha: f.fechaDevengamiento })),
+            3,
+            linea.fecha,
+          ) ?? [],
         );
         const facturasSel: FacturaCobrable[] = pendientes
           .map((f) => {

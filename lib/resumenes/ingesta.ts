@@ -109,6 +109,8 @@ async function candidatosDeMatching(db: ScopedDb, ventana: { desde: Date; hasta:
     // Un comprobante ya vinculado a alguna línea no se vuelve a sugerir: el
     // pago parcial (compartirlo) es excepcional y se hace a mano, con confirmación.
     .filter((m) => m.vinculosResumen.length === 0)
+    // Los ajustes por diferencia de cambio (Spec F) no pasan por el banco.
+    .filter((m) => !(m.flags as { ajusteCambio?: unknown } | null)?.ajusteCambio)
     .flatMap((m): MovimientoCandidato[] => {
       const base: MovimientoCandidato = {
         id: m.id,

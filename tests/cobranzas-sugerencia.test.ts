@@ -41,3 +41,11 @@ describe('sugerirCombinacion', () => {
     expect(sugerirCombinacion(1000, [])).toBeNull();
   });
 });
+
+describe('sugerirCombinacion: fecha del crédito', () => {
+  it('descarta facturas emitidas más de 7 días después del crédito', () => {
+    const d = (s: string) => new Date(`${s}T00:00:00Z`);
+    const facturas = [{ id: 'futura', saldoArs: 1000, fecha: d('2026-08-31') }, { id: 'vieja', saldoArs: 1000, fecha: d('2026-07-01') }];
+    expect(sugerirCombinacion(1000, facturas, 3, d('2026-07-08'))).toEqual(['vieja']);
+  });
+});

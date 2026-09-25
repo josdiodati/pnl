@@ -113,3 +113,17 @@ describe('evaluarLinea: ventas y cobros (Spec F)', () => {
     expect(r.candidatos[0].motivo).toMatch(/^cobro registrado: Transferencia \+ monto exacto/);
   });
 });
+
+describe('evaluarLinea: un cobro no precede a su factura', () => {
+  const venta = (fecha: string): MovimientoCandidato => ({
+    id: 'v', total: 5082000, moneda: 'ARS', fecha: d(fecha), nombreContraparte: 'COMNET S A', descriptores: [],
+    venta: { saldo: 5082000, saldoArs: 5082000 },
+  });
+  const credito = (fecha: string) => ({ fecha: d(fecha), descriptor: 'Transferencia recibida COMNET', monto: 4998000, montoOrigen: null, moneda: 'ARS' });
+  it('un crédito de julio no cobra una factura del 31 de agosto', () => {
+    expect(evaluarLinea(credito('2026-07-08'), [venta('2026-08-31')]).candidatos).toHaveLength(0);
+  });
+  it('tolera un anticipo de hasta 7 días', () => {
+    expect(evaluarLinea(credito('2026-08-25'), [venta('2026-08-31')]).estado).toBe('SUGERIDA');
+  });
+});

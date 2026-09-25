@@ -1,4 +1,4 @@
-import { normalizarDescriptor, similitudTexto } from '@/lib/resumenes/matching';
+import { normalizarDescriptor, similitudTexto, cobroPosibleEnFecha } from '@/lib/resumenes/matching';
 import { UMBRAL_RETENCION } from './reparto';
 
 // Sugerencias para "Cobro de facturas…" en la bandeja del resumen: qué cliente
@@ -25,7 +25,7 @@ export function identificarCliente(descriptor: string, clientes: ClienteSugeribl
   return mejor && mejor.score >= 0.5 ? mejor.id : null;
 }
 
-export type FacturaSugerible = { id: string; saldoArs: number | null };
+export type FacturaSugerible = { id: string; saldoArs: number | null; fecha?: Date | null };
 
 const TOL = 1; // pesos
 
@@ -35,9 +35,9 @@ const TOL = 1; // pesos
  * 95% y 100% de la suma). Prefiere exacta, después menos facturas, después la
  * menor diferencia. null si ninguna califica.
  */
-export function sugerirCombinacion(monto: number, facturas: FacturaSugerible[], maxFacturas = 3): string[] | null {
+export function sugerirCombinacion(monto: number, facturas: FacturaSugerible[], maxFacturas = 3, fechaCredito: Date | null = null): string[] | null {
   const pool = facturas
-    .filter((f): f is { id: string; saldoArs: number } => f.saldoArs != null && f.saldoArs > 0)
+    .filter((f): f is { id: string; saldoArs: number; fecha?: Date | null } => f.saldoArs != null && f.saldoArs > 0 && cobroPosibleEnFecha(fechaCredito, f.fecha ?? null))
     .sort((a, b) => Math.abs(a.saldoArs - monto) - Math.abs(b.saldoArs - monto))
     .slice(0, 15);
   let mejor: { ids: string[]; exacta: boolean; dif: number } | null = null;
