@@ -10,11 +10,16 @@ import { ventanaSyncDiaria } from '@/lib/arca/mis-comprobantes/service';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { importarCsvArcaAction, sincronizarArcaAction } from './actions';
+import { resumirPorMes } from '@/lib/arca/mis-comprobantes/resumen-mensual';
+import { MES_LABEL } from '@/lib/periodos';
 
 // ARCA · Mis Comprobantes: lo que ARCA registra como emitido y recibido por
 // la empresa, cruzado contra el libro. Sirve para ver qué falta cargar
 // (está en ARCA y no en el libro) y qué no figura (está en el libro con CAE
 // y ARCA no lo lista en la ventana sincronizada).
+//
+// Sin ?mes= la vista es una lista por mes con una barra de cumplimiento
+// (cruzados / total), como Resúmenes; cada mes abre el detalle.
 
 const ORIGEN_LABEL = { EMITIDO: 'Emitidos', RECIBIDO: 'Recibidos' } as const;
 
@@ -36,9 +41,14 @@ export default async function ArcaPage({
 
   const origen = searchParams.origen === 'EMITIDO' || searchParams.origen === 'RECIBIDO' ? searchParams.origen : undefined;
   const estado = searchParams.estado === 'faltantes' || searchParams.estado === 'cruzados' ? searchParams.estado : 'todos';
+  // Sin mes: lista mensual. Con mes (o "todos"): el detalle de comprobantes.
+  const vistaLista = !searchParams.mes;
   const mes = /^\d{4}-\d{2}$/.test(searchParams.mes ?? '') ? searchParams.mes! : searchParams.mes === 'todos' ? 'todos' : mesActualAr();
   const [anio, mesNum] = mes === 'todos' ? [0, 0] : mes.split('-').map(Number);
   const rangoMes = mes === 'todos' ? undefined : { gte: new Date(Date.UTC(anio, mesNum - 1, 1)), lt: new Date(Date.UTC(anio, mesNum, 1)) };
+  const resumenMensual = vistaLista
+    ? resumirPorMes(await ctx.db.comprobanteArca.findMany({ select: { fechaEmision: true, origen: true, movimientoId: true } }))
+    : [];
 
   const [credencial, jobEnCurso, ultimoJob, comprobantes, resumenPorOrigen] = await Promise.all([
     ctx.db.credencialArca.findFirst({ where: {} }),
@@ -165,6 +175,103 @@ export default async function ArcaPage({
         <p className="text-xs text-red-600">La última corrida terminó con error: {ultimoJob.error}</p>
       )}
 
+      {vistaLista ? (
+        <>
+          <div className="card p-4 flex flex-wrap items-center gap-6 text-sm">
+            <div>
+              <span className="text-xs text-slate-500">Última sincronización</span>
+              <div>{credencial?.ultimaSyncAt ? formatFechaHora(credencial.ultimaSyncAt) : '—'}</div>
+            </div>
+            <div>
+              <span className="text-xs text-slate-500">Sync diario</span>
+              <div>{credencial?.syncAutomatico && credencial.estado === 'OK' ? '06:30, últimos 30 días' : 'apagado'}</div>
+            </div>
+            <div>
+              <span className="text-xs text-slate-500">Total sin cargar en PNL</span>
+              <div className="tabular-nums">
+                {resumenMensual.reduce((s, m) => s + m.faltan, 0)} de {resumenMensual.reduce((s, m) => s + m.total, 0)} comprobantes en ARCA
+              </div>
+            </div>
+            <Link href={filtro({ mes: 'todos', estado: 'faltantes' })} className="ml-auto text-xs underline text-slate-600">
+              Ver todos los faltantes
+            </Link>
+          </div>
+
+          <div className="card overflow-x-auto">
+            <table className="table-base">
+              <thead>
+                <tr>
+                  <th>Mes</th>
+                  <th>Cumplimiento</th>
+                  <th>Emitidos</th>
+                  <th>Recibidos</th>
+                  <th className="text-right">Faltan en PNL</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {resumenMensual.map((m) => {
+                  const [a, mm] = m.mes.split('-').map(Number);
+                  const barra = (c: { total: number; cruzados: number }, ancho = 'w-16') => (
+                    c.total > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <div className={`${ancho} h-1.5 rounded bg-slate-200 overflow-hidden`}>
+                          <div className="h-full bg-accent" style={{ width: `${Math.round((c.cruzados / c.total) * 100)}%` }} />
+                        </div>
+                        <span className="text-xs text-slate-500 tabular-nums">{c.cruzados}/{c.total}</span>
+                      </div>
+                    ) : <span className="text-xs text-slate-400">—</span>
+                  );
+                  return (
+                    <tr key={m.mes} className="hover:bg-slate-50">
+                      <td className="font-medium whitespace-nowrap">
+                        <Link href={filtro({ mes: m.mes, origen: undefined, estado: 'todos' })} className="hover:underline underline-offset-2">
+                          {MES_LABEL[mm]} {a}
+                        </Link>
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <div className="w-28 h-2 rounded bg-slate-200 overflow-hidden">
+                            <div className={`h-full ${m.pct === 100 ? 'bg-accent' : 'bg-accent/80'}`} style={{ width: `${m.pct}%` }} />
+                          </div>
+                          <span className="text-xs tabular-nums text-slate-600">{m.pct}%</span>
+                        </div>
+                      </td>
+                      <td>
+                        <Link href={filtro({ mes: m.mes, origen: 'EMITIDO', estado: 'todos' })}>{barra(m.emitidos)}</Link>
+                      </td>
+                      <td>
+                        <Link href={filtro({ mes: m.mes, origen: 'RECIBIDO', estado: 'todos' })}>{barra(m.recibidos)}</Link>
+                      </td>
+                      <td className="text-right">
+                        {m.faltan > 0 ? (
+                          <Link href={filtro({ mes: m.mes, origen: undefined, estado: 'faltantes' })} className="text-red-700 underline tabular-nums">
+                            {m.faltan} sin cargar
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-accent-strong">✔ completo</span>
+                        )}
+                      </td>
+                      <td>
+                        <Link href={filtro({ mes: m.mes, origen: undefined, estado: 'todos' })} className="btn-secondary text-xs">Abrir</Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {resumenMensual.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="text-center text-slate-400 py-8">
+                      Todavía no hay datos: sincronizá o importá el CSV de Mis Comprobantes.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+      <>
+      <Link href={base} className="text-sm text-slate-500 underline">← Todos los meses</Link>
       <div className="card p-4 flex flex-wrap items-center gap-4 text-sm">
         <div>
           <span className="text-xs text-slate-500">Última sincronización</span>
@@ -279,6 +386,8 @@ export default async function ArcaPage({
         </table>
         {comprobantes.length === 500 && <p className="text-xs text-slate-400 px-3 py-2">Se muestran los primeros 500: acotá por mes u origen.</p>}
       </div>
+      </>
+      )}
 
       {ventana && (
         <div className="card p-4 space-y-2">
