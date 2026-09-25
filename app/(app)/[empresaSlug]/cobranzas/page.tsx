@@ -38,7 +38,7 @@ export default async function CobranzasPage({
     cargarVentasConCobros(ctx.db),
     ctx.db.cobro.findMany({
       where: { estado: 'EN_CARTERA' },
-      include: { contraparte: true, aplicaciones: { include: { movimiento: { select: { id: true, numero: true, puntoVenta: true, tipoCambio: true } } } } },
+      include: { contraparte: true, aplicaciones: { include: { movimiento: { select: { id: true, numero: true, puntoVenta: true, tipoCambio: true, tipoComprobante: true } } } } },
       orderBy: { fechaAcreditacion: 'asc' },
     }),
   ]);
@@ -67,29 +67,37 @@ export default async function CobranzasPage({
   });
   const maxSemana = Math.max(1, ...p.semanas.map((s) => s.confirmado + s.estimado));
   const base = `/${params.empresaSlug}`;
+  // Drill-down: cada número lleva a Comprobantes (ventas) filtrado a las facturas que lo componen.
+  const drill = (filtros: Record<string, string | undefined>) => {
+    const sp = new URLSearchParams({ lado: 'ventas' });
+    for (const [k, v] of Object.entries(filtros)) if (v) sp.set(k, v);
+    return `${base}/comprobantes?${sp.toString()}`;
+  };
+  const clientePorNombre = new Map(pendientes.map(({ f }) => [f.contraparte?.razonSocial ?? 'Sin cliente', f.contraparteId ?? undefined]));
+  const isoDia = (f: Date) => f.toISOString().slice(0, 10);
 
   return (
     <div>
       <PageHeader
         titulo="Cobranzas"
         descripcion="Lo que falta cobrar y cuándo se espera que entre. Confirmado: cheques en cartera por su fecha de cobro. Estimado: saldo de facturas por su fecha probable (vencimiento, plazo o histórico del cliente). No toca el P&L."
-        acciones={<Link href={`${base}/ventas?cobro=pendientes`} className="btn-secondary">Ver facturas por cobrar</Link>}
+        acciones={<Link href={drill({ cobro: 'pendientes' })} className="btn-secondary">Ver facturas por cobrar</Link>}
       />
       <ErrorBanner mensaje={searchParams.error} />
       <OkBanner mensaje={searchParams.ok} />
 
       <div className="reveal reveal-2 mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          ['A cobrar', p.kpis.aCobrar, 'saldo de facturas sin cheque recibido'],
-          ['Vencido', p.kpis.vencido, 'fecha probable ya pasada'],
-          ['Cheques en cartera', p.kpis.chequesEnCartera, `${cheques.length} instrumento${cheques.length !== 1 ? 's' : ''}`],
-          ['Próximos 30 días', p.kpis.proximos30, 'confirmado + estimado'],
-        ].map(([titulo, valor, nota]) => (
-          <div key={String(titulo)} className="card p-4">
+        {([
+          ['A cobrar', p.kpis.aCobrar, 'saldo de facturas sin cheque recibido', 'pendientes'],
+          ['Vencido', p.kpis.vencido, 'fecha probable ya pasada', 'vencidas'],
+          ['Cheques en cartera', p.kpis.chequesEnCartera, `${cheques.length} instrumento${cheques.length !== 1 ? 's' : ''}`, 'cheques'],
+          ['Próximos 30 días', p.kpis.proximos30, 'confirmado + estimado', 'prox30'],
+        ] as const).map(([titulo, valor, nota, cobro]) => (
+          <Link key={String(titulo)} href={drill({ cobro })} className="card p-4 transition-colors hover:border-ink-mute" title="Ver las facturas que componen este número">
             <p className="label !mb-0.5">{titulo}</p>
             <p className={`font-mono text-2xl font-semibold tabular-nums ${titulo === 'Vencido' && Number(valor) > 0 ? 'text-red-700' : ''}`}>{formatMoney(Number(valor))}</p>
-            <p className="mt-1 text-[11px] text-ink-mute">{nota}</p>
-          </div>
+            <p className="mt-1 text-[11px] text-ink-mute">{nota} · <span className="underline underline-offset-2">ver facturas</span></p>
+          </Link>
         ))}
       </div>
       {p.sinTipoCambio > 0 && (
@@ -111,16 +119,22 @@ export default async function CobranzasPage({
               const hC = (s.confirmado / maxSemana) * 100;
               const hE = (s.estimado / maxSemana) * 100;
               return (
-                <div key={s.desde.toISOString()} className="group relative flex h-full flex-1 flex-col justify-end">
+                <Link
+                  key={s.desde.toISOString()}
+                  href={total > 0 ? drill({ semana: isoDia(s.desde) }) : '#'}
+                  aria-label={`Semana del ${ddmm(s.desde)}: ${formatMoney(total)}`}
+                  className={`group relative flex h-full flex-1 flex-col justify-end ${total > 0 ? 'cursor-pointer' : 'pointer-events-none'}`}
+                >
                   {total > 0 && (
                     <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-ink px-2 py-1 text-[11px] text-white shadow group-hover:block">
                       {ddmm(s.desde)}–{ddmm(s.hasta)} · {formatMoney(total)}
                       <br />confirmado {formatMoney(s.confirmado)} · estimado {formatMoney(s.estimado)}
+                      <br /><span className="opacity-70">click: ver las facturas</span>
                     </div>
                   )}
                   {s.estimado > 0 && <div className="rounded-t-[4px]" style={{ height: `${hE}%`, background: COLOR_ESTIMADO, marginBottom: s.confirmado > 0 ? 2 : 0 }} />}
                   {s.confirmado > 0 && <div className={s.estimado > 0 ? '' : 'rounded-t-[4px]'} style={{ height: `${hC}%`, background: COLOR_CONFIRMADO }} />}
-                </div>
+                </Link>
               );
             })}
           </div>
@@ -131,8 +145,8 @@ export default async function CobranzasPage({
           </div>
         </div>
         <p className="mt-2 text-[12px] text-ink-mute">
-          Vencido sin cobrar: <span className="tabular-nums">{formatMoney(p.vencido)}</span>
-          {' · '}más allá de 12 semanas: <span className="tabular-nums">{formatMoney(p.despues.confirmado + p.despues.estimado)}</span>
+          Vencido sin cobrar: <Link href={drill({ cobro: 'vencidas' })} className="tabular-nums underline underline-offset-2 hover:text-tinta">{formatMoney(p.vencido)}</Link>
+          {' · '}más allá de 12 semanas: <Link href={drill({ cobro: 'despues' })} className="tabular-nums underline underline-offset-2 hover:text-tinta">{formatMoney(p.despues.confirmado + p.despues.estimado)}</Link>
         </p>
         <details className="mt-2 text-[12px]">
           <summary className="cursor-pointer text-ink-mute">Ver como tabla</summary>
@@ -141,7 +155,9 @@ export default async function CobranzasPage({
             <tbody>
               {p.semanas.map((s, k) => (
                 <tr key={k}>
-                  <td className="font-mono">{ddmm(s.desde)}–{ddmm(s.hasta)}</td>
+                  <td className="font-mono">
+                    <Link href={drill({ semana: isoDia(s.desde) })} className="underline underline-offset-2">{ddmm(s.desde)}–{ddmm(s.hasta)}</Link>
+                  </td>
                   <td className="num">{formatMoney(s.confirmado)}</td>
                   <td className="num">{formatMoney(s.estimado)}</td>
                   <td className="num">{formatMoney(s.confirmado + s.estimado)}</td>
@@ -161,15 +177,26 @@ export default async function CobranzasPage({
               <tr><th>Cliente</th>{TRAMOS_ANTIGUEDAD.map((t) => <th key={t} className="text-right">{t}</th>)}<th className="text-right">Total</th></tr>
             </thead>
             <tbody>
-              {p.antiguedad.map((f) => (
-                <tr key={f.cliente}>
-                  <td className="font-medium">{f.cliente}</td>
-                  {f.tramos.map((v, k) => (
-                    <td key={k} className={`num ${k > 0 && v > 0 ? 'text-red-700' : ''}`}>{v > 0 ? compacto(v) : '—'}</td>
-                  ))}
-                  <td className="num font-medium">{compacto(f.total)}</td>
-                </tr>
-              ))}
+              {p.antiguedad.map((f) => {
+                const contraparteId = clientePorNombre.get(f.cliente);
+                return (
+                  <tr key={f.cliente}>
+                    <td className="font-medium">
+                      <Link href={drill({ cobro: 'pendientes', contraparteId })} className="hover:underline underline-offset-2">{f.cliente}</Link>
+                    </td>
+                    {f.tramos.map((v, k) => (
+                      <td key={k} className={`num ${k > 0 && v > 0 ? 'text-red-700' : ''}`}>
+                        {v > 0 ? (
+                          <Link href={drill({ tramo: String(k), contraparteId })} className="underline decoration-dotted underline-offset-2 hover:decoration-solid">{compacto(v)}</Link>
+                        ) : '—'}
+                      </td>
+                    ))}
+                    <td className="num font-medium">
+                      <Link href={drill({ cobro: 'pendientes', contraparteId })} className="underline decoration-dotted underline-offset-2 hover:decoration-solid">{compacto(f.total)}</Link>
+                    </td>
+                  </tr>
+                );
+              })}
               {p.antiguedad.length === 0 && <tr><td colSpan={7} className="py-8 text-center text-ink-mute">Nada por cobrar.</td></tr>}
             </tbody>
           </table>
@@ -185,7 +212,20 @@ export default async function CobranzasPage({
                 <tr key={c.id}>
                   <td className="font-mono text-[12.5px]">{formatFecha(c.fechaAcreditacion)}</td>
                   <td>{c.contraparte?.razonSocial ?? '—'}</td>
-                  <td className="text-[12px]">{INSTRUMENTO_LABEL[c.instrumento]}{c.numero ? ` ${c.numero}` : ''}{c.banco ? ` · ${c.banco}` : ''}</td>
+                  <td className="text-[12px]">
+                    {INSTRUMENTO_LABEL[c.instrumento]}{c.numero ? ` ${c.numero}` : ''}{c.banco ? ` · ${c.banco}` : ''}
+                    <span className="block text-[10.5px] text-ink-mute">
+                      paga{' '}
+                      {c.aplicaciones.map((a, k) => (
+                        <span key={a.id}>
+                          {k > 0 && ', '}
+                          <Link href={`${base}/ventas/${a.movimiento.id}/cobros?volver=cobranzas`} className="underline underline-offset-2 hover:text-tinta">
+                            {a.movimiento.puntoVenta ? `${a.movimiento.puntoVenta}-` : ''}{a.movimiento.numero ?? 'factura'}
+                          </Link>
+                        </span>
+                      ))}
+                    </span>
+                  </td>
                   <td className="num">{formatMoney(Number(c.monto))}{c.moneda === 'ARS' ? '' : ` ${c.moneda}`}</td>
                   <td className="text-right whitespace-nowrap">
                     <form action={acreditarChequeAction} className="block">
@@ -222,8 +262,16 @@ export default async function CobranzasPage({
                   <span className="font-mono text-[12.5px]">{formatFecha(i.fechaProbable?.fecha)}</span>
                   {i.fechaProbable && <span className="block text-[10px] text-ink-mute">{FUENTE_LABEL[i.fechaProbable.fuente]}</span>}
                 </td>
-                <td>{f.contraparte?.razonSocial ?? '—'}</td>
-                <td className="font-mono text-[12.5px] whitespace-nowrap">{f.tipoComprobante?.replace(/_/g, ' ')} {f.puntoVenta ? `${f.puntoVenta}-` : ''}{f.numero ?? ''}</td>
+                <td>
+                  <Link href={drill({ cobro: 'pendientes', contraparteId: f.contraparteId ?? undefined })} className="hover:underline underline-offset-2">
+                    {f.contraparte?.razonSocial ?? '—'}
+                  </Link>
+                </td>
+                <td className="font-mono text-[12.5px] whitespace-nowrap">
+                  <Link href={`${base}/ventas/${f.id}/cobros?volver=cobranzas`} className="underline underline-offset-2">
+                    {f.tipoComprobante?.replace(/_/g, ' ')} {f.puntoVenta ? `${f.puntoVenta}-` : ''}{f.numero ?? ''}
+                  </Link>
+                </td>
                 <td className="font-mono text-[12.5px]">{formatFecha(f.fechaDevengamiento)}</td>
                 <td><CobroBadge estado={i.estado} vencida={i.vencida} diasVencida={i.diasVencida} /></td>
                 <td className="num">

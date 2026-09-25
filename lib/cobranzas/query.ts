@@ -68,6 +68,8 @@ export type InfoCobro = ResultadoEstadoCobro & {
   saldoArs: number | null;
   cobrado: number;
   historicoDias: number | null;
+  /** Cheques/e-cheqs en cartera aplicados a esta venta (para filtrar desde la proyección). */
+  chequesEnCartera: { importeArs: number; fechaAcreditacion: Date }[];
 };
 
 /** Hoy (fecha de Buenos Aires) a medianoche UTC: las fechas del libro son fechas puras en UTC. */
@@ -93,7 +95,10 @@ export function calcularInfoCobros(filas: FilaVenta[], hoy: Date): Map<string, I
     const historicoDias = fila.contraparteId ? historico.get(fila.contraparteId) ?? null : null;
     const r = estadoCobro(venta, hoy, historicoDias);
     const s = saldoVenta(venta);
-    out.set(venta.id, { ...r, saldo: s.saldo, saldoArs: s.saldoArs, cobrado: s.cobrado, historicoDias });
+    const chequesEnCartera = fila.aplicacionesCobro
+      .filter((a) => a.cobro.estado === 'EN_CARTERA')
+      .map((a) => ({ importeArs: Number(a.importeArs), fechaAcreditacion: a.cobro.fechaAcreditacion }));
+    out.set(venta.id, { ...r, saldo: s.saldo, saldoArs: s.saldoArs, cobrado: s.cobrado, historicoDias, chequesEnCartera });
   }
   return out;
 }

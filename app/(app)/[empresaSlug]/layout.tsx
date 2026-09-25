@@ -45,7 +45,7 @@ export default async function EmpresaLayout({
     {
       titulo: 'Registros',
       items: [
-        { href: `${base}/comprobantes`, label: 'Compras', icono: 'comprobante' },
+        { href: `${base}/comprobantes`, label: 'Comprobantes', icono: 'comprobante' },
         { href: `${base}/ventas`, label: 'Ventas', icono: 'venta' },
         ...(esValidador ? [{ href: `${base}/cobranzas`, label: 'Cobranzas', icono: 'reporte' }] : []),
         { href: `${base}/asientos`, label: 'Asientos manuales', icono: 'asiento' },

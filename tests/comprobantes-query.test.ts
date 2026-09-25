@@ -7,13 +7,20 @@ const json = (x: unknown) => JSON.stringify(x);
 describe('buildWhereComprobantes', () => {
   it('por defecto: sólo compras y sin duplicados ni anulados', () => {
     const w = json(buildWhereComprobantes({}, opts));
-    expect(w).toContain('"origen":"COMPROBANTE"');
+    expect(w).toContain('"origen":{"in":["COMPROBANTE"]}');
     expect(w).toContain('"notIn":["DUPLICADO","ANULADO"]');
   });
   it('un estado explícito reemplaza al default (se pueden ver los duplicados)', () => {
     const w = json(buildWhereComprobantes({ estado: 'DUPLICADO' }, opts));
     expect(w).toContain('"estado":"DUPLICADO"');
     expect(w).not.toContain('notIn');
+  });
+  it('el lado elige compras, ventas o ambos; los ids restringen (drill-down)', () => {
+    expect(json(buildWhereComprobantes({}, opts))).toContain('"origen":{"in":["COMPROBANTE"]}');
+    expect(json(buildWhereComprobantes({ lado: 'ventas' }, opts))).toContain('"origen":{"in":["VENTA_COMPROBANTE","VENTA_MANUAL"]}');
+    expect(json(buildWhereComprobantes({ lado: 'todos' }, opts))).toContain('"in":["COMPROBANTE","VENTA_COMPROBANTE","VENTA_MANUAL"]');
+    expect(json(buildWhereComprobantes({ lado: 'otro' }, opts))).toContain('"origen":{"in":["COMPROBANTE"]}');
+    expect(json(buildWhereComprobantes({}, { ...opts, ids: ['a', 'b'] }))).toContain('"id":{"in":["a","b"]}');
   });
   it('un cargador sólo ve lo suyo', () => {
     expect(json(buildWhereComprobantes({}, { esValidador: false, usuarioId: 'u9' }))).toContain('"creadoPorId":"u9"');

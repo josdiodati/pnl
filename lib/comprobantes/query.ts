@@ -1,14 +1,33 @@
 import type { Prisma } from '@prisma/client';
 
-// Registro de compras (vista Comprobantes): el DOCUMENTO fiscal de compra en
-// todo su ciclo (llega -> se valida -> se asigna), con sus datos fiscales.
+// Vista Comprobantes: el DOCUMENTO fiscal (de compra, de venta o ambos) en
+// todo su ciclo (llega -> se valida -> se asigna), con sus datos fiscales. Es
+// el destino de los drill-down: Cobranzas (y más adelante Proveedores) linkean
+// acá con filtros que dejan sólo los comprobantes detrás de cada número.
 // Se diferencia de Movimientos, que es el libro: sólo lo asignado, de todas
 // las fuentes (resúmenes, asientos, ventas) y con su distribución.
 //
 // Por defecto oculta duplicados y anulados (son ruido: en Kawellu eran 2 de
 // cada 3 filas); se ven con su chip de estado.
 
+export const LADOS = ['compras', 'ventas', 'todos'] as const;
+export type Lado = (typeof LADOS)[number];
+const ORIGENES_POR_LADO: Record<Lado, string[]> = {
+  compras: ['COMPROBANTE'],
+  ventas: ['VENTA_COMPROBANTE', 'VENTA_MANUAL'],
+  todos: ['COMPROBANTE', 'VENTA_COMPROBANTE', 'VENTA_MANUAL'],
+};
+export function ladoDe(v: string | undefined): Lado {
+  return (LADOS as readonly string[]).includes(v ?? '') ? (v as Lado) : 'compras';
+}
+
 export type FiltrosComprobantes = {
+  lado?: string; // compras (default) | ventas | todos
+  // Filtros de cobranza (sólo ventas; ver lib/cobranzas/filtros): se resuelven
+  // a ids antes de armar el where.
+  cobro?: string;
+  tramo?: string;
+  semana?: string;
   q?: string;
   desde?: string;
   hasta?: string;
@@ -33,9 +52,10 @@ export const ESTADOS_OCULTOS_POR_DEFECTO = ['DUPLICADO', 'ANULADO'] as const;
 /** Where sin el filtro de estado (para contar los chips con el resto de los filtros). */
 export function buildWhereComprobantesSinEstado(
   f: FiltrosComprobantes,
-  opts: { esValidador: boolean; usuarioId: string },
+  opts: { esValidador: boolean; usuarioId: string; ids?: string[] | null },
 ): Prisma.MovimientoWhereInput {
-  const and: Prisma.MovimientoWhereInput[] = [{ origen: 'COMPROBANTE' }];
+  const and: Prisma.MovimientoWhereInput[] = [{ origen: { in: ORIGENES_POR_LADO[ladoDe(f.lado)] as never } }];
+  if (opts.ids) and.push({ id: { in: opts.ids } });
   if (!opts.esValidador) and.push({ creadoPorId: opts.usuarioId });
   if (f.desde || f.hasta) {
     and.push({
@@ -74,7 +94,7 @@ export function buildWhereComprobantesSinEstado(
 
 export function buildWhereComprobantes(
   f: FiltrosComprobantes,
-  opts: { esValidador: boolean; usuarioId: string },
+  opts: { esValidador: boolean; usuarioId: string; ids?: string[] | null },
 ): Prisma.MovimientoWhereInput {
   const base = buildWhereComprobantesSinEstado(f, opts);
   const estado: Prisma.MovimientoWhereInput = f.estado

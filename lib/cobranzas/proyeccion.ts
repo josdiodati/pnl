@@ -38,7 +38,8 @@ export function inicioSemana(f: Date): Date {
   return new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth(), f.getUTCDate() - dia));
 }
 
-function tramo(diasVencida: number): number {
+/** Tramo de antigüedad (índice de TRAMOS_ANTIGUEDAD) según los días vencida. */
+export function tramo(diasVencida: number): number {
   if (diasVencida <= 0) return 0;
   if (diasVencida <= 30) return 1;
   if (diasVencida <= 60) return 2;
