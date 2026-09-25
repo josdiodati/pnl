@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { subirEnTandas, mensajeSinRespuesta, TAMANO_TANDA } from '@/lib/carga/subir-en-tandas';
+import { subirEnTandas, mensajeSinRespuesta, mensajeBloqueados, TAMANO_TANDA } from '@/lib/carga/subir-en-tandas';
 
 // La UploadZone manda los archivos en tandas de 5 a la server action. Si algo
 // delante de la app (Cloudflare, proxy) rechaza el POST, Next resuelve la
@@ -22,13 +22,14 @@ describe('subirEnTandas', () => {
     expect(r).toEqual({ ok: 9, errores: ['f1.pdf: falló', 'f6.pdf: falló', 'f11.pdf: falló'], loteId: 'L1' });
   });
 
-  it('si la action no devuelve nada, informa el error con los archivos y no sigue mandando', async () => {
+  it('si ningún archivo pasa (ni de a uno), informa el error con los archivos y no sigue mandando', async () => {
     let llamadas = 0;
     const r = await subirEnTandas(nombres(7), async () => {
       llamadas++;
       return undefined;
     });
-    expect(llamadas).toBe(1);
+    // la tanda + un reintento por archivo para aislar el problema
+    expect(llamadas).toBe(1 + 5);
     expect(r.ok).toBe(0);
     expect(r.loteId).toBeUndefined();
     expect(r.errores).toHaveLength(1);
@@ -49,6 +50,40 @@ describe('subirEnTandas', () => {
     expect(r.loteId).toBe('L2');
     expect(r.errores).toHaveLength(1);
     expect(r.errores[0]).toContain('f6.pdf');
+  });
+});
+
+describe('subirEnTandas con archivos bloqueados por el firewall', () => {
+  // Cloudflare (WAF) rechaza ciertos PDFs por su contenido: la tanda entera
+  // vuelve sin respuesta aunque los demás archivos sean normales. Se reintenta
+  // de a uno para que entre todo lo demás y se nombre sólo lo bloqueado.
+  const bloqueado = new Set(['f3.pdf', 'f9.pdf']);
+  const enviar = async (tanda: { name: string }[], loteId: string | undefined) => {
+    if (tanda.some((f) => bloqueado.has(f.name))) return undefined;
+    return { ok: tanda.length, errores: [], loteId: loteId ?? 'LB' };
+  };
+
+  it('reintenta de a uno, sube el resto, sigue con las tandas siguientes y nombra sólo los bloqueados', async () => {
+    const r = await subirEnTandas(nombres(12), enviar);
+    expect(r.ok).toBe(10);
+    expect(r.loteId).toBe('LB');
+    expect(r.errores).toEqual([mensajeBloqueados(['f3.pdf', 'f9.pdf'])]);
+  });
+
+  it('los reintentos de a uno reusan el lote', async () => {
+    const lotes: (string | undefined)[] = [];
+    await subirEnTandas(nombres(5), async (tanda, loteId) => {
+      lotes.push(loteId);
+      return enviar(tanda, loteId);
+    });
+    // tanda (sin lote) -> f1 crea el lote -> f2, f3 (bloqueado), f4, f5 con el lote
+    expect(lotes).toEqual([undefined, undefined, 'LB', 'LB', 'LB', 'LB']);
+  });
+
+  it('el mensaje explica el bloqueo y lista los archivos', () => {
+    const m = mensajeBloqueados(['a.pdf']);
+    expect(m).toContain('a.pdf');
+    expect(m).toMatch(/Cloudflare/);
   });
 });
 
