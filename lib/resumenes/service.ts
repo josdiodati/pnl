@@ -109,6 +109,29 @@ export async function conciliarLinea(
 }
 
 /**
+ * "Cobro de facturas…" (Spec F): concilia un crédito contra una o varias
+ * ventas en un solo paso. Cada venta se vincula como en conciliarLinea (el
+ * pago parcial compartido con otra línea es explícito: el usuario las eligió),
+ * y los cobros de la línea se sincronizan: reparto FIFO, retención si falta
+ * ≤ 5%, ajuste de cambio en moneda extranjera.
+ */
+export async function conciliarLineaConVentas(ctx: EmpresaContext, params: { lineaId: string; ventaIds: string[] }): Promise<void> {
+  const ids = [...new Set(params.ventaIds.filter(Boolean))];
+  if (ids.length === 0) throw new DomainError('Elegí al menos una factura.');
+  const linea = await lineaOrThrow(ctx, params.lineaId);
+  if (linea.monto == null || Number(linea.monto) <= 0) throw new DomainError('Sólo un crédito (monto positivo) puede ser el cobro de facturas.');
+  const ventas = await ctx.db.movimiento.findMany({ where: { id: { in: ids } }, select: { id: true, origen: true } });
+  if (ventas.length !== ids.length || ventas.some((v) => v.origen !== 'VENTA_COMPROBANTE' && v.origen !== 'VENTA_MANUAL')) {
+    throw new DomainError('Sólo se eligen facturas de venta de esta empresa.');
+  }
+  const yaVinculadas = new Set(linea.vinculos.map((v) => v.movimientoId));
+  for (const id of ids) {
+    if (yaVinculadas.has(id)) continue;
+    await conciliarLinea(ctx, { lineaId: linea.id, movimientoId: id, confirmarCompartido: true });
+  }
+}
+
+/**
  * Quita UN comprobante de una línea conciliada (la línea pagaba varios y uno
  * no correspondía). Sin comprobantes queda PENDIENTE. Una IMPUTADA se deshace
  * (anula el comprobante creado), no se desvincula.

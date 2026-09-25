@@ -7,6 +7,7 @@ import { parsearImporteAr } from '@/lib/format';
 import { ingestarResumen, rematchearResumen } from '@/lib/resumenes/ingesta';
 import {
   conciliarLinea,
+  conciliarLineaConVentas,
   imputarLinea,
   ignorarLinea,
   deshacerLinea,
@@ -113,6 +114,21 @@ export async function conciliarAction(formData: FormData): Promise<void> {
     volverConError(slug, volverA, err);
   }
   redirect(`/${slug}/${volverA}${volverA.includes('?') ? '&' : '?'}ok=${encodeURIComponent('Comprobante vinculado a la línea')}`);
+}
+
+/** "Cobro de facturas…": concilia un crédito contra las ventas tildadas en un paso. */
+export async function conciliarVentasAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const resumenId = String(formData.get('resumenId'));
+  const lineaId = String(formData.get('lineaId'));
+  const volverA = `resumenes/${resumenId}?linea=${lineaId}&cobro=1`;
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    await conciliarLineaConVentas(ctx, { lineaId, ventaIds: formData.getAll('ventaId').map(String) });
+  } catch (err) {
+    volverConError(slug, volverA, err);
+  }
+  redirect(`/${slug}/resumenes/${resumenId}?ok=${encodeURIComponent('Cobro registrado: la línea quedó conciliada con sus facturas')}`);
 }
 
 /** Quita un comprobante de una línea conciliada (sin comprobantes vuelve a pendiente). */

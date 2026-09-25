@@ -14,6 +14,9 @@ import { BuscadorMovimiento } from '@/components/buscador-movimiento';
 import { EliminarResumen } from '@/components/eliminar-resumen';
 import { MenuRapido } from '@/components/menu-rapido';
 import { MOTIVOS_IGNORO_RAPIDO, MOTIVOS_IGNORO_PNL } from '@/lib/resumenes/motivos';
+import { CobroFacturasSelector, type FacturaCobrable } from '@/components/cobro-facturas-selector';
+import { cargarVentasConCobros, calcularInfoCobros, hoyUtc } from '@/lib/cobranzas/query';
+import { identificarCliente, sugerirCombinacion } from '@/lib/cobranzas/sugerencia';
 import {
   conciliarAction,
   imputarAction,
@@ -66,7 +69,7 @@ export default async function ResumenDetallePage({
   searchParams,
 }: {
   params: { empresaSlug: string; id: string };
-  searchParams: { linea?: string; ver?: string; ok?: string; error?: string };
+  searchParams: { linea?: string; ver?: string; ok?: string; error?: string; cobro?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const base = `/${params.empresaSlug}/resumenes/${params.id}`;
@@ -132,6 +135,68 @@ export default async function ResumenDetallePage({
       const montoLinea = linea.monto != null ? Math.abs(Number(linea.monto)) : null;
       const diferenciaVinculos = montoLinea != null ? montoLinea - sumaVinculos : null;
 
+      // "Cobro de facturas…" (Spec F): sólo créditos, no resueltos o ya
+      // conciliados (se pueden sumar facturas). Pretilda la combinación que
+      // explica el monto entre las pendientes del cliente identificado.
+      let cobroFacturas: React.ReactNode = null;
+      const esCredito = linea.monto != null && Number(linea.monto) > 0;
+      if (esCredito && (editable || puedeSumar)) {
+        const filasVentas = await cargarVentasConCobros(ctx.db);
+        const infoVentas = calcularInfoCobros(filasVentas, hoyUtc());
+        const yaEnLinea = new Set(linea.vinculos.map((v) => v.movimientoId));
+        const pendientes = filasVentas.filter((f) => {
+          const i = infoVentas.get(f.id);
+          return i && (i.estado === 'PENDIENTE' || i.estado === 'PARCIAL') && !yaEnLinea.has(f.id);
+        });
+        const clientesVentas = contrapartes
+          .filter((c) => c.tipo !== 'PROVEEDOR')
+          .map((c) => ({ id: c.id, cuit: c.cuit, razonSocial: c.razonSocial, descriptores: ((c.descriptoresResumen as string[] | null) ?? []) }));
+        const clienteId = identificarCliente(linea.descriptor, clientesVentas);
+        const montoCredito = Number(linea.monto) - sumaVinculos;
+        const delCliente = clienteId ? pendientes.filter((f) => f.contraparteId === clienteId) : [];
+        const sugeridas = new Set(
+          sugerirCombinacion(montoCredito, (delCliente.length ? delCliente : pendientes).map((f) => ({ id: f.id, saldoArs: infoVentas.get(f.id)!.saldoArs }))) ?? [],
+        );
+        const facturasSel: FacturaCobrable[] = pendientes
+          .map((f) => {
+            const i = infoVentas.get(f.id)!;
+            return {
+              id: f.id,
+              etiqueta: `${f.tipoComprobante?.replace(/_/g, ' ') ?? 'Venta'} ${f.puntoVenta ? `${f.puntoVenta}-` : ''}${f.numero ?? ''}`.trim(),
+              cliente: f.contraparte?.razonSocial ?? f.descripcion ?? '—',
+              fechaIso: (f.fechaDevengamiento ?? f.createdAt).toISOString().slice(0, 10),
+              saldo: i.saldo,
+              moneda: f.moneda,
+              saldoArs: i.saldoArs,
+              delCliente: f.contraparteId === clienteId,
+              sugerida: sugeridas.has(f.id),
+            };
+          })
+          .sort((a, b) =>
+            Number(b.sugerida) - Number(a.sugerida)
+            || Number(b.delCliente) - Number(a.delCliente)
+            || Math.abs((a.saldoArs ?? Infinity) - montoCredito) - Math.abs((b.saldoArs ?? Infinity) - montoCredito));
+        const nombreCliente = clienteId ? clientesVentas.find((c) => c.id === clienteId)?.razonSocial ?? null : null;
+        cobroFacturas = (
+          <details open={searchParams.cobro === '1' || sugeridas.size > 0} className="rounded border border-emerald-200 bg-emerald-50/30">
+            <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-semibold text-emerald-800">
+              Cobro de facturas{puedeSumar ? ' (sumar otra factura a este cobro)' : ''}
+              {sugeridas.size > 0 && <span className="ml-2 font-normal text-emerald-700">· hay una combinación sugerida</span>}
+            </summary>
+            <div className="p-3 pt-1">
+              <CobroFacturasSelector
+                slug={params.empresaSlug}
+                resumenId={resumen.id}
+                lineaId={linea.id}
+                monto={montoCredito}
+                facturas={facturasSel}
+                clienteIdentificado={nombreCliente}
+              />
+            </div>
+          </details>
+        );
+      }
+
       panel = (
         <div className="card p-4 border-sky-200 space-y-3">
           <div className="flex items-center justify-between">
@@ -140,6 +205,8 @@ export default async function ResumenDetallePage({
             </p>
             <Link href={base} className="text-xs text-slate-500 underline">Cerrar</Link>
           </div>
+
+          {cobroFacturas}
 
           {editable && (
             <details className="rounded border border-slate-200 bg-slate-50/60">
@@ -703,6 +770,14 @@ export default async function ResumenDetallePage({
                       <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                       <input type="hidden" name="resumenId" value={resumen.id} />
                       <input type="hidden" name="lineaId" value={l.id} />
+                      {l.monto != null && Number(l.monto) > 0 && (
+                        <Link
+                          href={`${base}?linea=${l.id}&cobro=1`}
+                          className="block px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 border-b border-slate-100 mb-1"
+                        >
+                          Cobro de facturas…
+                        </Link>
+                      )}
                       <p className="px-3 py-1 text-[11px] font-semibold text-slate-400">Ignorar como…</p>
                       {MOTIVOS_IGNORO_RAPIDO.filter((m) => !(MOTIVOS_IGNORO_PNL as readonly string[]).includes(m)).map((m) => (
                         <button

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
 import { scopedDb } from '@/lib/empresa/scope';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
-import { conciliarLinea, desvincularLinea, deshacerLinea } from '@/lib/resumenes/service';
+import { conciliarLinea, conciliarLineaConVentas, desvincularLinea, deshacerLinea } from '@/lib/resumenes/service';
 import { rematchearResumen } from '@/lib/resumenes/ingesta';
 import { registrarCobro, eliminarCobroGrupo } from '@/lib/cobranzas/service';
 import { mapaCobranza } from '@/lib/cobranzas/query';
@@ -160,6 +160,28 @@ describe('cobranzas: conciliación con el resumen (integración)', () => {
     const vinc = await prisma.resumenLineaVinculo.findMany({ where: { lineaId: l.id } });
     expect(vinc.map((x) => x.movimientoId).sort()).toEqual([a, b].sort());
     expect(await prisma.cobro.count({ where: { resumenLineaId: l.id, origen: 'RESUMEN' } })).toBe(0);
+  });
+
+  it('Cobro de facturas: un crédito contra tres ventas en un paso, neto de retenciones', async () => {
+    const a = await venta(1000, '2026-06-01');
+    const b = await venta(2000, '2026-06-02');
+    const c = await venta(3000, '2026-06-03');
+    const l = await linea(5900, '2026-06-20');
+    await conciliarLineaConVentas(ctx, { lineaId: l.id, ventaIds: [c, a, b] });
+    expect((await prisma.resumenLinea.findUniqueOrThrow({ where: { id: l.id } })).estado).toBe('CONCILIADA');
+    for (const v of [a, b, c]) expect((await info(v)).estado).toBe('COBRADA');
+    const cobros = await cobrosDeLinea(l.id);
+    expect(cobros.map((x) => [x.instrumento, Number(x.monto)])).toEqual([['TRANSFERENCIA', 5900], ['RETENCION', 100]]);
+  });
+
+  it('Cobro de facturas rechaza débitos y comprobantes que no son ventas', async () => {
+    const gasto = (await prisma.movimiento.create({
+      data: { empresaId, origen: 'COMPROBANTE', estado: 'ASIGNADO', total: 10, creadoPorId: usuarioId, fechaDevengamiento: d('2026-06-01'), periodoId: (await periodoDe(d('2026-06-01'))).id },
+    })).id;
+    const credito = await linea(10, '2026-06-05');
+    await expect(conciliarLineaConVentas(ctx, { lineaId: credito.id, ventaIds: [gasto] })).rejects.toThrow(/facturas de venta/);
+    const debito = await linea(-10, '2026-06-05');
+    await expect(conciliarLineaConVentas(ctx, { lineaId: debito.id, ventaIds: [gasto] })).rejects.toThrow(/crédito/);
   });
 
   it('un débito conciliado contra un gasto no crea cobros', async () => {

@@ -9,7 +9,9 @@ export const MOTIVOS_IGNORO_RAPIDO = [
   'Saldo/subtotal',
   'Ya cargado a mano',
   'Movimiento sin consumo',
-  'Cobros',
+  // Cobro de facturas que no están en el sistema (anteriores a la carga). Los
+  // cobros de facturas cargadas se concilian con "Cobro de facturas…".
+  'Cobro anterior al sistema',
   'Rendimientos',
   'Pagos ARCA', // impuestos pagados al fisco: no son gasto del P&L (ya computan por sus comprobantes)
   ...MOTIVOS_IGNORO_PNL,
