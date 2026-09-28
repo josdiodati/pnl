@@ -7,6 +7,7 @@ import { isDomainError, isForbidden } from '@/lib/errors';
 import { parsearImporteAr } from '@/lib/format';
 import {
   registrarCobro,
+  editarCobro,
   eliminarCobroGrupo,
   cerrarSaldoComoRetencion,
   acreditarCheque,
@@ -29,35 +30,45 @@ function volverConError(slug: string, volver: string, err: unknown): never {
 
 const fecha = (v: FormDataEntryValue | null | undefined): Date => new Date(`${String(v ?? '')}T00:00:00Z`);
 
+/** Filas de instrumentos del formulario de cobro (alta y edición). */
+function leerInstrumentos(formData: FormData) {
+  const tipos = formData.getAll('ins_tipo').map(String);
+  const cobroIds = formData.getAll('ins_cobroId').map(String);
+  const montos = formData.getAll('ins_monto').map((v) => parsearImporteAr(String(v)));
+  const monedas = formData.getAll('ins_moneda').map(String);
+  const fechas = formData.getAll('ins_fecha');
+  const acreditaciones = formData.getAll('ins_acreditacion');
+  const numeros = formData.getAll('ins_numero').map(String);
+  const bancos = formData.getAll('ins_banco').map(String);
+  return tipos
+    .map((instrumento, i) => ({
+      cobroId: cobroIds[i] || null,
+      instrumento,
+      monto: montos[i] as number,
+      moneda: monedas[i] || 'ARS',
+      fecha: fecha(fechas[i]),
+      fechaAcreditacion: fecha(acreditaciones[i] || fechas[i]),
+      numero: numeros[i] || null,
+      banco: bancos[i] || null,
+    }))
+    .filter((x) => x.monto != null && !Number.isNaN(x.monto));
+}
+
+function leerCotizacion(formData: FormData): number | null {
+  const cot = parsearImporteAr(String(formData.get('cotizacion') ?? ''));
+  return cot != null && cot > 0 ? cot : null;
+}
+
 export async function registrarCobroAction(formData: FormData): Promise<void> {
   const slug = String(formData.get('empresaSlug'));
   const volver = String(formData.get('volver') ?? 'ventas');
   const errorEn = String(formData.get('errorEn') ?? volver);
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
-    const tipos = formData.getAll('ins_tipo').map(String);
-    const montos = formData.getAll('ins_monto').map((v) => parsearImporteAr(String(v)));
-    const monedas = formData.getAll('ins_moneda').map(String);
-    const fechas = formData.getAll('ins_fecha');
-    const acreditaciones = formData.getAll('ins_acreditacion');
-    const numeros = formData.getAll('ins_numero').map(String);
-    const bancos = formData.getAll('ins_banco').map(String);
-    const instrumentos = tipos
-      .map((instrumento, i) => ({
-        instrumento,
-        monto: montos[i] as number,
-        moneda: monedas[i] || 'ARS',
-        fecha: fecha(fechas[i]),
-        fechaAcreditacion: fecha(acreditaciones[i] || fechas[i]),
-        numero: numeros[i] || null,
-        banco: bancos[i] || null,
-      }))
-      .filter((x) => x.monto != null && !Number.isNaN(x.monto));
-    const cot = parsearImporteAr(String(formData.get('cotizacion') ?? ''));
     await registrarCobro(ctx, {
       ventaIds: formData.getAll('ventaId').map(String),
-      instrumentos,
-      cotizacion: cot != null && cot > 0 ? cot : null,
+      instrumentos: leerInstrumentos(formData),
+      cotizacion: leerCotizacion(formData),
       cerrarDiferenciaComoRetencion: formData.get('cerrarRetencion') === 'on',
       nota: String(formData.get('nota') ?? '') || null,
     });
@@ -66,6 +77,25 @@ export async function registrarCobroAction(formData: FormData): Promise<void> {
   }
   revalidatePath(`/${slug}/ventas`);
   redirect(destino(slug, volver, 'ok', 'Cobro registrado.'));
+}
+
+export async function editarCobroAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const volver = String(formData.get('volver') ?? 'cobranzas');
+  const errorEn = String(formData.get('errorEn') ?? volver);
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    await editarCobro(ctx, String(formData.get('grupo')), {
+      instrumentos: leerInstrumentos(formData),
+      cotizacion: leerCotizacion(formData),
+      nota: String(formData.get('nota') ?? ''),
+    });
+  } catch (err) {
+    volverConError(slug, errorEn, err);
+  }
+  revalidatePath(`/${slug}/ventas`);
+  revalidatePath(`/${slug}/cobranzas`);
+  redirect(destino(slug, volver, 'ok', 'Cobro actualizado.'));
 }
 
 export async function eliminarCobroAction(formData: FormData): Promise<void> {

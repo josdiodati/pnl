@@ -35,7 +35,7 @@ async function cargarVentas(db: Db, ids: string[]) {
 }
 type VentaCargada = Awaited<ReturnType<typeof cargarVentas>>[number];
 
-function etiquetaVenta(v: { tipoComprobante: string | null; puntoVenta: string | null; numero: string | null }): string {
+export function etiquetaVenta(v: { tipoComprobante: string | null; puntoVenta: string | null; numero: string | null }): string {
   const tipo = v.tipoComprobante?.replace(/_/g, ' ') ?? 'Venta';
   return `${tipo} ${v.puntoVenta ? `${v.puntoVenta}-` : ''}${v.numero ?? ''}`.trim();
 }
@@ -129,6 +129,33 @@ function estadoInicial(instrumento: string, origen: 'MANUAL' | 'RESUMEN'): 'EN_C
   return origen === 'MANUAL' && ES_CHEQUE.has(instrumento) ? 'EN_CARTERA' : 'ACREDITADO';
 }
 
+type InstrumentoPersistible = ResultadoReparto['instrumentos'][number] & { cobroIdPrevio?: string | null };
+
+type EdicionReparto = {
+  antes: unknown;
+  creadoPorId: string;
+  createdAt: Date;
+  previos: Map<string, { instrumento: string; estado: string }>;
+  aplicadoAntes: Map<string, number>;
+};
+
+/** Foto de un instrumento para el AuditLog (alta, edición y baja usan la misma). */
+function snapshotInstrumento(i: {
+  instrumento: string; monto: number | { toString(): string }; moneda: string; fecha: Date; fechaAcreditacion: Date;
+  numero?: string | null; banco?: string | null; estado?: string;
+}) {
+  return {
+    instrumento: i.instrumento,
+    monto: Number(i.monto),
+    moneda: i.moneda,
+    fecha: i.fecha,
+    fechaAcreditacion: i.fechaAcreditacion,
+    numero: i.numero ?? null,
+    banco: i.banco ?? null,
+    ...(i.estado ? { estado: i.estado } : {}),
+  };
+}
+
 /**
  * Persiste un reparto ya calculado: un Cobro por instrumento (mismo grupo),
  * sus aplicaciones, y los ajustes de cambio. Devuelve el grupo.
@@ -137,11 +164,13 @@ export async function persistirReparto(
   ctx: EmpresaContext,
   params: {
     ventas: VentaCargada[];
-    reparto: ResultadoReparto;
+    reparto: ResultadoReparto & { instrumentos: InstrumentoPersistible[] };
     origen: 'MANUAL' | 'RESUMEN';
     resumenLineaId?: string | null;
     nota?: string | null;
     grupo?: string;
+    /** Re-persistencia de un cobro editado: conserva autor, alta y estado de los cheques. */
+    edicion?: EdicionReparto;
   },
 ): Promise<string> {
   const grupo = params.grupo ?? randomUUID();
@@ -168,14 +197,20 @@ export async function persistirReparto(
   }
 
   const ajusteAsignado = new Set<string>();
+  const ed = params.edicion;
   for (const ins of params.reparto.instrumentos) {
+    const previo = ed && ins.cobroIdPrevio ? ed.previos.get(ins.cobroIdPrevio) : undefined;
+    // Un cheque que ya estaba acreditado sigue acreditado si no cambió de tipo.
+    const estado = previo && previo.instrumento === ins.instrumento && previo.estado === 'ACREDITADO'
+      ? 'ACREDITADO'
+      : estadoInicial(ins.instrumento, params.origen);
     const cobro = await ctx.db.cobro.create({
       data: {
         grupo,
         origen: params.origen,
         contraparteId,
         instrumento: ins.instrumento as never,
-        estado: estadoInicial(ins.instrumento, params.origen),
+        estado,
         fecha: ins.fecha,
         fechaAcreditacion: ins.fechaAcreditacion,
         moneda: ins.moneda as never,
@@ -185,7 +220,8 @@ export async function persistirReparto(
         banco: ins.banco?.trim() || null,
         nota: params.nota?.trim() || null,
         resumenLineaId: params.resumenLineaId ?? null,
-        creadoPorId: ctx.usuario.id,
+        creadoPorId: ed?.creadoPorId ?? ctx.usuario.id,
+        ...(ed ? { createdAt: ed.createdAt } : {}),
       } as never,
     });
     for (const a of ins.aplicaciones) {
@@ -198,15 +234,19 @@ export async function persistirReparto(
     }
   }
 
-  const resumenInstrumentos = params.reparto.instrumentos.map((i) => ({
-    instrumento: i.instrumento, monto: i.monto, moneda: i.moneda, fechaAcreditacion: i.fechaAcreditacion, numero: i.numero ?? null,
+  const resumenInstrumentos = (params.reparto.instrumentos as InstrumentoPersistible[]).map((i) => ({
+    ...(ed && i.cobroIdPrevio ? { cobroId: i.cobroIdPrevio } : {}),
+    ...snapshotInstrumento(i),
   }));
+  const accion = ed ? 'COBRO_EDITAR' : 'COBRO_REGISTRAR';
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,
     entidad: 'Cobro',
     entidadId: grupo,
-    accion: 'COBRO_REGISTRAR',
+    accion,
+    antes: ed?.antes,
     despues: {
+      nota: params.nota?.trim() || null,
       origen: params.origen,
       resumenLineaId: params.resumenLineaId ?? null,
       instrumentos: resumenInstrumentos,
@@ -217,12 +257,14 @@ export async function persistirReparto(
   });
   for (const v of params.ventas) {
     const aplicado = params.reparto.instrumentos.flatMap((i) => i.aplicaciones).filter((a) => a.movimientoId === v.id).reduce((s, a) => s + a.importe, 0);
-    if (aplicado <= 0) continue;
+    const aplicadoAntes = ed?.aplicadoAntes.get(v.id) ?? 0;
+    if (aplicado <= 0 && aplicadoAntes <= 0) continue;
     await writeAudit(ctx.db, {
       usuarioId: ctx.usuario.id,
       entidad: 'Movimiento',
       entidadId: v.id,
-      accion: 'COBRO_REGISTRAR',
+      accion,
+      antes: ed ? { aplicado: aplicadoAntes } : undefined,
       despues: {
         grupo,
         origen: params.origen,
@@ -278,6 +320,133 @@ export async function registrarCobro(ctx: EmpresaContext, datos: DatosRegistrarC
   return persistirReparto(ctx, { ventas, reparto, origen: 'MANUAL', nota: datos.nota });
 }
 
+// ---------- Editar cobro ----------
+
+export type InstrumentoEditado = InstrumentoReparto & { cobroId?: string | null };
+
+export type DatosEditarCobro = {
+  instrumentos: InstrumentoEditado[];
+  cotizacion?: number | null;
+  nota?: string | null;
+};
+
+const dia = (f: Date) => f.toISOString().slice(0, 10);
+const txt = (v: string | null | undefined) => v?.trim() || null;
+
+/** Motivo por el que sólo se pueden editar los datos descriptivos (n°, banco, nota); null si se edita todo. */
+export function motivoSoloDatos(cobros: { origen: string; resumenLineaId: string | null; estado: string }[]): string | null {
+  if (cobros.some((c) => c.origen === 'RESUMEN')) return 'El cobro nació de conciliar el resumen bancario: los importes y fechas los define la línea del banco.';
+  if (cobros.some((c) => c.resumenLineaId)) return 'El cobro está confirmado por una línea del resumen bancario: para cambiar importes o fechas, deshacé primero esa conciliación.';
+  if (cobros.some((c) => c.estado === 'RECHAZADO')) return 'El cobro tiene un cheque rechazado: para cambiar importes, eliminalo y registralo de nuevo.';
+  return null;
+}
+
+/**
+ * Edita un cobro (el grupo completo). Si sólo cambian n°, banco o nota se
+ * actualiza en el lugar; si cambian importes, fechas o instrumentos se
+ * recalcula el reparto sobre las mismas facturas (sin contar este cobro) y
+ * se reemplaza, conservando grupo, autor y alta. Todo queda en el historial.
+ */
+export async function editarCobro(ctx: EmpresaContext, grupo: string, datos: DatosEditarCobro): Promise<void> {
+  const cobros = await ctx.db.cobro.findMany({ where: { grupo }, include: { aplicaciones: true }, orderBy: { createdAt: 'asc' } });
+  if (cobros.length === 0) throw new DomainError('Cobro inexistente.');
+  for (const i of datos.instrumentos) {
+    if (!(INSTRUMENTOS as readonly string[]).includes(i.instrumento)) throw new DomainError('Instrumento de cobro inválido.');
+    if (Number.isNaN(i.fecha.getTime()) || Number.isNaN(i.fechaAcreditacion.getTime())) throw new DomainError('Fecha inválida en un instrumento.');
+    if (i.cobroId && !cobros.some((c) => c.id === i.cobroId)) throw new DomainError('El instrumento no pertenece a este cobro.');
+  }
+  if (datos.instrumentos.length === 0) throw new DomainError('El cobro necesita al menos un instrumento: para quitarlo entero, eliminalo.');
+
+  const porId = new Map(cobros.map((c) => [c.id, c]));
+  const cotAntes = cobros.find((c) => c.tipoCambio != null)?.tipoCambio;
+  const cotNueva = datos.cotizacion && datos.cotizacion > 0 ? datos.cotizacion : null;
+  const mismaCotizacion = cotNueva == null || (cotAntes != null && Math.abs(Number(cotAntes) - cotNueva) < 0.00005);
+  const mismoEconomico =
+    mismaCotizacion &&
+    datos.instrumentos.length === cobros.length &&
+    new Set(datos.instrumentos.map((i) => i.cobroId)).size === cobros.length &&
+    datos.instrumentos.every((i) => {
+      const c = i.cobroId ? porId.get(i.cobroId) : undefined;
+      return (
+        c != null &&
+        c.instrumento === i.instrumento &&
+        c.moneda === i.moneda &&
+        Math.round(Number(c.monto) * 100) === Math.round(i.monto * 100) &&
+        dia(c.fecha) === dia(i.fecha) &&
+        dia(c.fechaAcreditacion) === dia(i.fechaAcreditacion)
+      );
+    });
+
+  const nota = txt(datos.nota);
+  const antes = { nota: cobros[0].nota, cotizacion: cotAntes != null ? Number(cotAntes) : null, instrumentos: cobros.map((c) => ({ cobroId: c.id, ...snapshotInstrumento(c) })) };
+
+  if (mismoEconomico) {
+    const cambios: { cobroId: string; numero: string | null; banco: string | null }[] = [];
+    for (const i of datos.instrumentos) {
+      const c = porId.get(i.cobroId!)!;
+      const numero = txt(i.numero);
+      const banco = txt(i.banco);
+      if (numero !== c.numero || banco !== c.banco || nota !== c.nota) {
+        await ctx.db.cobro.update({ where: { id: c.id }, data: { numero, banco, nota } });
+        cambios.push({ cobroId: c.id, numero, banco });
+      }
+    }
+    if (cambios.length === 0) return;
+    await writeAudit(ctx.db, {
+      usuarioId: ctx.usuario.id,
+      entidad: 'Cobro',
+      entidadId: grupo,
+      accion: 'COBRO_EDITAR',
+      antes,
+      despues: {
+        nota,
+        cotizacion: antes.cotizacion,
+        instrumentos: cobros.map((c) => {
+          const i = datos.instrumentos.find((x) => x.cobroId === c.id)!;
+          return { cobroId: c.id, ...snapshotInstrumento({ ...c, numero: txt(i.numero), banco: txt(i.banco) }) };
+        }),
+      },
+    });
+    return;
+  }
+
+  const motivo = motivoSoloDatos(cobros);
+  if (motivo) throw new DomainError(`${motivo} Sólo se pueden cambiar el número, el banco y la nota.`);
+
+  const ventaIds = [...new Set(cobros.flatMap((c) => c.aplicaciones.map((a) => a.movimientoId)))];
+  const ventas = await cargarVentas(ctx.db, ventaIds);
+  const facturas = facturasParaReparto(ventas, grupo).filter((f) => esCobrable(f.cobrable));
+  if (facturas.length === 0) throw new DomainError('Las facturas de este cobro ya no son cobrables (¿se anularon?).');
+  const reparto = calcularReparto({
+    facturas,
+    instrumentos: datos.instrumentos.map((i) => ({ ...i, cobroIdPrevio: i.cobroId ?? null })),
+    cotizacion: cotNueva,
+  });
+
+  const aplicadoAntes = new Map<string, number>();
+  for (const a of cobros.flatMap((c) => c.aplicaciones)) {
+    aplicadoAntes.set(a.movimientoId, Math.round(((aplicadoAntes.get(a.movimientoId) ?? 0) + Number(a.importe)) * 100) / 100);
+  }
+  // Se reemplaza: fuera los ajustes de cambio y los cobros viejos, adentro el reparto nuevo con el mismo grupo.
+  const ajustes = cobros.flatMap((c) => c.aplicaciones.map((a) => a.ajusteId)).filter((x): x is string => Boolean(x));
+  for (const id of ajustes) await anularAjuste(ctx, id, 'Cobro editado');
+  await ctx.db.cobro.deleteMany({ where: { grupo } });
+  await persistirReparto(ctx, {
+    ventas,
+    reparto,
+    origen: 'MANUAL',
+    nota,
+    grupo,
+    edicion: {
+      antes,
+      creadoPorId: cobros[0].creadoPorId,
+      createdAt: cobros[0].createdAt,
+      previos: new Map(cobros.map((c) => [c.id, { instrumento: c.instrumento, estado: c.estado }])),
+      aplicadoAntes,
+    },
+  });
+}
+
 /** Cierra el saldo de una venta en pesos como retención sufrida (un clic). */
 export async function cerrarSaldoComoRetencion(ctx: EmpresaContext, ventaId: string, fecha?: Date): Promise<string> {
   const [venta] = await cargarVentas(ctx.db, [ventaId]);
@@ -315,7 +484,7 @@ export async function eliminarCobroGrupo(ctx: EmpresaContext, grupo: string, opt
     entidadId: grupo,
     accion: 'COBRO_ELIMINAR',
     antes: {
-      instrumentos: cobros.map((c) => ({ instrumento: c.instrumento, monto: Number(c.monto), moneda: c.moneda, estado: c.estado, numero: c.numero })),
+      instrumentos: cobros.map(snapshotInstrumento),
       ventas,
       ajustesAnulados: ajustes,
     },

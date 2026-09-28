@@ -213,7 +213,9 @@ export default async function CobranzasPage({
                   <td className="font-mono text-[12.5px]">{formatFecha(c.fechaAcreditacion)}</td>
                   <td>{c.contraparte?.razonSocial ?? '—'}</td>
                   <td className="text-[12px]">
-                    {INSTRUMENTO_LABEL[c.instrumento]}{c.numero ? ` ${c.numero}` : ''}{c.banco ? ` · ${c.banco}` : ''}
+                    <Link href={`${base}/cobranzas/cobros/${c.grupo}`} className="underline underline-offset-2 hover:text-tinta">
+                      {INSTRUMENTO_LABEL[c.instrumento]}{c.numero ? ` ${c.numero}` : ''}{c.banco ? ` · ${c.banco}` : ''}
+                    </Link>
                     <span className="block text-[10.5px] text-ink-mute">
                       paga{' '}
                       {c.aplicaciones.map((a, k) => (

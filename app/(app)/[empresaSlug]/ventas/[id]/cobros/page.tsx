@@ -109,7 +109,7 @@ export default async function CobrosVentaPage({
           <thead>
             <tr>
               <th>Recibido</th><th>Instrumento</th><th>Estado</th><th>Acreditación</th><th className="text-right">Monto</th>
-              <th className="text-right">Aplicado a esta factura</th><th>Banco</th><th></th>
+              <th className="text-right">Aplicado a esta factura</th><th>Banco</th><th>Resumen bancario</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -121,7 +121,9 @@ export default async function CobrosVentaPage({
                 <tr key={a.id} className={c.estado === 'RECHAZADO' ? 'opacity-50' : ''}>
                   <td className="font-mono text-[12.5px]">{formatFecha(c.fecha)}</td>
                   <td>
-                    {INSTRUMENTO_LABEL[c.instrumento]}{c.numero ? ` ${c.numero}` : ''}{c.banco ? ` · ${c.banco}` : ''}
+                    <Link href={`/${params.empresaSlug}/cobranzas/cobros/${c.grupo}?volver=${encodeURIComponent(aqui)}`} className="underline underline-offset-2 hover:text-tinta">
+                      {INSTRUMENTO_LABEL[c.instrumento]}{c.numero ? ` ${c.numero}` : ''}
+                    </Link>
                     {c.origen === 'RESUMEN' && <span className="ml-1 text-[10px] text-ink-mute">(creado por el resumen)</span>}
                     {otras.length > 0 && <span className="block text-[10px] text-ink-mute">también paga {otras.length} factura{otras.length > 1 ? 's' : ''} más</span>}
                     {ajuste && (
@@ -134,6 +136,7 @@ export default async function CobrosVentaPage({
                   <td className="font-mono text-[12.5px]">{formatFecha(c.fechaAcreditacion)}</td>
                   <td className="num">{formatMoney(Number(c.monto))}{c.moneda === 'ARS' ? '' : ` ${c.moneda}`}</td>
                   <td className="num">{formatMoney(Number(a.importe))}{m}</td>
+                  <td className="text-[12px]">{c.banco ?? <span className="text-ink-mute">—</span>}</td>
                   <td className="text-[12px] text-ink-mute">
                     {c.resumenLinea ? (
                       <Link href={`/${params.empresaSlug}/resumenes/${c.resumenLinea.resumenId}?linea=${c.resumenLinea.id}`} className="underline underline-offset-2">
@@ -158,6 +161,12 @@ export default async function CobrosVentaPage({
                         </form>
                       </>
                     )}
+                    <Link href={`/${params.empresaSlug}/cobranzas/cobros/${c.grupo}?volver=${encodeURIComponent(aqui)}`} className="text-[12px] underline underline-offset-2 text-ink-mute hover:text-tinta" title="Detalle e historial del cobro">
+                      Historial
+                    </Link>
+                    <Link href={`/${params.empresaSlug}/cobranzas/cobros/${c.grupo}/editar?volver=${encodeURIComponent(aqui)}`} className="text-[12px] underline underline-offset-2 text-accent-strong">
+                      Editar
+                    </Link>
                     {c.origen === 'MANUAL' && !c.resumenLineaId && (
                       <form action={eliminarCobroAction} className="inline">
                         <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
@@ -173,7 +182,7 @@ export default async function CobrosVentaPage({
               );
             })}
             {venta.aplicacionesCobro.length === 0 && (
-              <tr><td colSpan={8} className="py-10 text-center text-ink-mute">Sin cobros registrados.</td></tr>
+              <tr><td colSpan={9} className="py-10 text-center text-ink-mute">Sin cobros registrados.</td></tr>
             )}
           </tbody>
         </table>

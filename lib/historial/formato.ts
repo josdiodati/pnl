@@ -330,6 +330,23 @@ function formatear(e: EventoCrudo, refs: Referencias): Omit<EventoFormateado, 'i
       const origen = d.origen === 'RESUMEN' ? ' (desde el resumen bancario)' : '';
       return { titulo: `Cobro registrado${origen}: ${formatMoney(String(d.aplicado ?? 0))}${str(d.moneda) && d.moneda !== 'ARS' ? ` ${d.moneda}` : ''}`, detalles, tecnico: null };
     }
+    case 'COBRO_EDITAR': {
+      const ins = Array.isArray(d.instrumentos) ? (d.instrumentos as Obj[]) : [];
+      for (const i of ins) {
+        const tipo = str(i.instrumento)?.replace(/_/g, ' ').toLowerCase() ?? 'instrumento';
+        detalles.push(`${tipo} ${formatMoney(String(i.monto))}${str(i.moneda) && i.moneda !== 'ARS' ? ` ${i.moneda}` : ''}${str(i.numero) ? ` n° ${i.numero}` : ''}${str(i.banco) ? ` · ${i.banco}` : ''}`);
+      }
+      const antesAplicado = a.aplicado != null ? Number(a.aplicado) : null;
+      const cambioImporte = antesAplicado != null && d.aplicado != null && antesAplicado !== Number(d.aplicado);
+      const m = str(d.moneda) && d.moneda !== 'ARS' ? ` ${d.moneda}` : '';
+      return {
+        titulo: cambioImporte
+          ? `Cobro editado: aplicado a esta factura ${formatMoney(String(antesAplicado))}${m} → ${formatMoney(String(d.aplicado))}${m}`
+          : 'Cobro editado',
+        detalles,
+        tecnico: null,
+      };
+    }
     case 'COBRO_ELIMINAR':
       return { titulo: obj(e.despues).desdeResumen ? 'Cobro deshecho (se deshizo la conciliación del resumen)' : 'Cobro eliminado', detalles, tecnico: e.antes ?? null };
     case 'COBRO_CHEQUE_RECHAZAR':
