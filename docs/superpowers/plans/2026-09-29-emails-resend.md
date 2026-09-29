@@ -13,7 +13,14 @@
 ## Decisiones (a confirmar por el usuario)
 
 - **D1 Remitente:** `P&L Manager <avisos@ledger.ar>`. En Resend no se "crean casillas": cualquier dirección `@ledger.ar` sirve como remitente una vez verificado el dominio. Configurable con `EMAIL_REMITENTE`.
-- **D2 Destinatarios de alertas:** variable `ALERTAS_EMAIL` (lista separada por comas). **Falta que el usuario diga a qué casilla(s).**
+- **D2 Destinatarios (decidido por el usuario, 29-sep):** cada aviso va a la casilla relevante según su alcance:
+  | Alcance | Ejemplos | Destinatario |
+  |---|---|---|
+  | Carga | comprobante, resumen o recibo que terminó con error de procesamiento | el usuario que lo cargó (`Movimiento.creadoPorId`; `usuarioId` del job de resumen/recibo) |
+  | Empresa | clave de ARCA bloqueada en el sync automático; sync de Mis Comprobantes que falla 3 veces seguidas | todos los `ADMINISTRADOR` de esa empresa |
+  | Aplicación | alertas de IA (`SIN_CREDITO`, `CLAVE_INVALIDA`, `LIMITE_GASTO`…) | el owner: `APP_OWNER_EMAIL` (= `jdiodati@kawellu.com.ar` en prod) |
+
+  El sync de ARCA con 3 errores seguidos (timeout, WAF, cambio del portal) suele ser un problema de la app, así que va a los admins **y** al owner. Los documentos en espera por un error de Aplicación NO avisan a cada cargador (lo resuelve el owner; el banner lo muestra a todos). `ALERTAS_TELEGRAM_CHAT_ID` sigue siendo opcional y sólo para Aplicación.
 - **D3 Dirección de entrada:** se mantiene el formato que ya usa la app, `comprobantes+{slug}@ledger.ar` (hoy `comprobantes+kawellu@ledger.ar` y `comprobantes+ewwo@ledger.ar`). Resend recibe cualquier dirección del dominio; las que no tienen slug válido se ignoran y quedan en el log.
 - **D4 Polling, no webhook:** cada 60 s desde el programador del worker. Evita pedir un bypass de Cloudflare Access y verificar firmas svix. Latencia máxima ~1 min.
 - **D5 Remitentes:** se acepta cualquiera (los proveedores mandan desde direcciones propias). Barreras: sólo PDF/JPG/PNG/WEBP (ya filtrado en `procesarEmailEntrante`), máx. 10 adjuntos y 15 MB por adjunto, y el control de archivo duplicado existente. Si aparece spam, se agrega una lista blanca por empresa.
