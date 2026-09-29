@@ -941,6 +941,25 @@ model Job {
   @@index([estado, proximoIntento])
 }
 
+// Alertas del sistema que no son de una empresa (hoy: la API de Anthropic sin
+// crédito, clave revocada, modelo retirado…). Una fila abierta por código; se
+// cierra sola cuando la operación vuelve a funcionar. Ver lib/ia/alertas.ts.
+model AlertaSistema {
+  id          String    @id @default(cuid())
+  origen      String // IA
+  codigo      String // CodigoErrorIa (SIN_CREDITO, CLAVE_INVALIDA…)
+  titulo      String
+  accion      String
+  mensaje     String // texto crudo de la API, con status y request_id
+  requestId   String?
+  ocurrencias Int       @default(1)
+  primeraVez  DateTime  @default(now())
+  ultimaVez   DateTime  @default(now())
+  resueltaAt  DateTime?
+
+  @@index([origen, resueltaAt])
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   empresaId String

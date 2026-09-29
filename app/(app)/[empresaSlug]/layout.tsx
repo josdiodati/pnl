@@ -4,6 +4,8 @@ import { rolAlcanza, ROL_LABEL } from '@/lib/roles';
 import { signOut } from '@/lib/auth';
 import { AppShell, type NavSeccion } from '@/components/app-shell';
 import { reportesVisibles } from '@/lib/reportes-personalizados/acceso';
+import { alertasIaActivas } from '@/lib/ia/alertas';
+import { AlertasIaBanner } from '@/components/alertas-ia-banner';
 
 // Every page under /[empresaSlug] re-validates membership via requireEmpresa
 // in its own loader/actions; this layout builds the chrome (sidebar + topbar).
@@ -15,7 +17,7 @@ export default async function EmpresaLayout({
   params: { empresaSlug: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug);
-  const [membresias, pendientes, porAsignar, misReportes] = await Promise.all([
+  const [membresias, pendientes, porAsignar, misReportes, alertasIa] = await Promise.all([
     prisma.usuarioEmpresa.findMany({
       where: { usuarioId: ctx.usuario.id },
       include: { empresa: true },
@@ -24,6 +26,7 @@ export default async function EmpresaLayout({
     ctx.db.movimiento.count({ where: { estado: 'PENDIENTE_VALIDACION' } }),
     ctx.db.movimiento.count({ where: { estado: 'VALIDADO' } }),
     reportesVisibles(ctx),
+    alertasIaActivas(),
   ]);
 
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
@@ -132,6 +135,7 @@ export default async function EmpresaLayout({
         </form>
       }
     >
+      <AlertasIaBanner alertas={alertasIa} />
       {children}
     </AppShell>
   );

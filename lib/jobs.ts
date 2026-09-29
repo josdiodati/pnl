@@ -61,3 +61,14 @@ export async function failJob(job: Job, error: unknown): Promise<{ final: boolea
   });
   return { final };
 }
+
+/**
+ * Deja el job en espera sin gastar el intento: el problema no es del job sino
+ * de la cuenta (sin crédito, clave revocada…). Se vuelve a probar en `esperaMs`.
+ */
+export async function posponerJob(job: Job, error: string, esperaMs: number): Promise<void> {
+  await prisma.job.update({
+    where: { id: job.id },
+    data: { estado: 'queued', error, intentos: Math.max(0, job.intentos - 1), proximoIntento: new Date(Date.now() + esperaMs) },
+  });
+}

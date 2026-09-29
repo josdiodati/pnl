@@ -1,7 +1,8 @@
 // Job queue worker: polls the Job table and runs the async pipeline
 // (extraction, cruce con Mis Comprobantes de ARCA, channel ingestion). Run with `npm run worker`
 // alongside `npm run dev`/`start`. Single DB, no Redis.
-import { claimNextJob, completeJob, failJob } from '@/lib/jobs';
+import { claimNextJob, completeJob } from '@/lib/jobs';
+import { registrarFalloJob, resolverAlertasIa, verificarConfiguracionIa, TIPOS_JOB_IA } from '@/lib/ia/alertas';
 import { procesarExtraccion, procesarArca, marcarErrorProcesamiento } from '@/lib/pipeline';
 import { procesarEmailEntrante } from '@/lib/canales/email';
 import { procesarUpdateTelegram } from '@/lib/canales/telegram';
@@ -56,20 +57,18 @@ async function procesarJob(): Promise<boolean> {
         throw new Error(`Tipo de job desconocido: ${job.tipo}`);
     }
     await completeJob(job.id);
+    // Una extracción anduvo: la API responde, se cierran sus alertas.
+    if (TIPOS_JOB_IA.has(job.tipo)) await resolverAlertasIa();
   } catch (err) {
-    console.error(`[worker] job ${job.id} falló:`, err instanceof Error ? err.message : err);
-    const { final } = await failJob(job, err);
+    // Errores de la API de Anthropic con nombre propio (SIN_CREDITO,
+    // CLAVE_INVALIDA…); los de cuenta dejan el job en espera y abren alerta.
+    const { final, mensaje } = await registrarFalloJob(job, err);
+    console.error(`[worker] job ${job.id} falló: ${mensaje}`);
     if (final && job.tipo === 'EXTRACCION' && payload.movimientoId && payload.empresaId) {
-      await marcarErrorProcesamiento(
-        { movimientoId: payload.movimientoId, empresaId: payload.empresaId },
-        err instanceof Error ? err.message : String(err),
-      );
+      await marcarErrorProcesamiento({ movimientoId: payload.movimientoId, empresaId: payload.empresaId }, mensaje);
     }
     if (final && job.tipo === 'EXTRACCION_RESUMEN' && payload.resumenId && payload.empresaId) {
-      await marcarErrorProcesamientoResumen(
-        { resumenId: payload.resumenId, empresaId: payload.empresaId },
-        err instanceof Error ? err.message : String(err),
-      );
+      await marcarErrorProcesamientoResumen({ resumenId: payload.resumenId, empresaId: payload.empresaId }, mensaje);
     }
   }
   return true;
@@ -94,6 +93,7 @@ async function main() {
   console.log('[worker] iniciado. EXTRACTOR_MODE=%s', process.env.EXTRACTOR_MODE ?? 'mock');
   process.on('SIGINT', () => { corriendo = false; });
   process.on('SIGTERM', () => { corriendo = false; });
+  await verificarConfiguracionIa().catch((err) => console.error('[worker] verificación de IA falló:', err));
   while (corriendo) {
     let huboTrabajo = false;
     await correrProgramador();
