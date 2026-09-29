@@ -10,15 +10,16 @@ datasource db {
 // ---------- Identity & multi-company ----------
 
 model Usuario {
-  id                   String           @id @default(cuid())
-  email                String           @unique
+  id                   String              @id @default(cuid())
+  email                String              @unique
   passwordHash         String
   nombre               String
   empresas             UsuarioEmpresa[]
-  movimientosCreados   Movimiento[]     @relation("creadoPor")
-  movimientosValidados Movimiento[]     @relation("validadoPor")
+  movimientosCreados   Movimiento[]        @relation("creadoPor")
+  movimientosValidados Movimiento[]        @relation("validadoPor")
   lotesIngesta         LoteIngesta[]
-  createdAt            DateTime         @default(now())
+  reportesHabilitados  ReporteHabilitado[]
+  createdAt            DateTime            @default(now())
 }
 
 model Empresa {
@@ -51,6 +52,7 @@ model Empresa {
   credencialArca         CredencialArca?
   comprobantesArca       ComprobanteArca[]
   cobros                 Cobro[]
+  reportesHabilitados    ReporteHabilitado[]
   createdAt              DateTime                @default(now())
 }
 
@@ -69,6 +71,22 @@ model UsuarioEmpresa {
   empresa   Empresa @relation(fields: [empresaId], references: [id])
 
   @@unique([usuarioId, empresaId])
+}
+
+// Reportes personalizados habilitados por usuario y empresa. El catálogo vive
+// en código (lib/reportes-personalizados/catalogo.ts); acá sólo quién ve qué.
+model ReporteHabilitado {
+  id            String   @id @default(cuid())
+  empresaId     String
+  usuarioId     String
+  reporteId     String // id del catálogo en código
+  habilitadoPor String? // usuarioId del administrador
+  createdAt     DateTime @default(now())
+  empresa       Empresa  @relation(fields: [empresaId], references: [id])
+  usuario       Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@unique([usuarioId, empresaId, reporteId])
+  @@index([empresaId])
 }
 
 model Invitacion {
