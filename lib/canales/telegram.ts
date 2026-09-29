@@ -115,15 +115,4 @@ export async function procesarUpdateTelegram(payload: TelegramInPayload): Promis
 }
 
 /** Idempotency guard shared by both webhooks. True = first time seen. */
-export async function registrarEventoUnico(canal: 'EMAIL' | 'TELEGRAM' | 'RESEND' | 'AVISO', claveExterna: string): Promise<boolean> {
-  try {
-    await prisma.eventoWebhook.create({ data: { canal, claveExterna } });
-    return true;
-  } catch {
-    return false; // unique violation: already processed
-  }
-}
-
-export async function yaRegistrado(canal: 'EMAIL' | 'TELEGRAM' | 'RESEND' | 'AVISO', claveExterna: string): Promise<boolean> {
-  return (await prisma.eventoWebhook.count({ where: { canal, claveExterna } })) > 0;
-}
+export { registrarEventoUnico, yaRegistrado } from '@/lib/canales/eventos';

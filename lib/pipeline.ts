@@ -21,6 +21,7 @@ import { getClasificador, type ClasificadorDocumento } from '@/lib/extractor/cla
 import { extraerTextoPdf } from '@/lib/extractor/texto';
 import { descartarPorPrefiltro, descartarPorExtraccion } from '@/lib/carga/no-comprobante';
 import { marcarNoComprobante } from '@/lib/carga/no-comprobante-service';
+import { notificarNoComprobante } from '@/lib/notificaciones';
 
 // The single ingestion pipeline shared by ALL channels (web, photo, email,
 // telegram): store immutable file -> Movimiento INGRESADO -> Job EXTRACCION ->
@@ -111,7 +112,7 @@ export async function ingestarComprobante(params: {
     where: {
       archivoHash: hash,
       id: { not: movimiento.id },
-      estado: { notIn: ['ANULADO', 'ERROR_PROCESAMIENTO'] },
+      estado: { notIn: ['ANULADO', 'ERROR_PROCESAMIENTO', 'NO_COMPROBANTE'] },
     },
     select: { id: true },
     orderBy: { createdAt: 'asc' },
@@ -133,6 +134,19 @@ export async function ingestarComprobante(params: {
       despues: { estado: 'DUPLICADO', duplicados: [mismoArchivo.id], confirmadoPor: 'HASH_ARCHIVO', archivo: params.filename },
     });
     return { movimientoId: movimiento.id };
+  }
+
+  // Re-subir un archivo que quedó como "no es comprobante" es decir que sí lo
+  // es: se procesa sin los filtros (si no, volvería a apartarse y a borrarse).
+  const apartado = await db.movimiento.findFirst({
+    where: { archivoHash: hash, id: { not: movimiento.id }, estado: 'NO_COMPROBANTE' },
+    select: { id: true },
+  });
+  if (apartado) {
+    await db.movimiento.update({
+      where: { id: movimiento.id },
+      data: { flags: { forzarComprobante: true, resubidoDe: apartado.id } as never },
+    });
   }
 
   await enqueueJob('EXTRACCION', { movimientoId: movimiento.id, empresaId: params.empresaId }, params.empresaId);
@@ -176,6 +190,7 @@ export async function procesarExtraccion(
       const c = await clasificador.clasificar({ buffer, mime: mov.archivoMime ?? 'application/pdf', texto });
       if (descartarPorPrefiltro(c)) {
         await marcarNoComprobante(db, mov, { tipoDocumento: c.tipoDocumento, motivo: c.motivo || null, por: 'PREFILTRO', uso: c.uso });
+        await notificarNoComprobante(payload);
         return;
       }
     } catch (err) {
@@ -199,7 +214,7 @@ export async function procesarExtraccion(
   });
 
   // La extracción también clasifica el documento (capa 2).
-  if (!forzarComprobante && descartarPorExtraccion(extraccion.tipoDocumento, qrAfip != null)) {
+  if (!forzarComprobante && descartarPorExtraccion(extraccion.tipoDocumento, qrAfip != null, extraccion)) {
     await marcarNoComprobante(db, mov, {
       tipoDocumento: extraccion.tipoDocumento,
       motivo: extraccion.observaciones ?? extraccion.concepto ?? null,
@@ -207,6 +222,7 @@ export async function procesarExtraccion(
       uso,
       extraccionRaw: extraccion,
     });
+    await notificarNoComprobante(payload);
     return;
   }
 

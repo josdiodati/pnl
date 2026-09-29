@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db';
 import { enqueueJob } from '@/lib/jobs';
 import { slugDesdeDireccion, type EmailInPayload } from '@/lib/canales/email';
-import { registrarEventoUnico, yaRegistrado } from '@/lib/canales/telegram';
+import { registrarEventoUnico, yaRegistrado } from '@/lib/canales/eventos';
 import * as resend from '@/lib/canales/resend';
 import type { AdjuntoResend } from '@/lib/canales/resend';
 
@@ -22,6 +22,7 @@ const PAUSA_MS = 300; // entre llamadas a la API (Resend limita ~2 pedidos/s)
 // Filtro de basura típica de los mails (capa 1 contra los no comprobantes): una
 // foto de un ticket pesa bastante más de 20 KB; un logo o un ícono, menos.
 const MIN_BYTES_IMAGEN = 20 * 1024;
+const MAX_BYTES_IMAGEN_DE_FIRMA = 100 * 1024;
 const NOMBRE_IMAGEN_DE_FIRMA = /^(image\d{3}|outlook-|logo|firma|signature|banner|icon)/i;
 
 const MIME_POR_EXTENSION: Record<string, string> = {
@@ -50,18 +51,23 @@ function tipoUtil(a: AdjuntoResend): string | null {
   if (tipo !== 'application/pdf') {
     // Imágenes inline = logos y firmas del cuerpo; un PDF inline (Apple Mail) sí es un adjunto.
     if (a.content_disposition === 'inline') return null;
-    // Imágenes chicas y las que por el nombre son de la firma del mail (image001.png, logo…).
-    if (a.size < MIN_BYTES_IMAGEN || NOMBRE_IMAGEN_DE_FIRMA.test(a.filename ?? '')) return null;
+    // Imágenes chicas, y las livianas cuyo nombre es de firma (image001.png, logo…).
+    // Una foto de verdad pesa mucho más aunque el celular la llame image000001.jpg.
+    if (a.size < MIN_BYTES_IMAGEN) return null;
+    if (a.size < MAX_BYTES_IMAGEN_DE_FIRMA && NOMBRE_IMAGEN_DE_FIRMA.test(a.filename ?? '')) return null;
   }
   return tipo;
 }
 
-function seleccionarAdjuntos(adjuntos: AdjuntoResend[]): { a: AdjuntoResend; tipo: string }[] {
+function seleccionarAdjuntos(adjuntos: AdjuntoResend[], emailId: string): { a: AdjuntoResend; tipo: string }[] {
   const elegidos: { a: AdjuntoResend; tipo: string }[] = [];
   let total = 0;
   for (const a of adjuntos) {
     const tipo = tipoUtil(a);
-    if (!tipo || a.size > MAX_BYTES_ADJUNTO || total + a.size > MAX_BYTES_MAIL) continue;
+    if (!tipo || a.size > MAX_BYTES_ADJUNTO || total + a.size > MAX_BYTES_MAIL) {
+      console.log(`[resend] mail ${emailId}: se descarta el adjunto "${a.filename}" (${a.content_type}, ${a.size} bytes)`);
+      continue;
+    }
     elegidos.push({ a, tipo });
     total += a.size;
     if (elegidos.length === MAX_ADJUNTOS) break;
@@ -110,7 +116,7 @@ export async function sincronizarRecibidos(deps: Partial<Deps> = {}): Promise<{ 
 
     try {
       await dormir(d.pausaMs);
-      const utiles = seleccionarAdjuntos(await d.listarAdjuntos(m.id));
+      const utiles = seleccionarAdjuntos(await d.listarAdjuntos(m.id), m.id);
       if (!utiles.length) { await ignorar('sin adjuntos PDF/imagen'); continue; }
       const adjuntos = [];
       for (const { a, tipo } of utiles) {

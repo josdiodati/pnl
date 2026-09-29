@@ -23,10 +23,14 @@ describe('no comprobantes', () => {
     expect(descartarPorPrefiltro(null)).toBe(false);
   });
 
-  it('extracción: descarta si el modelo dice que no es comprobante, salvo que haya QR de AFIP', () => {
-    expect(descartarPorExtraccion('CONTRATO', false)).toBe(true);
-    expect(descartarPorExtraccion('CONTRATO', true)).toBe(false);
-    expect(descartarPorExtraccion('COMPROBANTE', false)).toBe(false);
+  it('extracción: descarta si el modelo dice que no es comprobante, salvo QR de AFIP o datos de comprobante', () => {
+    const nada = { cuitEmisor: null, total: null, numero: null };
+    expect(descartarPorExtraccion('CONTRATO', false, nada)).toBe(true);
+    expect(descartarPorExtraccion('CONTRATO', true, nada)).toBe(false);
+    expect(descartarPorExtraccion('COMPROBANTE', false, nada)).toBe(false);
+    // Una proforma o una liquidación con CUIT, total y número: mejor que lo mire una persona.
+    expect(descartarPorExtraccion('PRESUPUESTO', false, { cuitEmisor: '30714325651', total: 1210, numero: '00001234' })).toBe(false);
+    expect(descartarPorExtraccion('PRESUPUESTO', false, { cuitEmisor: '30714325651', total: 1210, numero: null })).toBe(true);
   });
 
   it('se borra a los 7 días', () => {

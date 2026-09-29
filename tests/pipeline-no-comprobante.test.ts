@@ -102,4 +102,18 @@ describe('pipeline: no comprobantes', () => {
     await procesarExtraccion({ movimientoId: id, empresaId }, { clasificador: null });
     await expect(reprocesarComoComprobante(ctx, id)).rejects.toThrow(/no es comprobante/i);
   });
+
+  it('volver a subir el mismo archivo que quedó como no comprobante: se procesa como comprobante, no como duplicado', async () => {
+    const buffer = pdf({ tipoDocumento: 'PRESUPUESTO', tipoComprobante: 'FACTURA_B', total: 100 }, 'g');
+    const id = await cargar(buffer);
+    await procesarExtraccion({ movimientoId: id, empresaId }, { clasificador: null });
+    expect((await leer(id)).estado).toBe('NO_COMPROBANTE');
+
+    const id2 = await cargar(buffer);
+    const m2 = await leer(id2);
+    expect(m2.estado).not.toBe('DUPLICADO');
+    expect((m2.flags as any)?.forzarComprobante).toBe(true);
+    await procesarExtraccion({ movimientoId: id2, empresaId }, { clasificador: null });
+    expect((await leer(id2)).estado).not.toBe('NO_COMPROBANTE');
+  });
 });

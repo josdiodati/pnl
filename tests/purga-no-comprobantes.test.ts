@@ -56,4 +56,27 @@ describe('purgarNoComprobantes', () => {
     expect(await getFileStorage().exists(reciente.key)).toBe(true);
     expect(await prisma.movimiento.findUnique({ where: { id: pendiente.id } })).not.toBeNull();
   });
+
+  it('no borra uno que alguien mandó a reprocesar entre la búsqueda y el borrado', async () => {
+    const doc = await documento('NO_COMPROBANTE', 9, 'reclamado.pdf');
+    const n = await purgarNoComprobantes(new Date(), {
+      antesDeBorrar: async (id) => {
+        if (id === doc.id) await prisma.movimiento.update({ where: { id }, data: { estado: 'PROCESANDO' } });
+      },
+    });
+    expect(n).toBe(0);
+    expect(await prisma.movimiento.findUnique({ where: { id: doc.id } })).not.toBeNull();
+    expect(await getFileStorage().exists(doc.key)).toBe(true);
+  });
+
+  it('si falla uno, sigue con los demás', async () => {
+    const a = await documento('NO_COMPROBANTE', 9, 'falla.pdf');
+    const b = await documento('NO_COMPROBANTE', 9, 'sigue.pdf');
+    const n = await purgarNoComprobantes(new Date(), {
+      antesDeBorrar: async (id) => { if (id === a.id) throw new Error('disco'); },
+    });
+    expect(n).toBe(1);
+    expect(await prisma.movimiento.findUnique({ where: { id: b.id } })).toBeNull();
+    expect(await prisma.movimiento.findUnique({ where: { id: a.id } })).not.toBeNull();
+  });
 });

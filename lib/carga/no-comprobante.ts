@@ -44,8 +44,18 @@ export function descartarPorPrefiltro(c: ClasificacionDocumento | null): boolean
   return Boolean(c && c.tipoDocumento !== 'COMPROBANTE' && c.confianza >= UMBRAL_PREFILTRO);
 }
 
-export function descartarPorExtraccion(tipoDocumento: TipoDocumento, hayQrAfip: boolean): boolean {
-  return tipoDocumento !== 'COMPROBANTE' && !hayQrAfip;
+/**
+ * La extracción dice que no es un comprobante. No se aparta si hay QR de AFIP
+ * ni si igual trae CUIT, total y número (una proforma, una liquidación): eso
+ * lo mira una persona en la cola en vez de borrarse solo.
+ */
+export function descartarPorExtraccion(
+  tipoDocumento: TipoDocumento,
+  hayQrAfip: boolean,
+  datos: { cuitEmisor: string | null; total: number | null; numero: string | null },
+): boolean {
+  const pareceComprobante = Boolean(datos.cuitEmisor && datos.total != null && datos.numero);
+  return tipoDocumento !== 'COMPROBANTE' && !hayQrAfip && !pareceComprobante;
 }
 
 export function fechaBorradoNoComprobante(desde: Date): Date {

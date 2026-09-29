@@ -7,7 +7,7 @@ import { prisma } from '@/lib/db';
 const enviarEmail = vi.fn();
 let habilitado = true;
 vi.mock('@/lib/canales/resend', () => ({ enviarEmail, resendHabilitado: () => habilitado }));
-const { destinatarios, notificar, notificarErrorCarga } = await import('@/lib/notificaciones');
+const { destinatarios, notificar, notificarErrorCarga, notificarNoComprobante } = await import('@/lib/notificaciones');
 
 const sufijo = `notif-${Date.now()}`;
 let empresaId = '';
@@ -130,5 +130,32 @@ describe('notificarErrorCarga', () => {
     }
     expect(enviarEmail).toHaveBeenCalledOnce();
     expect(enviarEmail.mock.calls[0][0].text).toMatch(/misma tanda/);
+  });
+});
+
+describe('notificarNoComprobante', () => {
+  it('lo que entró por mail y quedó apartado: un mail por tanda a quien figura como cargador', async () => {
+    const lote = await prisma.loteIngesta.create({ data: { empresaId, canal: 'EMAIL', creadoPorId: cargador, archivos: 2 } });
+    for (const n of ['promo.pdf', 'contrato.pdf']) {
+      const mov = await prisma.movimiento.create({
+        data: { empresaId, origen: 'COMPROBANTE', creadoPorId: cargador, archivoNombre: n, loteId: lote.id, canalIngreso: 'EMAIL', estado: 'NO_COMPROBANTE', flags: { tipoDocumento: 'PUBLICIDAD' } },
+      });
+      await notificarNoComprobante({ movimientoId: mov.id, empresaId });
+    }
+    expect(enviarEmail).toHaveBeenCalledOnce();
+    const m = enviarEmail.mock.calls[0][0];
+    expect(m.to).toEqual([`cargador-${sufijo}@test.local`]);
+    expect(m.subject).toContain('promo.pdf');
+    expect(m.text).toContain('Publicidad');
+    expect(m.text).toContain(`/${sufijo}/validacion?estado=NO_COMPROBANTE`);
+    expect(m.text).toMatch(/7 días/);
+  });
+
+  it('una subida web no manda mail (la persona lo ve en Carga)', async () => {
+    const mov = await prisma.movimiento.create({
+      data: { empresaId, origen: 'COMPROBANTE', creadoPorId: cargador, archivoNombre: 'web.pdf', canalIngreso: 'WEB', estado: 'NO_COMPROBANTE' },
+    });
+    await notificarNoComprobante({ movimientoId: mov.id, empresaId });
+    expect(enviarEmail).not.toHaveBeenCalled();
   });
 });

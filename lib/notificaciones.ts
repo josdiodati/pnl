@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { enviarEmail, resendHabilitado } from '@/lib/canales/resend';
-import { registrarEventoUnico } from '@/lib/canales/telegram';
+import { registrarEventoUnico } from '@/lib/canales/eventos';
+import { etiquetaTipoDocumento, DIAS_RETENCION_NO_COMPROBANTE } from '@/lib/carga/no-comprobante';
 
 // Avisos por mail, a la casilla relevante según el alcance del problema:
 //   USUARIO  un error en algo que cargó una persona (comprobante, resumen, recibo)
@@ -82,5 +83,34 @@ export async function notificarErrorCarga(tipoJob: string, payload: Record<strin
     );
   } catch (err) {
     console.error('[notificaciones] aviso de error de carga falló:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Un documento que entró por mail o Telegram quedó apartado como "no es
+ * comprobante": se avisa a quien figura como cargador (un mail por tanda),
+ * porque se borra solo y nadie lo vio subir. Las subidas web no avisan: la
+ * persona lo ve en el resultado de la tanda en Carga.
+ */
+export async function notificarNoComprobante(payload: { movimientoId: string; empresaId: string }): Promise<void> {
+  try {
+    const mov = await prisma.movimiento.findUnique({
+      where: { id: payload.movimientoId },
+      select: { creadoPorId: true, archivoNombre: true, loteId: true, canalIngreso: true, flags: true },
+    });
+    if (!mov || (mov.canalIngreso !== 'EMAIL' && mov.canalIngreso !== 'TELEGRAM')) return;
+    if (!(await registrarEventoUnico('AVISO', `nocomp:${mov.loteId ?? payload.movimientoId}`))) return; // ya se avisó esta tanda
+    const empresa = await prisma.empresa.findUnique({ where: { id: payload.empresaId }, select: { slug: true, razonSocial: true } });
+    const enlace = empresa ? `${URL_APP()}/${empresa.slug}/validacion?estado=NO_COMPROBANTE` : URL_APP();
+    const archivo = mov.archivoNombre ?? 'un documento';
+    await notificar(
+      { tipo: 'USUARIO', usuarioId: mov.creadoPorId },
+      `"${archivo}" no parece un comprobante`,
+      `"${archivo}"${empresa ? `, que llegó a ${empresa.razonSocial}` : ''} por ${mov.canalIngreso === 'EMAIL' ? 'mail' : 'Telegram'}, no parece un comprobante (${etiquetaTipoDocumento(mov.flags)}). No entra al libro y se borra solo en ${DIAS_RETENCION_NO_COMPROBANTE} días.\n\n` +
+        (mov.loteId ? 'Puede haber otros documentos de la misma tanda en la misma situación.\n\n' : '') +
+        `Si es un comprobante, abrilo y tocá «Es un comprobante»: ${enlace}`,
+    );
+  } catch (err) {
+    console.error('[notificaciones] aviso de no comprobante falló:', err instanceof Error ? err.message : err);
   }
 }

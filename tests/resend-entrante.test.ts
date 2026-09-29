@@ -88,10 +88,11 @@ describe('sincronizarRecibidos', () => {
     expect(p.adjuntos.map((a: any) => [a.nombre, a.contentType])).toEqual([['inline.pdf', 'application/pdf'], ['octeto.pdf', 'application/pdf']]);
   });
 
-  it('descarta imágenes chicas (logos) y adjuntos de firma, pero no PDFs chicos', async () => {
+  it('descarta imágenes chicas y las de firma (nombre típico y liviana), pero no fotos grandes ni PDFs chicos', async () => {
     await sincronizarRecibidos(deps([mail('rs-11', para())], {
       'rs-11': [
-        pdf('image001', { filename: 'image001.png', content_type: 'image/png', size: 250_000 }),
+        pdf('image001', { filename: 'image001.png', content_type: 'image/png', size: 60_000 }),
+        pdf('fotoiphone', { filename: 'image000001.jpg', content_type: 'image/jpeg', size: 2_500_000 }),
         pdf('logo', { filename: 'logo-empresa.jpg', content_type: 'image/jpeg', size: 90_000 }),
         pdf('mini', { filename: 'foto.png', content_type: 'image/png', size: 15_000 }),
         pdf('ticket', { filename: 'ticket-cafe.jpg', content_type: 'image/jpeg', size: 180_000 }),
@@ -99,7 +100,7 @@ describe('sincronizarRecibidos', () => {
       ],
     }));
     const nombres = ((await jobDe('rs-11'))!.payload as any).adjuntos.map((a: any) => a.nombre);
-    expect(nombres).toEqual(['ticket-cafe.jpg', 'chico.pdf']);
+    expect(nombres).toEqual(['image000001.jpg', 'ticket-cafe.jpg', 'chico.pdf']);
   });
 
   it('corta en 25 MB por mail', async () => {
