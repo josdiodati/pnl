@@ -34,7 +34,9 @@ beforeEach(() => {
 });
 afterAll(async () => {
   delete process.env.APP_OWNER_EMAIL;
+  await prisma.eventoWebhook.deleteMany({ where: { canal: 'AVISO', claveExterna: { contains: sufijo } } });
   await prisma.movimiento.deleteMany({ where: { empresaId } });
+  await prisma.loteIngesta.deleteMany({ where: { empresaId } });
   await prisma.usuarioEmpresa.deleteMany({ where: { empresaId } });
   await prisma.empresa.delete({ where: { id: empresaId } });
   await prisma.usuario.deleteMany({ where: { id: { in: [adminA, adminB, cargador] } } });
@@ -101,7 +103,7 @@ describe('notificarErrorCarga', () => {
   });
 
   it('recibo con error: avisa al usuarioId del job, con la página', async () => {
-    await notificarErrorCarga('EXTRACCION_RECIBO', { empresaId, usuarioId: cargador, archivoNombre: 'recibos-ago.pdf', pagina: 3 }, 'boom');
+    await notificarErrorCarga('EXTRACCION_RECIBO', { empresaId, usuarioId: cargador, archivoKey: `k1-${sufijo}`, archivoNombre: 'recibos-ago.pdf', pagina: 3 }, 'boom');
     const m = enviarEmail.mock.calls[0][0];
     expect(m.to).toEqual([`cargador-${sufijo}@test.local`]);
     expect(m.subject).toContain('recibos-ago.pdf');
@@ -111,5 +113,22 @@ describe('notificarErrorCarga', () => {
   it('sin usuario identificable no manda nada', async () => {
     await notificarErrorCarga('EXTRACCION_RESUMEN', { empresaId, resumenId: 'no-existe' }, 'boom');
     expect(enviarEmail).not.toHaveBeenCalled();
+  });
+
+  it('varias páginas del mismo PDF de recibos con error: un solo mail', async () => {
+    for (const pagina of [1, 2, 3]) {
+      await notificarErrorCarga('EXTRACCION_RECIBO', { empresaId, usuarioId: cargador, archivoKey: `k2-${sufijo}`, archivoNombre: 'recibos-sep.pdf', pagina }, 'boom');
+    }
+    expect(enviarEmail).toHaveBeenCalledOnce();
+  });
+
+  it('varios comprobantes de la misma tanda con error: un solo mail que menciona la tanda', async () => {
+    const lote = await prisma.loteIngesta.create({ data: { empresaId, canal: 'WEB', creadoPorId: cargador, archivos: 2 } });
+    for (const n of ['a.pdf', 'b.pdf']) {
+      const mov = await prisma.movimiento.create({ data: { empresaId, origen: 'COMPROBANTE', creadoPorId: cargador, archivoNombre: n, loteId: lote.id } });
+      await notificarErrorCarga('EXTRACCION', { movimientoId: mov.id, empresaId }, 'boom');
+    }
+    expect(enviarEmail).toHaveBeenCalledOnce();
+    expect(enviarEmail.mock.calls[0][0].text).toMatch(/misma tanda/);
   });
 });

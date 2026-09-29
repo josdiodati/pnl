@@ -29,8 +29,10 @@ export async function enviarEmail(m: { to: string[]; subject: string; text: stri
   await llamar('/emails', { method: 'POST', body: JSON.stringify({ from, to: m.to, subject: m.subject, text: m.text }) }, f);
 }
 
-export async function listarRecibidos(f?: typeof fetch): Promise<RecibidoResend[]> {
-  return (await llamar('/emails/receiving?limit=100', {}, f)).data ?? [];
+/** Una página de recibidos, del más nuevo al más viejo; `after` pide la página siguiente (más vieja). */
+export async function listarRecibidos(after?: string, f?: typeof fetch): Promise<{ data: RecibidoResend[]; hasMore: boolean }> {
+  const r = await llamar(`/emails/receiving?limit=100${after ? `&after=${encodeURIComponent(after)}` : ''}`, {}, f);
+  return { data: r.data ?? [], hasMore: Boolean(r.has_more) };
 }
 
 export async function listarAdjuntos(emailId: string, f?: typeof fetch): Promise<AdjuntoResend[]> {

@@ -61,4 +61,15 @@ describe('alertas de IA por mail al owner', () => {
     expect(enviarEmail).toHaveBeenCalledTimes(2);
     expect(enviarEmail.mock.calls[1][0].subject).toMatch(/volvió a funcionar/);
   });
+
+  it('un error transitorio que va y viene no manda un par de mails por ciclo', async () => {
+    enviarEmail.mockResolvedValue(undefined);
+    const sobrecarga = () => Anthropic.APIError.generate(529, { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }, undefined, {} as never);
+    const agotado = async () => prisma.job.update({ where: { id: (await jobEnProceso()).id }, data: { intentos: 3 } });
+    await registrarFalloJob(await agotado(), sobrecarga()); // abre: mail
+    await resolverAlertasIa(); // transitorio: sin mail de cierre
+    await registrarFalloJob(await agotado(), sobrecarga()); // reabre dentro de la hora: sin mail
+    expect(enviarEmail).toHaveBeenCalledOnce();
+    expect((await alertasIaActivas())[0].codigo).toBe('API_SOBRECARGADA');
+  });
 });

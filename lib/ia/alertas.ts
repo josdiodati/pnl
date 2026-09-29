@@ -16,6 +16,9 @@ export const TIPOS_JOB_IA = new Set(['EXTRACCION', 'EXTRACCION_RECIBO', 'EXTRACC
 /** Cada cuánto se vuelve a probar un job en espera por un error GLOBAL. */
 export const ESPERA_ERROR_GLOBAL_MS = 10 * 60_000;
 
+/** Un problema que reaparece dentro de este lapso desde que se cerró no vuelve a avisar. */
+const SILENCIO_REAPERTURA_MS = 60 * 60_000;
+
 /** Aviso al owner de la app: mail y, opcionalmente, Telegram. Nunca lanza. */
 async function avisarOwner(asunto: string, texto: string): Promise<void> {
   await notificar({ tipo: 'APP' }, asunto, texto);
@@ -44,6 +47,12 @@ export async function registrarAlertaIa(e: ErrorIa): Promise<{ nueva: boolean }>
   await prisma.alertaSistema.create({
     data: { origen: 'IA', codigo: e.codigo, titulo: e.titulo, accion: e.accion, mensaje, requestId: e.requestId },
   });
+  // Si el mismo problema se cerró hace menos de una hora (Anthropic que va y
+  // viene), la alerta se reabre en la app pero no se vuelve a mandar el aviso.
+  const reciente = await prisma.alertaSistema.findFirst({
+    where: { origen: 'IA', codigo: e.codigo, resueltaAt: { gte: new Date(Date.now() - SILENCIO_REAPERTURA_MS) } },
+  });
+  if (reciente) return { nueva: true };
   await avisarOwner(
     `⚠️ P&L Manager: extracción con IA con problemas (${e.codigo})`,
     `${e.titulo}\n\nQué hacer: ${e.accion}\n\nRespuesta de la API:\n${mensaje}\n\n` +
@@ -64,7 +73,12 @@ export async function resolverAlertasIa(): Promise<number> {
   await prisma.alertaSistema.updateMany({ where: { id: { in: abiertas.map((a) => a.id) } }, data: { resueltaAt: new Date() } });
   const codigos = abiertas.map((a) => a.codigo).join(', ');
   console.log(`[alertas] resuelta(s): ${codigos}`);
-  await avisarOwner('✅ P&L Manager: la extracción con IA volvió a funcionar', `Se resolvió: ${codigos}.`);
+  // El cierre sólo se avisa para los problemas que detenían la extracción; los
+  // transitorios se cierran solos a cada rato y sólo harían ruido.
+  const graves = abiertas.filter((a) => DESCRIPCION_ERROR_IA[a.codigo as keyof typeof DESCRIPCION_ERROR_IA]?.alcance === 'GLOBAL');
+  if (graves.length) {
+    await avisarOwner('✅ P&L Manager: la extracción con IA volvió a funcionar', `Se resolvió: ${graves.map((a) => a.codigo).join(', ')}.`);
+  }
   return abiertas.length;
 }
 

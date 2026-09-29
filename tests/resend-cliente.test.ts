@@ -33,11 +33,13 @@ describe('cliente Resend', () => {
 
   it('listarRecibidos y listarAdjuntos devuelven data', async () => {
     process.env.RESEND_API_KEY = 're_test';
-    const r = await listarRecibidos(fakeFetch({ object: 'list', data: [{ id: 'm1', from: 'p@x.com', to: ['comprobantes+kawellu@ledger.ar'], subject: 'F', created_at: '2026-09-29T12:00:00Z' }] }));
+    const r = await listarRecibidos(undefined, fakeFetch({ object: 'list', has_more: true, data: [{ id: 'm1', from: 'p@x.com', to: ['comprobantes+kawellu@ledger.ar'], subject: 'F', created_at: '2026-09-29T12:00:00Z' }] }));
     expect(llamadas[0].url).toBe('https://api.resend.com/emails/receiving?limit=100');
-    expect(r[0].id).toBe('m1');
+    expect(r).toMatchObject({ hasMore: true, data: [{ id: 'm1' }] });
+    await listarRecibidos('m1', fakeFetch({ object: 'list', has_more: false, data: [] }));
+    expect(llamadas[1].url).toBe('https://api.resend.com/emails/receiving?limit=100&after=m1');
     const a = await listarAdjuntos('m1', fakeFetch({ object: 'list', data: [{ id: 'a1', filename: 'f.pdf', content_type: 'application/pdf', content_disposition: 'attachment', size: 10, download_url: 'https://inbound-cdn.resend.com/x' }] }));
-    expect(llamadas[1].url).toBe('https://api.resend.com/emails/receiving/m1/attachments');
+    expect(llamadas[2].url).toBe('https://api.resend.com/emails/receiving/m1/attachments');
     expect(a[0].filename).toBe('f.pdf');
   });
 });
