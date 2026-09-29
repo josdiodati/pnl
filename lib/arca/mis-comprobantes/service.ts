@@ -4,6 +4,7 @@ import { scopedDb, type ScopedDb } from '@/lib/empresa/scope';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import { DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
+import { notificar } from '@/lib/notificaciones';
 import { assertTransicion } from '@/lib/movimientos/estados';
 import { enqueueJob } from '@/lib/jobs';
 import { cuitEsValido, formatearCuit, normalizarCuit } from '@/lib/checks/cuit';
@@ -498,6 +499,9 @@ export type ResultadoSync =
  * reintentar). Otro error → cuenta error seguido, se propaga (el job
  * reintenta con backoff, las credenciales ya se sabían buenas).
  */
+/** A cuántos errores seguidos del sync (no de credenciales) se avisa por mail. */
+const ERRORES_SEGUIDOS_AVISO = 3;
+
 export async function sincronizarMisComprobantes(
   empresaId: string,
   params: { desde?: Date; hasta?: Date; usuarioId?: string | null } = {},
@@ -519,13 +523,31 @@ export async function sincronizarMisComprobantes(
   try {
     descarga = await d.descargar({ cuitUsuario: cred.cuitUsuario, clave: descifrarSecreto(cred.claveCifrada), cuitEmpresa: empresa.cuit, desde, hasta });
   } catch (e) {
+    const enlace = `${(process.env.APP_URL || 'https://pnl.ledger.ar').replace(/\/$/, '')}/${empresa.slug}/arca`;
     if (e instanceof ErrorLoginArca) {
       await bloquearCredencial(db, cred.id, e, usuarioId);
+      // En un sync manual la persona ya lo ve en pantalla; el automático avisa a los admins.
+      if (!usuarioId) {
+        await notificar(
+          { tipo: 'EMPRESA', empresaId },
+          `${empresa.razonSocial}: ARCA rechazó la Clave Fiscal de Mis Comprobantes`,
+          `La sincronización diaria de Mis Comprobantes de ${empresa.razonSocial} no pudo ingresar a ARCA y la credencial quedó bloqueada para no trabar la Clave Fiscal.\n\nMotivo: ${e.message}\n\nMientras tanto no se actualiza el tag "ARCA válido". Revisá la clave y volvé a guardarla en ${enlace}`,
+        );
+      }
       return { estado: 'BLOQUEADA', motivo: e.message };
     }
     const mensaje = e instanceof Error ? e.message : String(e);
-    await db.credencialArca.update({ where: { id: cred.id }, data: { ultimoErrorSync: mensaje, erroresSeguidos: { increment: 1 } } });
+    const act = await db.credencialArca.update({ where: { id: cred.id }, data: { ultimoErrorSync: mensaje, erroresSeguidos: { increment: 1 } } });
     await writeAudit(db, { usuarioId, entidad: 'CredencialArca', entidadId: cred.id, accion: 'ARCA_SYNC_ERROR', despues: { error: mensaje, desde, hasta } });
+    // Al tercer error seguido (timeout, WAF, cambio del portal) se avisa una vez:
+    // a los admins de la empresa y al owner, porque suele ser un problema de la app.
+    if (act.erroresSeguidos === ERRORES_SEGUIDOS_AVISO) {
+      await notificar(
+        [{ tipo: 'EMPRESA', empresaId }, { tipo: 'APP' }],
+        `${empresa.razonSocial}: Mis Comprobantes de ARCA falla hace ${ERRORES_SEGUIDOS_AVISO} intentos`,
+        `La sincronización de Mis Comprobantes de ${empresa.razonSocial} falló ${ERRORES_SEGUIDOS_AVISO} veces seguidas (no es la clave: el portal no respondió como se esperaba).\n\nÚltimo error: ${mensaje}\n\nSe sigue intentando en la próxima sincronización. Estado en ${enlace}`,
+      );
+    }
     throw e;
   }
 

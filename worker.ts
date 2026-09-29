@@ -3,6 +3,7 @@
 // alongside `npm run dev`/`start`. Single DB, no Redis.
 import { claimNextJob, completeJob } from '@/lib/jobs';
 import { registrarFalloJob, resolverAlertasIa, verificarConfiguracionIa, TIPOS_JOB_IA } from '@/lib/ia/alertas';
+import { notificarErrorCarga } from '@/lib/notificaciones';
 import { procesarExtraccion, procesarArca, marcarErrorProcesamiento } from '@/lib/pipeline';
 import { procesarEmailEntrante } from '@/lib/canales/email';
 import { procesarUpdateTelegram } from '@/lib/canales/telegram';
@@ -70,6 +71,8 @@ async function procesarJob(): Promise<boolean> {
     if (final && job.tipo === 'EXTRACCION_RESUMEN' && payload.resumenId && payload.empresaId) {
       await marcarErrorProcesamientoResumen({ resumenId: payload.resumenId, empresaId: payload.empresaId }, mensaje);
     }
+    // El documento quedó con error: se avisa por mail a quien lo cargó.
+    if (final && TIPOS_JOB_IA.has(job.tipo)) await notificarErrorCarga(job.tipo, payload, mensaje);
   }
   return true;
 }

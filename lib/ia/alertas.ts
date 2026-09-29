@@ -2,23 +2,27 @@ import type { AlertaSistema, Job } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { failJob, posponerJob } from '@/lib/jobs';
 import { responder } from '@/lib/canales/telegram';
+import { notificar } from '@/lib/notificaciones';
 import { clasificarErrorIa, mensajeErrorIa, DESCRIPCION_ERROR_IA, type ErrorIa } from '@/lib/ia/errores';
 
 // Alertas de la extracción con IA. Una alerta abierta por código de error: la
 // ve todo usuario en un banner (layout de empresa), queda en el log del worker
-// y, si ALERTAS_TELEGRAM_CHAT_ID está cargado, se avisa por Telegram al abrirse
-// y al resolverse. Se cierra sola con la próxima extracción exitosa.
+// y se avisa al abrirse y al resolverse. Es un problema de la aplicación: el
+// mail va al owner (APP_OWNER_EMAIL) y, si ALERTAS_TELEGRAM_CHAT_ID está
+// cargado, también por Telegram. Se cierra sola con la próxima extracción exitosa.
 
 export const TIPOS_JOB_IA = new Set(['EXTRACCION', 'EXTRACCION_RECIBO', 'EXTRACCION_RESUMEN']);
 
 /** Cada cuánto se vuelve a probar un job en espera por un error GLOBAL. */
 export const ESPERA_ERROR_GLOBAL_MS = 10 * 60_000;
 
-async function notificarTelegram(texto: string): Promise<void> {
+/** Aviso al owner de la app: mail y, opcionalmente, Telegram. Nunca lanza. */
+async function avisarOwner(asunto: string, texto: string): Promise<void> {
+  await notificar({ tipo: 'APP' }, asunto, texto);
   const chats = (process.env.ALERTAS_TELEGRAM_CHAT_ID ?? '').split(',').map((c) => c.trim()).filter(Boolean);
   for (const chat of chats) {
     try {
-      await responder(chat, texto);
+      await responder(chat, `${asunto}\n\n${texto}`);
     } catch (err) {
       console.error('[alertas] no se pudo avisar por Telegram:', err instanceof Error ? err.message : err);
     }
@@ -40,7 +44,13 @@ export async function registrarAlertaIa(e: ErrorIa): Promise<{ nueva: boolean }>
   await prisma.alertaSistema.create({
     data: { origen: 'IA', codigo: e.codigo, titulo: e.titulo, accion: e.accion, mensaje, requestId: e.requestId },
   });
-  await notificarTelegram(`⚠️ P&L Manager — extracción con IA con problemas\n${e.codigo}: ${e.titulo}\n\nQué hacer: ${e.accion}\n\n${mensaje}`);
+  await avisarOwner(
+    `⚠️ P&L Manager: extracción con IA con problemas (${e.codigo})`,
+    `${e.titulo}\n\nQué hacer: ${e.accion}\n\nRespuesta de la API:\n${mensaje}\n\n` +
+      (e.alcance === 'GLOBAL'
+        ? 'Los documentos quedan en espera y se procesan solos cuando se resuelva.'
+        : 'Los documentos afectados quedaron con error de procesamiento.'),
+  );
   return { nueva: true };
 }
 
@@ -54,7 +64,7 @@ export async function resolverAlertasIa(): Promise<number> {
   await prisma.alertaSistema.updateMany({ where: { id: { in: abiertas.map((a) => a.id) } }, data: { resueltaAt: new Date() } });
   const codigos = abiertas.map((a) => a.codigo).join(', ');
   console.log(`[alertas] resuelta(s): ${codigos}`);
-  await notificarTelegram(`✅ P&L Manager — la extracción con IA volvió a funcionar (${codigos}).`);
+  await avisarOwner('✅ P&L Manager: la extracción con IA volvió a funcionar', `Se resolvió: ${codigos}.`);
   return abiertas.length;
 }
 
