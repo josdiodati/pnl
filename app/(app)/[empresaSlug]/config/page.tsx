@@ -155,9 +155,10 @@ export default async function ConfigPage({
       </div>
 
       <div className="card p-4">
-        <h2 className="font-medium">Reportes personalizados</h2>
+        <h2 className="font-medium">Reportes Personales</h2>
         <p className="text-xs text-ink-mute mb-3">
-          Reportes armados a pedido. Cada usuario ve en su menú sólo los que tiene marcados acá, en esta empresa. Una casilla
+          Reportes armados a pedido. Cada usuario ve en Control → Reportes Personales sólo los que tiene marcados acá, en
+          esta empresa. Una casilla
           gris indica que el rol del usuario no alcanza el mínimo del reporte.
         </p>
         <form action={guardarReportesAction}>

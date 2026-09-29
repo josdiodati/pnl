@@ -245,5 +245,5 @@ export async function guardarReportesAction(formData: FormData): Promise<void> {
   } catch (err) {
     volver(slug, err);
   }
-  volver(slug, undefined, cambios ? 'Reportes personalizados actualizados.' : 'Sin cambios en reportes personalizados.');
+  volver(slug, undefined, cambios ? 'Reportes Personales actualizados.' : 'Sin cambios en Reportes Personales.');
 }

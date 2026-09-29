@@ -48,7 +48,7 @@ export default async function GastoPorProveedorPage({ params }: { params: { empr
       <PageHeader
         titulo={reporte.titulo}
         descripcion={`${reporte.descripcion} Período: ${formatFecha(desde)} a ${formatFecha(hasta)}.`}
-        acciones={<Link href={`/${params.empresaSlug}/reportes-personalizados`} className="btn-secondary">Reportes personalizados</Link>}
+        acciones={<Link href={`/${params.empresaSlug}/reportes-personalizados`} className="btn-secondary">Reportes Personales</Link>}
       />
       {r.sinTipoCambio > 0 && (
         <p className="mb-3 text-[12px] text-amber-700">

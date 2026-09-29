@@ -29,6 +29,11 @@ export default async function EmpresaLayout({
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
   const esAdmin = rolAlcanza(ctx.rol, 'ADMINISTRADOR');
   const base = `/${ctx.empresa.slug}`;
+  // Reportes Personales: un único ítem en Control que lleva al listado de los
+  // asignados a este usuario en esta empresa; sólo si tiene alguno.
+  const itemReportesPersonales = misReportes.length
+    ? [{ href: `${base}/reportes-personalizados`, label: 'Reportes Personales', icono: 'reporte' as const }]
+    : [];
 
   const secciones: NavSeccion[] = [
     {
@@ -55,15 +60,6 @@ export default async function EmpresaLayout({
         { href: `${base}/arca`, label: 'ARCA', icono: 'comprobante' },
       ],
     },
-    // Sólo los reportes personalizados que este usuario tiene habilitados acá.
-    ...(misReportes.length
-      ? [
-          {
-            titulo: 'Reportes personalizados',
-            items: misReportes.map((r) => ({ href: `${base}/reportes-personalizados/${r.id}`, label: r.titulo, icono: 'reporte' as const })),
-          },
-        ]
-      : []),
     ...(esAdmin
       ? [
           {
@@ -95,12 +91,15 @@ export default async function EmpresaLayout({
             items: [
               { href: `${base}/periodos`, label: 'Períodos y cierres', icono: 'periodo' },
               { href: `${base}/reportes`, label: 'Reportes P&L', icono: 'reporte' },
+              ...itemReportesPersonales,
               ...(esAdmin ? [{ href: `${base}/auditoria`, label: 'Auditoría', icono: 'auditoria' }] : []),
               ...(esAdmin ? [{ href: `${base}/config`, label: 'Configuración', icono: 'config' }] : []),
             ],
           },
         ]
-      : []),
+      : itemReportesPersonales.length
+        ? [{ titulo: 'Control', items: itemReportesPersonales }]
+        : []),
     {
       titulo: 'Próxima etapa',
       items: [

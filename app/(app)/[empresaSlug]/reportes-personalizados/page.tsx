@@ -12,12 +12,12 @@ export default async function ReportesPersonalizadosPage({ params }: { params: {
   return (
     <div>
       <PageHeader
-        titulo="Reportes personalizados"
-        descripcion="Reportes armados a pedido, con la mirada que le sirve a cada uno. Ves los que tenés habilitados en esta empresa."
+        titulo="Reportes Personales"
+        descripcion="Reportes armados a pedido, con la mirada que le sirve a cada uno. Ves los que tenés asignados en esta empresa."
       />
       {reportes.length === 0 ? (
         <p className="card p-4 text-sm text-ink-mute">
-          No tenés reportes personalizados habilitados. Pedíselos a un administrador de la empresa.
+          No tenés reportes personales asignados. Pedíselos a un administrador de la empresa.
         </p>
       ) : (
         <div className="reveal reveal-2 grid gap-3 sm:grid-cols-2">
