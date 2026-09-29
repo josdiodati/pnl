@@ -33,6 +33,7 @@ export async function asignarAction(formData: FormData): Promise<void> {
   const lineas = leerLineas(formData);
   let siguienteId: string | null = null;
   let mensajeRegla = '';
+  let avisoRegla = '';
 
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
@@ -56,7 +57,8 @@ export async function asignarAction(formData: FormData): Promise<void> {
         cargadoPorId: String(formData.get('reglaCargadoPorId') ?? '') || null,
         nombre: String(formData.get('reglaNombre') ?? '').trim() || null,
       });
-      mensajeRegla = ` — ${resultado}`;
+      if (resultado.ok) mensajeRegla = ` — ${resultado.mensaje}`;
+      else avisoRegla = resultado.mensaje;
     }
 
     if (irAlSiguiente) {
@@ -71,6 +73,6 @@ export async function asignarAction(formData: FormData): Promise<void> {
     volverConError(slug, movimientoId, err);
   }
   revalidatePath(`/${slug}/asignacion`);
-  const ok = encodeURIComponent(`Movimiento asignado${mensajeRegla}`);
-  redirect(siguienteId ? `/${slug}/asignacion/${siguienteId}?ok=${ok}` : `/${slug}/asignacion?ok=${ok}`);
+  const qs = `ok=${encodeURIComponent(`Movimiento asignado${mensajeRegla}`)}${avisoRegla ? `&aviso=${encodeURIComponent(avisoRegla)}` : ''}`;
+  redirect(siguienteId ? `/${slug}/asignacion/${siguienteId}?${qs}` : `/${slug}/asignacion?${qs}`);
 }

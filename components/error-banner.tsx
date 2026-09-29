@@ -14,6 +14,18 @@ export function ErrorBanner({ mensaje }: { mensaje?: string | string[] }) {
   );
 }
 
+/** Algo secundario que no salió (`?aviso=`): la acción principal sí se hizo. */
+export function AvisoBanner({ mensaje }: { mensaje?: string | string[] }) {
+  if (!mensaje) return null;
+  const texto = Array.isArray(mensaje) ? mensaje[0] : mensaje;
+  return (
+    <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+      {texto}
+      <LimpiarParametrosUrl claves={['aviso']} />
+    </div>
+  );
+}
+
 export function OkBanner({ mensaje }: { mensaje?: string | string[] }) {
   if (!mensaje) return null;
   const texto = Array.isArray(mensaje) ? mensaje[0] : mensaje;

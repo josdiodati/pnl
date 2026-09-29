@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import { getFileStorage } from '@/lib/storage';
 import { DocViewer } from '@/components/doc-viewer';
 import { DistribucionEditor } from '@/components/distribucion-editor';
-import { ErrorBanner, OkBanner } from '@/components/error-banner';
+import { ErrorBanner, OkBanner, AvisoBanner } from '@/components/error-banner';
 import { ArcaBadge } from '@/components/badges';
 import { ReglaDesdeAsignacion } from '@/components/regla-desde-asignacion';
 import { HistorialComprobante } from '@/components/historial-comprobante';
@@ -25,7 +25,7 @@ export default async function AsignacionDetallePage({
   searchParams,
 }: {
   params: { empresaSlug: string; id: string };
-  searchParams: { error?: string; ok?: string };
+  searchParams: { error?: string; ok?: string; aviso?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
 
@@ -112,6 +112,7 @@ export default async function AsignacionDetallePage({
 
       <ErrorBanner mensaje={searchParams.error} />
       <OkBanner mensaje={searchParams.ok} />
+      <AvisoBanner mensaje={searchParams.aviso} />
 
       {reglaAplicada && (
         <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">

@@ -8,7 +8,7 @@ import { ValidacionForm } from '@/components/validacion-form';
 import { ComprobanteDetalle } from '@/components/comprobante-detalle';
 import { HistorialComprobante } from '@/components/historial-comprobante';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
-import { ErrorBanner, OkBanner } from '@/components/error-banner';
+import { ErrorBanner, OkBanner, AvisoBanner } from '@/components/error-banner';
 import { fechaInputValue, formatFecha, formatMoney } from '@/lib/format';
 import { etiquetaComprobante } from '@/lib/movimientos/etiqueta';
 import { MES_LABEL } from '@/lib/periodos';
@@ -39,7 +39,7 @@ export default async function ValidacionDetallePage({
   searchParams,
 }: {
   params: { empresaSlug: string; id: string };
-  searchParams: { error?: string; ok?: string };
+  searchParams: { error?: string; ok?: string; aviso?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const mov = await ctx.db.movimiento.findFirst({
@@ -166,6 +166,7 @@ export default async function ValidacionDetallePage({
 
       <ErrorBanner mensaje={searchParams.error} />
       <OkBanner mensaje={searchParams.ok} />
+      <AvisoBanner mensaje={searchParams.aviso} />
 
       {lineasResumen.length > 0 && (
         <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800 space-y-1">

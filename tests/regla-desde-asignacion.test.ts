@@ -125,11 +125,38 @@ describe('construirReglaDesdeAsignacion', () => {
     expect(r.regla).toMatchObject({ distribucionId: 'p1', centroCostoId: null });
   });
 
-  it('un reparto sin plantilla que lo represente NO se puede guardar', () => {
-    const r = construirReglaDesdeAsignacion({ ...base, lineas: reparto, plantillas: [] });
-    expect(r.crear).toBe(false);
-    if (r.crear) throw new Error('no debería crear');
-    expect(r.motivo).toMatch(/plantilla/i);
+  it('un reparto que coincide con una plantilla no crea otra', () => {
+    const r = construirReglaDesdeAsignacion({ ...base, lineas: reparto, plantillas: [{ id: 'p1', lineas: reparto }] });
+    if (!r.crear) throw new Error(r.motivo);
+    expect(r.plantillaNueva).toBeUndefined();
+  });
+
+  it('un reparto sin plantilla que lo represente crea la plantilla junto con la regla', () => {
+    const nombresCentros = new Map([['cc-bpo', 'BPO'], ['cc-admin', 'Administración']]);
+    const r = construirReglaDesdeAsignacion({ ...base, lineas: reparto, plantillas: [], nombresCentros });
+    if (!r.crear) throw new Error(r.motivo);
+    expect(r.regla).toMatchObject({ distribucionId: null, centroCostoId: null });
+    expect(r.plantillaNueva).toEqual({
+      nombre: 'AMX ARGENTINA SA — BPO 60 / Administración 40',
+      lineas: reparto,
+    });
+  });
+
+  it('la plantilla nueva ordena por porcentaje y usa el id si falta el nombre del centro', () => {
+    const tres = [
+      { centroCostoId: 'a', clienteId: null, proyectoId: null, porcentaje: 18 },
+      { centroCostoId: 'b', clienteId: null, proyectoId: null, porcentaje: 46 },
+      { centroCostoId: 'c', clienteId: null, proyectoId: null, porcentaje: 36 },
+    ];
+    const r = construirReglaDesdeAsignacion({ ...base, razonSocial: 'NSS SA', lineas: tres, nombresCentros: new Map([['b', 'Administración'], ['c', 'Shared Services']]) });
+    if (!r.crear) throw new Error(r.motivo);
+    expect(r.plantillaNueva?.nombre).toBe('NSS SA — Administración 46 / Shared Services 36 / a 18');
+  });
+
+  it('una sola línea al 100% no crea plantilla', () => {
+    const r = construirReglaDesdeAsignacion(base);
+    if (!r.crear) throw new Error(r.motivo);
+    expect(r.plantillaNueva).toBeUndefined();
   });
 
   it('sin CUIT ni palabra clave no hay condición posible', () => {

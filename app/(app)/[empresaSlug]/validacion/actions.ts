@@ -54,6 +54,7 @@ export async function validarAction(formData: FormData): Promise<void> {
   const irAlSiguiente = formData.get('siguiente') === '1';
   let siguienteId: string | null = null;
   let mensajeRegla = '';
+  let avisoRegla = '';
 
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
@@ -154,7 +155,8 @@ export async function validarAction(formData: FormData): Promise<void> {
         cargadoPorId: String(formData.get('reglaCargadoPorId') ?? '') || null,
         nombre: String(formData.get('reglaNombre') ?? '').trim() || null,
       });
-      mensajeRegla = ` — ${resultado}`;
+      if (resultado.ok) mensajeRegla = ` — ${resultado.mensaje}`;
+      else avisoRegla = resultado.mensaje;
     }
 
     if (irAlSiguiente) {
@@ -169,8 +171,8 @@ export async function validarAction(formData: FormData): Promise<void> {
     volverConError(slug, movimientoId, err);
   }
   revalidatePath(`/${slug}/validacion`);
-  const ok = encodeURIComponent(`Movimiento validado${mensajeRegla}`);
-  redirect(siguienteId ? `/${slug}/validacion/${siguienteId}?ok=${ok}` : `/${slug}/validacion?ok=${ok}`);
+  const qs = `ok=${encodeURIComponent(`Movimiento validado${mensajeRegla}`)}${avisoRegla ? `&aviso=${encodeURIComponent(avisoRegla)}` : ''}`;
+  redirect(siguienteId ? `/${slug}/validacion/${siguienteId}?${qs}` : `/${slug}/validacion?${qs}`);
 }
 
 export async function observarAction(formData: FormData): Promise<void> {

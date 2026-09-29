@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
-import { ErrorBanner, OkBanner } from '@/components/error-banner';
+import { ErrorBanner, OkBanner, AvisoBanner } from '@/components/error-banner';
 import { ArcaBadge } from '@/components/badges';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { nombreContraparte, esVenta } from '@/lib/movimientos/nombre-contraparte';
@@ -10,7 +10,7 @@ export default async function AsignacionPage({
   searchParams,
 }: {
   params: { empresaSlug: string };
-  searchParams: { error?: string; ok?: string };
+  searchParams: { error?: string; ok?: string; aviso?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
 
@@ -26,6 +26,7 @@ export default async function AsignacionPage({
       <h1 className="text-lg font-semibold">Cola de Asignación</h1>
       <ErrorBanner mensaje={searchParams.error} />
       <OkBanner mensaje={searchParams.ok} />
+      <AvisoBanner mensaje={searchParams.aviso} />
 
       <div className="card overflow-x-auto">
         <table className="table-base">

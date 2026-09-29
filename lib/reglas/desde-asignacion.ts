@@ -8,8 +8,9 @@ import { normalizarCuit } from '@/lib/checks';
 //
 // La restricción del modelo manda: ReglaAsignacion guarda un centro único al
 // 100% O una plantilla de distribución — nunca líneas sueltas. Un reparto que no
-// esté representado por una plantilla existente no se puede volver regla; se
-// avisa en vez de inventar un maestro por atrás.
+// esté representado por una plantilla existente la crea (plantillaNueva): queda
+// visible en Maestros → Distribuciones con un nombre que dice de dónde salió.
+// Antes se rechazaba, y el aviso se perdía (29-sep, NSS SA en 3 centros).
 
 export type PlantillaConLineas = { id: string; lineas: LineaDistribucion[] };
 
@@ -28,6 +29,8 @@ export type EntradaReglaDesdeAsignacion = {
   nombrePropuesto: string | null;
   lineas: LineaDistribucion[];
   plantillas: PlantillaConLineas[];
+  /** Nombres de los centros de costo, para nombrar una plantilla nueva. */
+  nombresCentros?: Map<string, string>;
 };
 
 export type ReglaNueva = {
@@ -43,9 +46,12 @@ export type ReglaNueva = {
   proyectoId: string | null;
 };
 
+export type PlantillaNueva = { nombre: string; lineas: LineaDistribucion[] };
+
 export type DecisionReglaDesdeAsignacion =
   | { crear: false; motivo: string }
-  | { crear: true; regla: ReglaNueva };
+  /** Con plantillaNueva, hay que crearla primero y poner su id en regla.distribucionId. */
+  | { crear: true; regla: ReglaNueva; plantillaNueva?: PlantillaNueva };
 
 function limpiar(v: string | null): string | null {
   const t = v?.trim();
@@ -226,15 +232,13 @@ export function construirReglaDesdeAsignacion(e: EntradaReglaDesdeAsignacion): D
   }
 
   const distribucionId = plantillaQueCoincide(e.lineas, e.plantillas);
-  if (!distribucionId) {
-    return {
-      crear: false,
-      motivo: 'el reparto no coincide con ninguna plantilla de distribución: guardalo como plantilla en Maestros → Distribuciones y volvé a intentarlo',
-    };
-  }
+  const regla = { ...comun, distribucionId, centroCostoId: null, clienteId: null, proyectoId: null };
+  if (distribucionId) return { crear: true, regla };
 
-  return {
-    crear: true,
-    regla: { ...comun, distribucionId, centroCostoId: null, clienteId: null, proyectoId: null },
-  };
+  // "NSS SA — Administración 46 / Shared Services 36 / SF 18"
+  const detalle = [...e.lineas]
+    .sort((a, b) => Number(b.porcentaje) - Number(a.porcentaje))
+    .map((l) => `${e.nombresCentros?.get(l.centroCostoId) ?? l.centroCostoId} ${Number(l.porcentaje).toLocaleString('es-AR')}`)
+    .join(' / ');
+  return { crear: true, regla, plantillaNueva: { nombre: `${sujeto} — ${detalle}`, lineas: e.lineas } };
 }

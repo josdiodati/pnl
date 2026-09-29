@@ -30,22 +30,37 @@ export async function buscarReglasPorCuit(ctx: EmpresaContext, cuit: string | nu
   return reglasDelCuit(reglas, cuit);
 }
 
-/** Devuelve un mensaje corto para mostrarle al usuario. Nunca lanza. */
+/** Resultado para mostrarle al usuario: ok=false va en un aviso aparte (no
+ *  mezclado con el "validado/asignado" verde, donde se perdía). */
+export type ResultadoRegla = { ok: boolean; mensaje: string };
+
+/** Nombre libre para una plantilla nueva (unique por empresa): agrega " (2)", " (3)"... */
+function nombreLibre(base: string, usados: Set<string>): string {
+  if (!usados.has(base)) return base;
+  for (let i = 2; ; i++) if (!usados.has(`${base} (${i})`)) return `${base} (${i})`;
+}
+
+/** Nunca lanza. */
 export async function guardarReglaDesdeAsignacion(
   ctx: EmpresaContext,
   p: ParametrosReglaDesdeAsignacion,
-): Promise<string> {
+): Promise<ResultadoRegla> {
+  const falla = (mensaje: string): ResultadoRegla => ({ ok: false, mensaje });
+  let plantillaCreadaId: string | null = null;
   try {
     const categoria = await ctx.db.categoria.findFirst({ where: { id: p.categoriaId } });
-    if (!categoria) return 'no se pudo crear la regla: categoría inexistente';
+    if (!categoria) return falla('No se pudo crear la regla: categoría inexistente.');
 
-    const plantillas = await ctx.db.plantillaDistribucion.findMany({ include: { lineas: true } });
+    const [plantillas, centros] = await Promise.all([
+      ctx.db.plantillaDistribucion.findMany({ include: { lineas: true } }),
+      ctx.db.centroCosto.findMany({ select: { id: true, nombre: true } }),
+    ]);
 
     const cargadoPorId = p.cargadoPorId?.trim() || null;
     const miembro = cargadoPorId
       ? await prisma.usuarioEmpresa.findFirst({ where: { empresaId: ctx.empresa.id, usuarioId: cargadoPorId }, include: { usuario: { select: { nombre: true, email: true } } } })
       : null;
-    if (cargadoPorId && !miembro) return 'no se creó la regla: el usuario elegido no pertenece a la empresa';
+    if (cargadoPorId && !miembro) return falla('No se creó la regla: el usuario elegido no pertenece a la empresa.');
 
     const decision = construirReglaDesdeAsignacion({
       cuit: p.cuit,
@@ -67,9 +82,34 @@ export async function guardarReglaDesdeAsignacion(
           porcentaje: Number(l.porcentaje),
         })),
       })),
+      nombresCentros: new Map(centros.map((c) => [c.id, c.nombre])),
     });
 
-    if (!decision.crear) return `no se creó la regla: ${decision.motivo}`;
+    if (!decision.crear) return falla(`No se creó la regla: ${decision.motivo}.`);
+
+    // Reparto sin plantilla equivalente: se crea la plantilla y la regla la usa.
+    let avisoPlantilla = '';
+    if (decision.plantillaNueva) {
+      const nombre = nombreLibre(decision.plantillaNueva.nombre, new Set(plantillas.map((pl) => pl.nombre)));
+      const lineas = decision.plantillaNueva.lineas.map((l) => ({
+        centroCostoId: l.centroCostoId,
+        clienteId: l.clienteId ?? null,
+        proyectoId: l.proyectoId ?? null,
+        porcentaje: Number(l.porcentaje),
+      }));
+      const nueva = await ctx.db.plantillaDistribucion.create({ data: { nombre } as never });
+      plantillaCreadaId = nueva.id;
+      await prisma.plantillaDistribucionLinea.createMany({ data: lineas.map((l) => ({ plantillaId: nueva.id, ...l })) });
+      await writeAudit(ctx.db, {
+        usuarioId: ctx.usuario.id,
+        entidad: 'PlantillaDistribucion',
+        entidadId: nueva.id,
+        accion: 'CREAR',
+        despues: { nombre, lineas, desdeRegla: true },
+      });
+      decision.regla.distribucionId = nueva.id;
+      avisoPlantilla = ` con la distribución nueva «${nombre}» (Maestros → Distribuciones)`;
+    }
 
     // Se pisa SOLO la regla con exactamente las mismas condiciones (CUIT,
     // palabra clave, fuente y usuario). Cualquier otra combinación es una
@@ -89,7 +129,8 @@ export async function guardarReglaDesdeAsignacion(
         antes: { nombre: existente.nombre, categoriaId: existente.categoriaId, centroCostoId: existente.centroCostoId, distribucionId: existente.distribucionId },
         despues: { ...datos, desdeAsignacion: true },
       });
-      return `regla «${decision.regla.nombre}» actualizada`;
+      plantillaCreadaId = null;
+      return { ok: true, mensaje: `regla «${decision.regla.nombre}» actualizada${avisoPlantilla}` };
     }
 
     const creada = await ctx.db.reglaAsignacion.create({ data: datos as never });
@@ -100,12 +141,18 @@ export async function guardarReglaDesdeAsignacion(
       accion: 'CREAR',
       despues: { ...datos, desdeAsignacion: true },
     });
-    return prioridad != null
-      ? `regla «${decision.regla.nombre}» creada; se evalúa antes que las reglas más generales de este emisor`
-      : `regla «${decision.regla.nombre}» creada`;
+    plantillaCreadaId = null;
+    return {
+      ok: true,
+      mensaje: prioridad != null
+        ? `regla «${decision.regla.nombre}» creada${avisoPlantilla}; se evalúa antes que las reglas más generales de este emisor`
+        : `regla «${decision.regla.nombre}» creada${avisoPlantilla}`,
+    };
   } catch {
     // Nombre repetido (unique empresaId+nombre) o cualquier otro fallo: la
-    // asignación ya está hecha y es lo que importa.
-    return 'no se pudo guardar la regla (revisá que el nombre no esté repetido)';
+    // asignación ya está hecha y es lo que importa. Sin regla, la plantilla
+    // recién creada no tiene sentido: se deshace.
+    if (plantillaCreadaId) await ctx.db.plantillaDistribucion.delete({ where: { id: plantillaCreadaId } }).catch(() => {});
+    return falla('No se pudo guardar la regla (revisá que el nombre no esté repetido).');
   }
 }

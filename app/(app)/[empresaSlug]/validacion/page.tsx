@@ -2,7 +2,7 @@ import Link from 'next/link';
 import type { EstadoMovimiento, Prisma } from '@prisma/client';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
-import { ErrorBanner, OkBanner } from '@/components/error-banner';
+import { ErrorBanner, OkBanner, AvisoBanner } from '@/components/error-banner';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 import { originalDeDuplicado } from '@/lib/movimientos/service';
@@ -19,7 +19,7 @@ export default async function ValidacionPage({
   searchParams,
 }: {
   params: { empresaSlug: string };
-  searchParams: { estado?: string; canal?: string; contraparteId?: string; error?: string; ok?: string };
+  searchParams: { estado?: string; canal?: string; contraparteId?: string; error?: string; ok?: string; aviso?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
 
@@ -66,6 +66,7 @@ export default async function ValidacionPage({
       <h1 className="text-lg font-semibold">Cola de validación</h1>
       <ErrorBanner mensaje={searchParams.error} />
       <OkBanner mensaje={searchParams.ok} />
+      <AvisoBanner mensaje={searchParams.aviso} />
 
       {estadoFiltro === 'DUPLICADO' && (conteo.DUPLICADO ?? 0) > 0 && rolAlcanza(ctx.rol, 'ADMINISTRADOR') && (
         <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700 flex items-center justify-between gap-3 flex-wrap">
