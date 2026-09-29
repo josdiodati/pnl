@@ -2,8 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-// Original files are IMMUTABLE: put() never overwrites, there is no delete.
-// Re-uploading a different file is a new movement, not a replacement.
+// Original files are IMMUTABLE: put() never overwrites. Re-uploading a
+// different file is a new movement, not a replacement. The only delete is the
+// purge of documents that are NOT comprobantes (lib/carga/purga.ts).
 
 export type PutMeta = { filename: string; mime: string; empresaId: string };
 
@@ -13,6 +14,8 @@ export interface FileStorage {
   /** URL the browser can hit to view the file (auth enforced by the route). */
   getSignedUrl(key: string): Promise<string>;
   exists(key: string): Promise<boolean>;
+  /** Sólo para la purga de no comprobantes. No falla si el archivo ya no está. */
+  remove(key: string): Promise<void>;
 }
 
 export function sha256(buffer: Buffer): string {
@@ -55,6 +58,9 @@ class LocalFileStorage implements FileStorage {
     } catch {
       return false;
     }
+  }
+  async remove(key: string): Promise<void> {
+    await fs.rm(this.resolve(key), { force: true });
   }
 }
 

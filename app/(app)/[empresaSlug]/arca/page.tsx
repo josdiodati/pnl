@@ -85,7 +85,7 @@ export default async function ArcaPage({
     ? await ctx.db.movimiento.findMany({
         where: {
           cae: { not: null },
-          estado: { notIn: ['ANULADO', 'DUPLICADO', 'INGRESADO', 'PROCESANDO', 'ERROR_PROCESAMIENTO'] },
+          estado: { notIn: ['ANULADO', 'DUPLICADO', 'INGRESADO', 'PROCESANDO', 'ERROR_PROCESAMIENTO', 'NO_COMPROBANTE'] },
           fechaDevengamiento: { gte: ventana.desde, lte: ventana.hasta },
           comprobantesArca: { none: {} },
         },

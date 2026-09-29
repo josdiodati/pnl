@@ -92,7 +92,7 @@ function ventanaMatching(fechas: (Date | null | undefined)[], ancla: Date): { de
 async function candidatosDeMatching(db: ScopedDb, ventana: { desde: Date; hasta: Date }): Promise<MovimientoCandidato[]> {
   const movs = await db.movimiento.findMany({
     where: {
-      estado: { notIn: ['ANULADO', 'DUPLICADO'] },
+      estado: { notIn: ['ANULADO', 'DUPLICADO', 'NO_COMPROBANTE'] },
       // Misma fecha que compara señalFecha: fechaDevengamiento, o createdAt si no la tiene.
       OR: [
         { fechaDevengamiento: { gte: ventana.desde, lte: ventana.hasta } },

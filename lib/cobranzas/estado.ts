@@ -41,7 +41,7 @@ export const FUENTE_LABEL: Record<FuenteFechaProbable, string> = {
   DEFECTO: '30 días',
 };
 
-const ESTADOS_NO_COBRABLES = new Set(['ANULADO', 'DUPLICADO', 'ERROR_PROCESAMIENTO', 'PROCESANDO']);
+const ESTADOS_NO_COBRABLES = new Set(['ANULADO', 'DUPLICADO', 'ERROR_PROCESAMIENTO', 'PROCESANDO', 'NO_COMPROBANTE']);
 
 const cent = (n: number) => Math.round(n * 100) / 100;
 

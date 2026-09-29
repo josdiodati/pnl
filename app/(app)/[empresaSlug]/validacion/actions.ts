@@ -15,6 +15,7 @@ import {
   eliminarDuplicados,
 } from '@/lib/movimientos/service';
 import { procesarArca } from '@/lib/pipeline';
+import { reprocesarComoComprobante } from '@/lib/carga/no-comprobante-service';
 import { guardarReglaDesdeAsignacion } from '@/lib/reglas/guardar-desde-asignacion';
 import { nombreContraparte, cuitContraparteDe } from '@/lib/movimientos/nombre-contraparte';
 import { cuitEsValido, normalizarCuit } from '@/lib/checks';
@@ -222,6 +223,19 @@ export async function reintentarAction(formData: FormData): Promise<void> {
     volverConError(slug, movimientoId, err);
   }
   redirect(`/${slug}/validacion?ok=Reintento+encolado`);
+}
+
+/** "Es un comprobante": un documento apartado como no comprobante vuelve a extraerse sin filtros. */
+export async function reprocesarComoComprobanteAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  const movimientoId = String(formData.get('movimientoId'));
+  try {
+    const ctx = await requireEmpresa(slug, 'VALIDADOR');
+    await reprocesarComoComprobante(ctx, movimientoId);
+  } catch (err) {
+    volverConError(slug, movimientoId, err);
+  }
+  redirect(`/${slug}/validacion?ok=Se+vuelve+a+procesar+como+comprobante`);
 }
 
 export async function cargarAManoAction(formData: FormData): Promise<void> {

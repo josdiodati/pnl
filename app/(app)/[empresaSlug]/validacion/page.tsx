@@ -1,3 +1,4 @@
+import { DIAS_RETENCION_NO_COMPROBANTE, fechaBorradoNoComprobante, etiquetaTipoDocumento } from '@/lib/carga/no-comprobante';
 import Link from 'next/link';
 import type { EstadoMovimiento, Prisma } from '@prisma/client';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
@@ -12,7 +13,7 @@ import { eliminarDuplicadosAction } from './actions';
 // Validation queue: filterable list with counters, ordered "most doubtful
 // first" (lowest extraction confidence, then oldest).
 
-const ESTADOS_COLA: EstadoMovimiento[] = ['PENDIENTE_VALIDACION', 'RETENIDO', 'OBSERVADO', 'DUPLICADO', 'ERROR_PROCESAMIENTO'];
+const ESTADOS_COLA: EstadoMovimiento[] = ['PENDIENTE_VALIDACION', 'RETENIDO', 'OBSERVADO', 'DUPLICADO', 'ERROR_PROCESAMIENTO', 'NO_COMPROBANTE'];
 
 export default async function ValidacionPage({
   params,
@@ -59,6 +60,7 @@ export default async function ValidacionPage({
     { estado: 'OBSERVADO', label: 'Observados' },
     { estado: 'DUPLICADO', label: 'Duplicados' },
     { estado: 'ERROR_PROCESAMIENTO', label: 'Errores' },
+    { estado: 'NO_COMPROBANTE', label: 'No comprobantes' },
   ];
 
   return (
@@ -78,6 +80,14 @@ export default async function ValidacionPage({
             <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
             <button className="btn-danger text-xs">Borrar todos los duplicados ({conteo.DUPLICADO})</button>
           </form>
+        </div>
+      )}
+
+      {estadoFiltro === 'NO_COMPROBANTE' && (
+        <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          Documentos que no parecen comprobantes (presupuestos, contratos, publicidad…). No entran al libro y se
+          borran solos {DIAS_RETENCION_NO_COMPROBANTE} días después. Si alguno sí es un comprobante, abrilo y tocá
+          «Es un comprobante».
         </div>
       )}
 
@@ -161,6 +171,11 @@ export default async function ValidacionPage({
                     )}
                     {duplicados > 0 && (
                       <span className="inline-block rounded bg-red-100 text-red-800 px-1.5 py-0.5 text-xs font-medium">⚠ posible duplicado</span>
+                    )}
+                    {m.estado === 'NO_COMPROBANTE' && (
+                      <span className="inline-block rounded bg-slate-200 text-slate-700 px-1.5 py-0.5 text-xs">
+                        {etiquetaTipoDocumento(m.flags)} · se borra el {formatFecha(fechaBorradoNoComprobante(m.updatedAt))}
+                      </span>
                     )}
                     {revisar > 0 && (
                       <span className="inline-block rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-xs">

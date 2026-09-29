@@ -17,6 +17,10 @@ import { tieneAsignacionCompleta } from '@/lib/movimientos/service';
 import type { LineaDistribucion } from '@/lib/movimientos/distribucion';
 import type { EstadoMovimiento } from '@prisma/client';
 import { vencimientoPagoDesdeTexto } from '@/lib/cobranzas/vencimiento';
+import { getClasificador, type ClasificadorDocumento } from '@/lib/extractor/clasificador';
+import { extraerTextoPdf } from '@/lib/extractor/texto';
+import { descartarPorPrefiltro, descartarPorExtraccion } from '@/lib/carga/no-comprobante';
+import { marcarNoComprobante } from '@/lib/carga/no-comprobante-service';
 
 // The single ingestion pipeline shared by ALL channels (web, photo, email,
 // telegram): store immutable file -> Movimiento INGRESADO -> Job EXTRACCION ->
@@ -136,18 +140,48 @@ export async function ingestarComprobante(params: {
 }
 
 /** Runs the OCR/LLM extraction for one movement (executed by the worker). */
-export async function procesarExtraccion(payload: { movimientoId: string; empresaId: string }): Promise<void> {
+export async function procesarExtraccion(
+  payload: { movimientoId: string; empresaId: string },
+  deps: { clasificador?: ClasificadorDocumento | null } = {},
+): Promise<void> {
   const db = scopedDb(payload.empresaId);
-  const mov = await db.movimiento.findFirst({ where: { id: payload.movimientoId } });
-  if (!mov) throw new Error(`Movimiento ${payload.movimientoId} inexistente`);
-  if (!mov.archivoKey) throw new Error('Movimiento sin archivo para procesar');
+  const movLeido = await db.movimiento.findFirst({ where: { id: payload.movimientoId } });
+  if (!movLeido) throw new Error(`Movimiento ${payload.movimientoId} inexistente`);
+  if (!movLeido.archivoKey) throw new Error('Movimiento sin archivo para procesar');
 
-  if (mov.estado !== 'PROCESANDO') {
-    assertTransicion(mov.estado, 'PROCESANDO');
-    await db.movimiento.update({ where: { id: mov.id }, data: { estado: 'PROCESANDO' } });
+  if (movLeido.estado !== 'PROCESANDO') {
+    assertTransicion(movLeido.estado, 'PROCESANDO');
+    await db.movimiento.update({ where: { id: movLeido.id }, data: { estado: 'PROCESANDO' } });
   }
+  const mov = { ...movLeido, estado: 'PROCESANDO' as const, archivoKey: movLeido.archivoKey };
 
   const buffer = await getFileStorage().get(mov.archivoKey);
+
+  // El QR de ARCA/AFIP es la fuente AUTORITATIVA del encabezado cuando existe (trae
+  // emisor, receptor, importe, PV, nro y CAE). El LLM queda como fallback y para lo
+  // que el QR no trae (líneas, desglose de IVA). Best-effort: no bloquea si falta.
+  // Se lee antes de extraer: un QR de AFIP también prueba que ES un comprobante.
+  const resultadoQr = mov.archivoMime === 'application/pdf' ? await leerQrAfip(buffer) : null;
+  const qrAfip = resultadoQr?.qr ?? null;
+  const qrEstado = resultadoQr?.estado ?? null; // null = no aplica (imagen / no PDF)
+
+  // "Es un comprobante" (confirmado por una persona): sin filtros de no comprobante.
+  const forzarComprobante = Boolean((mov.flags as { forzarComprobante?: boolean } | null)?.forzarComprobante);
+
+  // Prefiltro barato (Haiku) antes de gastar la extracción; fail-open.
+  const clasificador = deps.clasificador !== undefined ? deps.clasificador : getClasificador();
+  if (clasificador && !forzarComprobante && !qrAfip) {
+    try {
+      const texto = mov.archivoMime === 'application/pdf' ? await extraerTextoPdf(buffer) : null;
+      const c = await clasificador.clasificar({ buffer, mime: mov.archivoMime ?? 'application/pdf', texto });
+      if (descartarPorPrefiltro(c)) {
+        await marcarNoComprobante(db, mov, { tipoDocumento: c.tipoDocumento, motivo: c.motivo || null, por: 'PREFILTRO', uso: c.uso });
+        return;
+      }
+    } catch (err) {
+      console.warn(`[pipeline] prefiltro de ${mov.id} falló, sigue la extracción:`, err instanceof Error ? err.message : err);
+    }
+  }
 
   // Per-supplier extraction instructions, if the issuer is already known from
   // a previous attempt (doc 04: deterministic learning without retraining).
@@ -164,14 +198,19 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     instrucciones,
   });
 
-  const camposRevisar = evaluarCampos(extraccion);
+  // La extracción también clasifica el documento (capa 2).
+  if (!forzarComprobante && descartarPorExtraccion(extraccion.tipoDocumento, qrAfip != null)) {
+    await marcarNoComprobante(db, mov, {
+      tipoDocumento: extraccion.tipoDocumento,
+      motivo: extraccion.observaciones ?? extraccion.concepto ?? null,
+      por: 'EXTRACCION',
+      uso,
+      extraccionRaw: extraccion,
+    });
+    return;
+  }
 
-  // El QR de ARCA/AFIP es la fuente AUTORITATIVA del encabezado cuando existe (trae
-  // emisor, receptor, importe, PV, nro y CAE). El LLM queda como fallback y para lo
-  // que el QR no trae (líneas, desglose de IVA). Best-effort: no bloquea si falta.
-  const resultadoQr = mov.archivoMime === 'application/pdf' ? await leerQrAfip(buffer) : null;
-  const qrAfip = resultadoQr?.qr ?? null;
-  const qrEstado = resultadoQr?.estado ?? null; // null = no aplica (imagen / no PDF)
+  const camposRevisar = evaluarCampos(extraccion);
 
   // Empresa no es un modelo scoped por empresa (ver SCOPED_MODELS en lib/empresa/scope.ts)
   // y el lookup es por su propia PK (el id del tenant, seteado server-side): no hay riesgo

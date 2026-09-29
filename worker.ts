@@ -6,6 +6,7 @@ import { registrarFalloJob, resolverAlertasIa, verificarConfiguracionIa, TIPOS_J
 import { notificarErrorCarga } from '@/lib/notificaciones';
 import { sincronizarRecibidos } from '@/lib/canales/resend-entrante';
 import { resendHabilitado } from '@/lib/canales/resend';
+import { purgarNoComprobantes } from '@/lib/carga/purga';
 import { procesarExtraccion, procesarArca, marcarErrorProcesamiento } from '@/lib/pipeline';
 import { procesarEmailEntrante } from '@/lib/canales/email';
 import { procesarUpdateTelegram } from '@/lib/canales/telegram';
@@ -81,8 +82,10 @@ async function procesarJob(): Promise<boolean> {
 
 const PROGRAMADOR_MS = 60_000;
 let ultimoProgramador = 0;
+const PURGA_MS = 60 * 60_000;
+let ultimaPurga = 0;
 
-/** Tareas programadas (sync diario de Mis Comprobantes a las 06:30 AR, mails entrantes de Resend): se revisan una vez por minuto. */
+/** Tareas programadas (sync diario de Mis Comprobantes a las 06:30 AR, mails entrantes de Resend, purga de no comprobantes): se revisan una vez por minuto. */
 async function correrProgramador(): Promise<void> {
   if (Date.now() - ultimoProgramador < PROGRAMADOR_MS) return;
   ultimoProgramador = Date.now();
@@ -91,6 +94,15 @@ async function correrProgramador(): Promise<void> {
     if (n > 0) console.log(`[worker] programador: ${n} sync(s) de Mis Comprobantes encolado(s)`);
   } catch (err) {
     console.error('[worker] programador falló:', err instanceof Error ? err.message : err);
+  }
+  // Documentos que no eran comprobantes: se borran a los 7 días (una vez por hora).
+  if (Date.now() - ultimaPurga >= PURGA_MS) {
+    ultimaPurga = Date.now();
+    try {
+      await purgarNoComprobantes();
+    } catch (err) {
+      console.error('[worker] purga de no comprobantes falló:', err instanceof Error ? err.message : err);
+    }
   }
   // Facturas por mail (Resend), por polling: Cloudflare Access no deja entrar webhooks.
   if (resendHabilitado()) {

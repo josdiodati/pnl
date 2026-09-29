@@ -28,7 +28,7 @@ export default async function AsientosPage({
     esValidador ? ctx.db.plantillaRecurrente.findMany({ orderBy: { nombre: 'asc' } }) : Promise.resolve([]),
     // Candidatos a "comprobante relacionado": lo vivo del libro, lo más reciente primero.
     ctx.db.movimiento.findMany({
-      where: { estado: { notIn: ['ANULADO', 'DUPLICADO', 'ERROR_PROCESAMIENTO'] } },
+      where: { estado: { notIn: ['ANULADO', 'DUPLICADO', 'ERROR_PROCESAMIENTO', 'NO_COMPROBANTE'] } },
       include: { contraparte: true },
       orderBy: [{ fechaDevengamiento: 'desc' }, { createdAt: 'desc' }],
       take: 400,

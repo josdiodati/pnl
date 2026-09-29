@@ -324,7 +324,7 @@ async function vincular(db: ScopedDb, par: { comprobante: ComprobanteCruzable; m
 }
 
 const WHERE_MOV_CRUZABLE = {
-  estado: { notIn: ['ANULADO', 'DUPLICADO'] },
+  estado: { notIn: ['ANULADO', 'DUPLICADO', 'NO_COMPROBANTE'] },
   OR: [{ cae: { not: null } }, { AND: [{ puntoVenta: { not: null } }, { numero: { not: null } }] }],
 } as const;
 

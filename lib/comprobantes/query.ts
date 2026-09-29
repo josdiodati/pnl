@@ -47,7 +47,7 @@ export const PROBLEMAS: Record<string, { label: string; where: Prisma.Movimiento
   sinProveedor: { label: 'Proveedor sin identificar', where: { contraparteId: null } },
 };
 
-export const ESTADOS_OCULTOS_POR_DEFECTO = ['DUPLICADO', 'ANULADO'] as const;
+export const ESTADOS_OCULTOS_POR_DEFECTO = ['DUPLICADO', 'ANULADO', 'NO_COMPROBANTE'] as const;
 
 /** Where sin el filtro de estado (para contar los chips con el resto de los filtros). */
 export function buildWhereComprobantesSinEstado(

@@ -31,6 +31,7 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
     { estado: 'OBSERVADO', label: 'Observados', acento: 'border-t-violet-400' },
     { estado: 'DUPLICADO', label: 'Duplicados', acento: 'border-t-slate-400' },
     { estado: 'ERROR_PROCESAMIENTO', label: 'Errores', acento: 'border-t-red-400' },
+    { estado: 'NO_COMPROBANTE', label: 'No comprobantes', acento: 'border-t-slate-300' },
   ];
 
   // Historial de lotes: cada drop web / mail / mensaje de Telegram, con su
@@ -69,7 +70,7 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
 
       <div className="reveal reveal-3 mt-8">
         <h2 className="label !text-[12px] mb-3">Estado del pipeline</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
           {tarjetas.map((t) => (
             <Link
               key={t.estado}

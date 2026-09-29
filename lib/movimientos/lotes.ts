@@ -19,6 +19,7 @@ export type ClaveResultado =
   | 'archivo-duplicado'
   | 'duplicados'
   | 'errores'
+  | 'no-comprobantes'
   | 'anulados';
 
 export const RESULTADO_LABEL: Record<ClaveResultado, string> = {
@@ -30,6 +31,7 @@ export const RESULTADO_LABEL: Record<ClaveResultado, string> = {
   'archivo-duplicado': 'archivo duplicado',
   duplicados: 'duplicados',
   errores: 'errores',
+  'no-comprobantes': 'no eran comprobantes (se borran a los 7 días)',
   anulados: 'anulados',
 };
 
@@ -42,6 +44,7 @@ const ORDEN: ClaveResultado[] = [
   'archivo-duplicado',
   'duplicados',
   'errores',
+  'no-comprobantes',
   'anulados',
 ];
 
@@ -65,6 +68,8 @@ function claveDe(mov: MovimientoDeLote): ClaveResultado | null {
         : 'duplicados';
     case 'ERROR_PROCESAMIENTO':
       return 'errores';
+    case 'NO_COMPROBANTE':
+      return 'no-comprobantes';
     case 'ANULADO':
       return 'anulados';
     default:

@@ -307,6 +307,7 @@ enum EstadoMovimiento {
   ANULADO
   ERROR_PROCESAMIENTO
   DUPLICADO
+  NO_COMPROBANTE // no es un comprobante (presupuesto, contrato, publicidad…): se borra a los 7 días
 }
 
 enum Moneda {

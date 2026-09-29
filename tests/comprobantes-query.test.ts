@@ -5,10 +5,10 @@ const opts = { esValidador: true, usuarioId: 'u1' };
 const json = (x: unknown) => JSON.stringify(x);
 
 describe('buildWhereComprobantes', () => {
-  it('por defecto: sólo compras y sin duplicados ni anulados', () => {
+  it('por defecto: sólo compras y sin duplicados, anulados ni no comprobantes', () => {
     const w = json(buildWhereComprobantes({}, opts));
     expect(w).toContain('"origen":{"in":["COMPROBANTE"]}');
-    expect(w).toContain('"notIn":["DUPLICADO","ANULADO"]');
+    expect(w).toContain('"notIn":["DUPLICADO","ANULADO","NO_COMPROBANTE"]');
   });
   it('un estado explícito reemplaza al default (se pueden ver los duplicados)', () => {
     const w = json(buildWhereComprobantes({ estado: 'DUPLICADO' }, opts));

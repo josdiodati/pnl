@@ -106,7 +106,7 @@ export function calcularInfoCobros(filas: FilaVenta[], hoy: Date): Map<string, I
 /** Todas las ventas de la empresa con lo necesario para derivar su cobranza. */
 export async function cargarVentasConCobros(db: ScopedDb) {
   return db.movimiento.findMany({
-    where: { origen: { in: [...ORIGENES_VENTA] }, estado: { notIn: ['ANULADO', 'DUPLICADO'] } },
+    where: { origen: { in: [...ORIGENES_VENTA] }, estado: { notIn: ['ANULADO', 'DUPLICADO', 'NO_COMPROBANTE'] } },
     include: INCLUDE_COBRANZA,
     orderBy: [{ fechaDevengamiento: 'asc' }, { createdAt: 'asc' }],
   });

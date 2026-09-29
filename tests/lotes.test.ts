@@ -34,6 +34,15 @@ describe('resumirLote (puro)', () => {
     ]);
   });
 
+  it('cuenta los que no eran comprobantes como terminados', () => {
+    const r = resumirLote([mov('NO_COMPROBANTE'), mov('PENDIENTE_VALIDACION')]);
+    expect(r.enProceso).toBe(0);
+    expect(r.resultados).toEqual([
+      { clave: 'pendientes', cantidad: 1 },
+      { clave: 'no-comprobantes', cantidad: 1 },
+    ]);
+  });
+
   it('distingue archivo duplicado de duplicado por valores', () => {
     const r = resumirLote([
       mov('DUPLICADO', { duplicadoArchivo: 'otro-id' }),

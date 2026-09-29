@@ -27,7 +27,8 @@ const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
   // VALIDADO/ASIGNADO directos: autovalidación en el pipeline (QR + aritmética;
   // ASIGNADO si una regla de preasignación da asignación completa).
   // OBSERVADO: descarte automático por regla. DUPLICADO: duplicado confirmado por QR/ARCA.
-  PROCESANDO: ['PENDIENTE_VALIDACION', 'RETENIDO', 'VALIDADO', 'ASIGNADO', 'OBSERVADO', 'DUPLICADO', 'ERROR_PROCESAMIENTO'],
+  // NO_COMPROBANTE: el prefiltro o la extracción dicen que no es un comprobante.
+  PROCESANDO: ['PENDIENTE_VALIDACION', 'RETENIDO', 'VALIDADO', 'ASIGNADO', 'OBSERVADO', 'DUPLICADO', 'ERROR_PROCESAMIENTO', 'NO_COMPROBANTE'],
   PENDIENTE_VALIDACION: ['VALIDADO', 'OBSERVADO', 'RETENIDO', 'ANULADO', 'ASIGNADO', 'DUPLICADO'],
   OBSERVADO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO', 'ASIGNADO'],
   RETENIDO: ['VALIDADO', 'PENDIENTE_VALIDACION', 'ANULADO', 'ASIGNADO'],
@@ -43,6 +44,9 @@ const TRANSICIONES: Record<EstadoMovimiento, EstadoMovimiento[]> = {
   // INGRESADO: un duplicado POR ARCHIVO nunca se extrajo; si se recupera
   // ("no es duplicado") vuelve al pipeline y se re-encola su extracción.
   DUPLICADO: ['PENDIENTE_VALIDACION', 'ANULADO', 'INGRESADO'],
+  // PROCESANDO: "es un comprobante" lo reprocesa sin los filtros. Si nadie lo
+  // reclama, la purga lo borra a los 7 días (lib/carga/purga.ts).
+  NO_COMPROBANTE: ['PROCESANDO'],
 };
 
 // Valid initial states per origin: vouchers always enter the OCR pipeline;
@@ -94,4 +98,5 @@ export const ESTADO_LABEL: Record<EstadoMovimiento, string> = {
   ANULADO: 'Anulado',
   ERROR_PROCESAMIENTO: 'Error de procesamiento',
   DUPLICADO: 'Duplicado',
+  NO_COMPROBANTE: 'No es comprobante',
 };

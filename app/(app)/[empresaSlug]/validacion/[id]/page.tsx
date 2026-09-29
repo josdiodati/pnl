@@ -22,12 +22,14 @@ import {
   anularAction,
   volverAPendienteAction,
   reintentarAction,
+  reprocesarComoComprobanteAction,
   cargarAManoAction,
   reArcaAction,
   eliminarDuplicadoAction,
 } from '../actions';
 import { originalDeDuplicado } from '@/lib/movimientos/service';
 import { rolAlcanza } from '@/lib/roles';
+import { etiquetaTipoDocumento, fechaBorradoNoComprobante } from '@/lib/carga/no-comprobante';
 
 const EDITABLES = new Set(['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO']);
 // Estados desde los que se puede devolver el comprobante a la cola de Validación.
@@ -216,6 +218,20 @@ export default async function ValidacionDetallePage({
       {Boolean(flags.errorProcesamiento) && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
           El procesamiento OCR falló: {String(flags.errorProcesamiento)}.
+        </div>
+      )}
+      {mov.estado === 'NO_COMPROBANTE' && (
+        <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700 space-y-2">
+          <p>
+            <span className="font-semibold">No parece un comprobante: {etiquetaTipoDocumento(flags)}.</span>
+            {flags.motivoNoComprobante ? ` ${String(flags.motivoNoComprobante)}.` : ''} No entra al libro y se borra
+            solo el {formatFecha(fechaBorradoNoComprobante(mov.updatedAt))}.
+          </p>
+          <form action={reprocesarComoComprobanteAction}>
+            <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+            <input type="hidden" name="movimientoId" value={mov.id} />
+            <button className="btn-primary text-xs">Es un comprobante: procesarlo</button>
+          </form>
         </div>
       )}
       {Boolean(flags.instruccionesSospechosas) && (

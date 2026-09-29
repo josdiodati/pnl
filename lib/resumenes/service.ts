@@ -67,7 +67,7 @@ export async function conciliarLinea(
     include: { vinculosResumen: { include: { linea: { include: { resumen: true } } } } },
   });
   if (!mov) throw new DomainError('Movimiento inexistente.');
-  if (mov.estado === 'ANULADO' || mov.estado === 'DUPLICADO') throw new DomainError('Ese movimiento está anulado o duplicado.');
+  if (mov.estado === 'ANULADO' || mov.estado === 'DUPLICADO' || mov.estado === 'NO_COMPROBANTE') throw new DomainError('Ese movimiento está anulado, duplicado o no es un comprobante.');
 
   // Comprobante ya vinculado a OTRA línea: sólo con confirmación explícita
   // (un pago en cuotas / parcial). Uno nacido de una imputación no se comparte:

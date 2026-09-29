@@ -605,7 +605,7 @@ async function crearMovimientoManual(
   if (relacionadoId) {
     const rel = await ctx.db.movimiento.findFirst({ where: { id: relacionadoId }, select: { id: true, estado: true } });
     if (!rel) throw new DomainError('El comprobante relacionado no existe en esta empresa.');
-    if (rel.estado === 'ANULADO' || rel.estado === 'DUPLICADO') {
+    if (rel.estado === 'ANULADO' || rel.estado === 'DUPLICADO' || rel.estado === 'NO_COMPROBANTE') {
       throw new DomainError('El comprobante relacionado está anulado o es un duplicado: elegí el vigente.');
     }
   }

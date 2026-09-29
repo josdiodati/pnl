@@ -25,7 +25,7 @@ import { CobroBadge } from '@/components/cobro-badge';
 // sólo las facturas detrás de cada número. Movimientos, en cambio, es el libro.
 
 const MAX_FILAS = 300;
-const ORDEN_ESTADOS = ['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO', 'ERROR_PROCESAMIENTO', 'PROCESANDO', 'INGRESADO', 'VALIDADO', 'ASIGNADO', 'DUPLICADO', 'ANULADO'];
+const ORDEN_ESTADOS = ['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO', 'ERROR_PROCESAMIENTO', 'PROCESANDO', 'INGRESADO', 'VALIDADO', 'ASIGNADO', 'DUPLICADO', 'NO_COMPROBANTE', 'ANULADO'];
 const A_REVISAR = new Set(['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO', 'ERROR_PROCESAMIENTO']);
 
 export default async function ComprobantesPage({
@@ -81,7 +81,7 @@ export default async function ComprobantesPage({
   };
   const resumen = resumirComprobantes(paraResumen.map((c) => ({ ...c, proveedor: nombreEmisor(c) })));
   const conteo = Object.fromEntries(porEstado.map((g) => [g.estado, g._count._all])) as Record<string, number>;
-  const vigentes = Object.entries(conteo).filter(([e]) => e !== 'DUPLICADO' && e !== 'ANULADO').reduce((s, [, n]) => s + n, 0);
+  const vigentes = Object.entries(conteo).filter(([e]) => e !== 'DUPLICADO' && e !== 'ANULADO' && e !== 'NO_COMPROBANTE').reduce((s, [, n]) => s + n, 0);
   const aRevisar = [...A_REVISAR].reduce((s, e) => s + (conteo[e] ?? 0), 0);
 
   const hayFiltros = drill || Boolean(
@@ -279,7 +279,7 @@ export default async function ComprobantesPage({
               const ext = m.moneda === 'ARS' ? '' : ` ${m.moneda}`;
               const cuit = m.contraparte?.cuit ?? m.cuitEmisor;
               return (
-                <tr key={m.id} className={m.estado === 'ANULADO' || m.estado === 'DUPLICADO' ? 'opacity-60' : ''}>
+                <tr key={m.id} className={m.estado === 'ANULADO' || m.estado === 'DUPLICADO' || m.estado === 'NO_COMPROBANTE' ? 'opacity-60' : ''}>
                   <td className="whitespace-nowrap font-mono text-[12.5px]">{formatFecha(m.fechaDevengamiento)}</td>
                   <td>
                     <span className="font-medium">{nombreEmisor(m)}</span>

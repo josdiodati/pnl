@@ -19,6 +19,10 @@ const MAX_ADJUNTOS = 10;
 const MAX_BYTES_ADJUNTO = 15 * 1024 * 1024;
 const MAX_BYTES_MAIL = 25 * 1024 * 1024;
 const PAUSA_MS = 300; // entre llamadas a la API (Resend limita ~2 pedidos/s)
+// Filtro de basura típica de los mails (capa 1 contra los no comprobantes): una
+// foto de un ticket pesa bastante más de 20 KB; un logo o un ícono, menos.
+const MIN_BYTES_IMAGEN = 20 * 1024;
+const NOMBRE_IMAGEN_DE_FIRMA = /^(image\d{3}|outlook-|logo|firma|signature|banner|icon)/i;
 
 const MIME_POR_EXTENSION: Record<string, string> = {
   pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
@@ -43,8 +47,12 @@ function tipoUtil(a: AdjuntoResend): string | null {
   const ext = a.filename?.toLowerCase().split('.').pop() ?? '';
   const tipo = MIMES.has(a.content_type) ? a.content_type : MIME_POR_EXTENSION[ext] ?? null;
   if (!tipo) return null;
-  // Imágenes inline = logos y firmas del cuerpo; un PDF inline (Apple Mail) sí es un adjunto.
-  if (a.content_disposition === 'inline' && tipo !== 'application/pdf') return null;
+  if (tipo !== 'application/pdf') {
+    // Imágenes inline = logos y firmas del cuerpo; un PDF inline (Apple Mail) sí es un adjunto.
+    if (a.content_disposition === 'inline') return null;
+    // Imágenes chicas y las que por el nombre son de la firma del mail (image001.png, logo…).
+    if (a.size < MIN_BYTES_IMAGEN || NOMBRE_IMAGEN_DE_FIRMA.test(a.filename ?? '')) return null;
+  }
   return tipo;
 }
 

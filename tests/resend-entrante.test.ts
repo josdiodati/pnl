@@ -88,6 +88,20 @@ describe('sincronizarRecibidos', () => {
     expect(p.adjuntos.map((a: any) => [a.nombre, a.contentType])).toEqual([['inline.pdf', 'application/pdf'], ['octeto.pdf', 'application/pdf']]);
   });
 
+  it('descarta imágenes chicas (logos) y adjuntos de firma, pero no PDFs chicos', async () => {
+    await sincronizarRecibidos(deps([mail('rs-11', para())], {
+      'rs-11': [
+        pdf('image001', { filename: 'image001.png', content_type: 'image/png', size: 250_000 }),
+        pdf('logo', { filename: 'logo-empresa.jpg', content_type: 'image/jpeg', size: 90_000 }),
+        pdf('mini', { filename: 'foto.png', content_type: 'image/png', size: 15_000 }),
+        pdf('ticket', { filename: 'ticket-cafe.jpg', content_type: 'image/jpeg', size: 180_000 }),
+        pdf('chico', { size: 9_000 }),
+      ],
+    }));
+    const nombres = ((await jobDe('rs-11'))!.payload as any).adjuntos.map((a: any) => a.nombre);
+    expect(nombres).toEqual(['ticket-cafe.jpg', 'chico.pdf']);
+  });
+
   it('corta en 25 MB por mail', async () => {
     const mb10 = 10 * 1024 * 1024;
     await sincronizarRecibidos(deps([mail('rs-7', para())], { 'rs-7': [pdf('p1', { size: mb10 }), pdf('p2', { size: mb10 }), pdf('p3', { size: mb10 })] }));
