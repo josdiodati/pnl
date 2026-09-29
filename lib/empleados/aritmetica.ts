@@ -1,6 +1,9 @@
 // Control aritmético del recibo (misma filosofía que lib/checks/aritmetica de
 // comprobantes): todo en centavos enteros, con tolerancia de $1 porque los
-// recibos traen concepto "Redondeo".
+// recibos traen concepto "Redondeo". Puro: corre también en el navegador
+// (components/recibo-totales), para recalcular los avisos mientras se edita.
+
+import { parsearImporteAr } from '@/lib/format';
 
 export type TotalesRecibo = {
   brutoRemunerativo: number | null;
@@ -43,6 +46,23 @@ export function verificarAritmeticaRecibo(t: TotalesRecibo): Record<string, stri
     }
   }
   return revisar;
+}
+
+/** Importe tipeado en la revisión del recibo (es-AR o punto decimal, admite
+ *  negativo: una "retención" que fue devolución). Vacío o inválido = null. */
+export function leerTotal(texto: string): number | null {
+  const v = parsearImporteAr(texto);
+  return v == null || Number.isNaN(v) ? null : v;
+}
+
+/**
+ * Avisos guardados al extraer que NO salen de la cuenta: los de cuenta se
+ * recalculan en vivo mientras se editan los totales; éstos (empleado nuevo,
+ * costo total calculado, etc.) se muestran fijos.
+ */
+export function avisosInformativos(guardados: Record<string, string>, originales: TotalesRecibo): Record<string, string> {
+  const deCuenta = verificarAritmeticaRecibo(originales);
+  return Object.fromEntries(Object.entries(guardados).filter(([campo, texto]) => deCuenta[campo] !== texto));
 }
 
 /** Costo total calculado cuando el modelo de recibo no lo imprime. */

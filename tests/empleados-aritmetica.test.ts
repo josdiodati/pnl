@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { verificarAritmeticaRecibo, calcularCostoTotal, type TotalesRecibo } from '@/lib/empleados/aritmetica';
+import { verificarAritmeticaRecibo, calcularCostoTotal, avisosInformativos, leerTotal, type TotalesRecibo } from '@/lib/empleados/aritmetica';
 
 // Página 4 del PDF real (Fazzini): caso estándar que cierra exacto.
 const FAZZINI: TotalesRecibo = {
@@ -72,5 +72,47 @@ describe('calcularCostoTotal', () => {
   it('devuelve null si falta bruto o contribuciones', () => {
     expect(calcularCostoTotal({ ...ARANDA, brutoRemunerativo: null })).toBeNull();
     expect(calcularCostoTotal({ ...ARANDA, contribucionesEmpleador: null })).toBeNull();
+  });
+});
+
+// Recibo real de Ewwo (jun-2026): las "retenciones" fueron una devolución. Con
+// el signo negativo el neto cierra al centavo.
+const DEVOLUCION: TotalesRecibo = {
+  brutoRemunerativo: 6_492_833.34,
+  noRemunerativo: 0.93,
+  retenciones: 518_551.73,
+  sueldoNeto: 7_011_386,
+  contribucionesEmpleador: 108_022.8,
+  costoTotalEmpleador: 6_600_857.07,
+};
+
+describe('retenciones negativas (devolución)', () => {
+  it('en positivo el neto no cierra; en negativo cierra', () => {
+    expect(verificarAritmeticaRecibo(DEVOLUCION).sueldoNeto).toMatch(/no cierra/);
+    expect(verificarAritmeticaRecibo({ ...DEVOLUCION, retenciones: -518_551.73 })).toEqual({});
+  });
+});
+
+describe('avisosInformativos', () => {
+  it('saca los avisos de cuenta (se recalculan en vivo) y deja los informativos', () => {
+    const guardados = {
+      ...verificarAritmeticaRecibo(DEVOLUCION),
+      empleado: 'Empleado nuevo dado de alta desde el recibo',
+    };
+    expect(avisosInformativos(guardados, DEVOLUCION)).toEqual({ empleado: 'Empleado nuevo dado de alta desde el recibo' });
+  });
+
+  it('un aviso con el mismo campo pero otro texto es informativo', () => {
+    const guardados = { costoTotalEmpleador: 'El recibo no imprime el costo total empleador: se calculó' };
+    expect(avisosInformativos(guardados, FAZZINI)).toEqual(guardados);
+  });
+});
+
+describe('leerTotal', () => {
+  it('acepta formato es-AR, punto decimal y negativos; vacío o basura = null', () => {
+    expect(leerTotal('-518.551,73')).toBe(-518551.73);
+    expect(leerTotal('-518551.73')).toBe(-518551.73);
+    expect(leerTotal('  ')).toBeNull();
+    expect(leerTotal('abc')).toBeNull();
   });
 });

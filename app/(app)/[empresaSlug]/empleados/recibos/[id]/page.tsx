@@ -5,6 +5,8 @@ import { MES_LABEL } from '@/lib/periodos';
 import { formatearCuit } from '@/lib/checks/cuit';
 import { DocViewer } from '@/components/doc-viewer';
 import { DistribucionEditor } from '@/components/distribucion-editor';
+import { ReciboTotales, type CampoTotal } from '@/components/recibo-totales';
+import { avisosInformativos, type TotalesRecibo } from '@/lib/empleados/aritmetica';
 import { confirmarReciboAction, anularReciboAction, reasignarReciboAction } from '../../actions';
 
 // Revisión de un recibo extraído: documento original a la izquierda, totales
@@ -40,13 +42,22 @@ export default async function ReciboPage({
     porcentaje: String(Number(l.porcentaje)),
   }));
 
-  const totales: { name: string; label: string; valor: unknown }[] = [
-    { name: 'brutoRemunerativo', label: 'Bruto remunerativo', valor: recibo.brutoRemunerativo },
-    { name: 'noRemunerativo', label: 'No remunerativo', valor: recibo.noRemunerativo },
-    { name: 'retenciones', label: 'Retenciones', valor: recibo.retenciones },
-    { name: 'sueldoNeto', label: 'Sueldo neto', valor: recibo.sueldoNeto },
-    { name: 'contribucionesEmpleador', label: 'Contribuciones empleador', valor: recibo.contribucionesEmpleador },
-    { name: 'costoTotalEmpleador', label: 'COSTO TOTAL EMPLEADOR', valor: recibo.costoTotalEmpleador },
+  const num = (v: unknown) => (v == null ? null : Number(v));
+  const originales: TotalesRecibo = {
+    brutoRemunerativo: num(recibo.brutoRemunerativo),
+    noRemunerativo: num(recibo.noRemunerativo),
+    retenciones: num(recibo.retenciones),
+    sueldoNeto: num(recibo.sueldoNeto),
+    contribucionesEmpleador: num(recibo.contribucionesEmpleador),
+    costoTotalEmpleador: num(recibo.costoTotalEmpleador),
+  };
+  const totales: CampoTotal[] = [
+    { name: 'brutoRemunerativo', label: 'Bruto remunerativo', valor: originales.brutoRemunerativo },
+    { name: 'noRemunerativo', label: 'No remunerativo', valor: originales.noRemunerativo },
+    { name: 'retenciones', label: 'Retenciones (negativo si fue devolución)', valor: originales.retenciones },
+    { name: 'sueldoNeto', label: 'Sueldo neto', valor: originales.sueldoNeto },
+    { name: 'contribucionesEmpleador', label: 'Contribuciones empleador', valor: originales.contribucionesEmpleador },
+    { name: 'costoTotalEmpleador', label: 'COSTO TOTAL EMPLEADOR', valor: originales.costoTotalEmpleador },
   ];
 
   const editable = recibo.estado === 'PENDIENTE_REVISION' && recibo.periodo.estado === 'ABIERTO';
@@ -81,21 +92,7 @@ export default async function ReciboPage({
           <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
           <input type="hidden" name="reciboId" value={recibo.id} />
 
-          <div className="card p-3 grid grid-cols-2 gap-2">
-            {totales.map((t) => (
-              <div key={t.name}>
-                <label className="label">{t.label}</label>
-                <input
-                  name={t.name}
-                  defaultValue={t.valor != null ? String(Number(t.valor)) : ''}
-                  disabled={!editable}
-                  className={`input text-sm ${revisar[t.name] ? 'border-amber-400' : ''}`}
-                />
-                {revisar[t.name] && <p className="text-[11px] text-amber-700 mt-0.5">{revisar[t.name]}</p>}
-              </div>
-            ))}
-            {revisar.empleado && <p className="col-span-2 text-[11px] text-amber-700">{revisar.empleado}</p>}
-          </div>
+          <ReciboTotales campos={totales} avisosFijos={avisosInformativos(revisar, originales)} editable={editable} />
 
           {conceptos.length > 0 && (
             <div className="card p-3 overflow-x-auto">
