@@ -16,6 +16,8 @@ export type EntradaAutoval = {
   /** false = el comprobante quedó sin contraparte vinculada (el alta automática
    *  se abstuvo): no se autovalida, el validador la crea en la cola. */
   tieneContraparte?: boolean;
+  /** Texto del documento que parece una instrucción para la IA (prompt injection). */
+  instruccionesSospechosas?: string | null;
 };
 
 const COMPONENTES = [
@@ -38,6 +40,9 @@ export function evaluarAutovalidacion(e: EntradaAutoval): { apto: boolean; motiv
   chequeo(!e.hayDuplicados, 'sin duplicados', 'posible duplicado');
   if (e.moneda && e.moneda !== 'ARS') {
     chequeo(Boolean(e.tipoCambio && e.tipoCambio > 0), 'tipo de cambio presente', 'moneda extranjera sin tipo de cambio');
+  }
+  if (e.instruccionesSospechosas !== undefined) {
+    chequeo(!e.instruccionesSospechosas, 'sin texto dirigido a la IA', 'el documento contiene texto dirigido a la IA');
   }
   if (e.tieneContraparte !== undefined) {
     chequeo(e.tieneContraparte, 'contraparte en el maestro', 'sin contraparte en el maestro');

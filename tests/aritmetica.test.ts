@@ -73,6 +73,7 @@ describe('evaluarCampos: marca campos a revisar', () => {
     confianza: {},
     observaciones: null,
     textoDocumento: null,
+    instruccionesSospechosas: null,
   };
 
   it('comprobante limpio: sin campos a revisar', () => {

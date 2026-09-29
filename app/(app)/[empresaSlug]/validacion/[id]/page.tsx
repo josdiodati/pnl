@@ -218,6 +218,15 @@ export default async function ValidacionDetallePage({
           El procesamiento OCR falló: {String(flags.errorProcesamiento)}.
         </div>
       )}
+      {Boolean(flags.instruccionesSospechosas) && (
+        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <p className="font-semibold">Ojo: el documento trae texto dirigido a la IA (posible intento de manipulación)</p>
+          <p className="mt-0.5">
+            «{String(flags.instruccionesSospechosas)}». No se autovalidó: compará los importes, el emisor y el CAE contra
+            el original antes de validarlo.
+          </p>
+        </div>
+      )}
       {Boolean(flags.notaObservacion) && mov.estado === 'OBSERVADO' && (
         <div className="rounded-md border border-purple-300 bg-purple-50 px-3 py-2 text-sm text-purple-800">
           Observado: {String(flags.notaObservacion)}

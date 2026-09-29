@@ -298,6 +298,9 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
   }
   const flags: Record<string, unknown> = { ...(mov.flags as object | null ?? {}) };
   if (duplicados.length) flags.duplicados = duplicados.map((d) => d.id);
+  // Posible prompt injection: el documento traía texto dirigido a la IA. No
+  // autovalida (ver evaluarAutovalidacion) y la vista de Validación lo avisa.
+  if (extraccion.instruccionesSospechosas) flags.instruccionesSospechosas = extraccion.instruccionesSospechosas;
 
   // --- Preasignación por reglas + autovalidación (QR + aritmética) ---
   // Las reglas se evalúan SIEMPRE (período abierto), no solo cuando autovalida:
@@ -353,6 +356,7 @@ export async function procesarExtraccion(payload: { movimientoId: string; empres
     moneda: monedaFinal,
     tipoCambio: tipoCambioFinal,
     tieneContraparte: contraparte != null,
+    instruccionesSospechosas: extraccion.instruccionesSospechosas ?? null,
   });
   let observarPorRegla: ReglaInfo | null = null;
   if (estadoFinal !== 'RETENIDO') {
