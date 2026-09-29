@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
-import { ROL_LABEL } from '@/lib/roles';
+import { ROL_LABEL, rolAlcanza } from '@/lib/roles';
+import { CATALOGO } from '@/lib/reportes-personalizados/catalogo';
 import { MES_LABEL } from '@/lib/periodos';
 import { telegramHabilitado } from '@/lib/canales/telegram';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
@@ -16,6 +17,7 @@ import {
   probarCredencialArcaAction,
   borrarCredencialArcaAction,
   syncAutomaticoArcaAction,
+  guardarReportesAction,
 } from './actions';
 
 export default async function ConfigPage({
@@ -26,7 +28,7 @@ export default async function ConfigPage({
   searchParams: { error?: string; ok?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'ADMINISTRADOR');
-  const [miembros, invitaciones, vinculos, credencialArca] = await Promise.all([
+  const [miembros, invitaciones, vinculos, credencialArca, filasReportes] = await Promise.all([
     prisma.usuarioEmpresa.findMany({
       where: { empresaId: ctx.empresa.id },
       include: { usuario: true },
@@ -35,7 +37,9 @@ export default async function ConfigPage({
     ctx.db.invitacion.findMany({ where: { aceptada: false }, orderBy: { createdAt: 'desc' } }),
     ctx.db.telegramVinculo.findMany({ orderBy: { createdAt: 'desc' } }),
     ctx.db.credencialArca.findFirst({ where: {} }),
+    ctx.db.reporteHabilitado.findMany({ select: { reporteId: true, usuarioId: true } }),
   ]);
+  const habilitados = new Set(filasReportes.map((f) => `${f.reporteId}:${f.usuarioId}`));
   const cifradoOk = cifradoConfigurado();
 
   const dominio = process.env.INBOUND_EMAIL_DOMAIN ?? 'tu-dominio.com';
@@ -148,6 +152,63 @@ export default async function ConfigPage({
             ))}
           </ul>
         )}
+      </div>
+
+      <div className="card p-4">
+        <h2 className="font-medium">Reportes personalizados</h2>
+        <p className="text-xs text-ink-mute mb-3">
+          Reportes armados a pedido. Cada usuario ve en su menú sólo los que tiene marcados acá, en esta empresa. Una casilla
+          gris indica que el rol del usuario no alcanza el mínimo del reporte.
+        </p>
+        <form action={guardarReportesAction}>
+          <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+          <div className="overflow-x-auto">
+            <table className="table-base">
+              <thead>
+                <tr>
+                  <th>Reporte</th>
+                  {miembros.map((m) => (
+                    <th key={m.usuarioId} className="text-center whitespace-nowrap">
+                      {m.usuario.nombre}
+                      <span className="block text-[10px] font-normal text-ink-mute">{ROL_LABEL[m.rol]}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {CATALOGO.map((r) => (
+                  <tr key={r.id}>
+                    <td className="max-w-md">
+                      <p className="font-medium">{r.titulo}</p>
+                      <p className="text-xs text-ink-mute">{r.descripcion}</p>
+                      <p className="text-[11px] text-ink-mute mt-0.5">
+                        Rol mínimo: {ROL_LABEL[r.rolMinimo]}
+                        {r.pedidoPor && ` · Pedido por: ${r.pedidoPor}`}
+                      </p>
+                    </td>
+                    {miembros.map((m) => {
+                      const alcanza = rolAlcanza(m.rol, r.rolMinimo);
+                      return (
+                        <td key={m.usuarioId} className="text-center align-middle">
+                          <input
+                            type="checkbox"
+                            name={`h:${r.id}:${m.usuarioId}`}
+                            defaultChecked={habilitados.has(`${r.id}:${m.usuarioId}`)}
+                            disabled={!alcanza}
+                            title={alcanza ? `${r.titulo} para ${m.usuario.nombre}` : `Requiere ${ROL_LABEL[r.rolMinimo]}`}
+                            aria-label={`${r.titulo} para ${m.usuario.nombre}`}
+                            className="h-4 w-4 disabled:opacity-40"
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button className="btn-primary mt-3">Guardar reportes</button>
+        </form>
       </div>
 
       <div className="card p-4 space-y-3">

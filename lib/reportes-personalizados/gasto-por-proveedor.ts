@@ -5,7 +5,8 @@
 
 export type CompraAgrupable = {
   contraparteId: string | null;
-  proveedor: string;
+  cuitEmisor: string | null; // extraído del documento: agrupa lo que aún no tiene contraparte
+  proveedor: string; // razón social de la contraparte o, si no hay, la del documento
   moneda: string;
   tipoCambio: unknown;
   tipoComprobante: string | null;
@@ -18,7 +19,8 @@ export type CompraAgrupable = {
   otrosTributos: unknown;
 };
 
-export type FilaGasto = { contraparteId: string | null; proveedor: string; cantidad: number; netoArs: number; pct: number };
+/** contraparteId si el proveedor está identificado; si no, cuit (el extraído) o ninguno = "Sin identificar". */
+export type FilaGasto = { contraparteId: string | null; cuit: string | null; proveedor: string; cantidad: number; netoArs: number; pct: number };
 
 export type GastoPorProveedor = {
   filas: FilaGasto[];
@@ -31,7 +33,7 @@ const n = (v: unknown) => (v == null ? 0 : Number(v));
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
 export function agruparGastoPorProveedor(compras: CompraAgrupable[], topN = 15): GastoPorProveedor {
-  const grupos = new Map<string, { contraparteId: string | null; proveedor: string; cantidad: number; netoArs: number }>();
+  const grupos = new Map<string, Omit<FilaGasto, 'pct'>>();
   let sinTipoCambio = 0;
   for (const c of compras) {
     if (c.total == null) continue;
@@ -40,8 +42,17 @@ export function agruparGastoPorProveedor(compras: CompraAgrupable[], topN = 15):
     const signo = c.tipoComprobante?.startsWith('NOTA_CREDITO') ? -1 : 1;
     const neto = signo * tc * (n(c.total) - n(c.iva21) - n(c.iva105) - n(c.iva27)
       - n(c.percepcionesIva) - n(c.percepcionesIibb) - n(c.otrosTributos));
-    const k = c.contraparteId ?? '';
-    const g = grupos.get(k) ?? { contraparteId: c.contraparteId, proveedor: c.contraparteId ? c.proveedor : 'Sin identificar', cantidad: 0, netoArs: 0 };
+    // Sin contraparte (todavía sin validar): por CUIT del documento, para no
+    // mezclar a todos los proveedores pendientes en una sola fila.
+    const cuit = c.contraparteId ? null : c.cuitEmisor || null;
+    const k = c.contraparteId ? `c:${c.contraparteId}` : cuit ? `cuit:${cuit}` : '';
+    const g = grupos.get(k) ?? {
+      contraparteId: c.contraparteId,
+      cuit,
+      proveedor: k ? c.proveedor || `CUIT ${cuit}` : 'Sin identificar',
+      cantidad: 0,
+      netoArs: 0,
+    };
     g.cantidad += 1;
     g.netoArs += neto;
     grupos.set(k, g);

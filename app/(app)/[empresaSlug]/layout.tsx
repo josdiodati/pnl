@@ -3,6 +3,7 @@ import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { rolAlcanza, ROL_LABEL } from '@/lib/roles';
 import { signOut } from '@/lib/auth';
 import { AppShell, type NavSeccion } from '@/components/app-shell';
+import { reportesVisibles } from '@/lib/reportes-personalizados/acceso';
 
 // Every page under /[empresaSlug] re-validates membership via requireEmpresa
 // in its own loader/actions; this layout builds the chrome (sidebar + topbar).
@@ -14,7 +15,7 @@ export default async function EmpresaLayout({
   params: { empresaSlug: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug);
-  const [membresias, pendientes, porAsignar] = await Promise.all([
+  const [membresias, pendientes, porAsignar, misReportes] = await Promise.all([
     prisma.usuarioEmpresa.findMany({
       where: { usuarioId: ctx.usuario.id },
       include: { empresa: true },
@@ -22,6 +23,7 @@ export default async function EmpresaLayout({
     }),
     ctx.db.movimiento.count({ where: { estado: 'PENDIENTE_VALIDACION' } }),
     ctx.db.movimiento.count({ where: { estado: 'VALIDADO' } }),
+    reportesVisibles(ctx),
   ]);
 
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
@@ -53,6 +55,15 @@ export default async function EmpresaLayout({
         { href: `${base}/arca`, label: 'ARCA', icono: 'comprobante' },
       ],
     },
+    // Sólo los reportes personalizados que este usuario tiene habilitados acá.
+    ...(misReportes.length
+      ? [
+          {
+            titulo: 'Reportes personalizados',
+            items: misReportes.map((r) => ({ href: `${base}/reportes-personalizados/${r.id}`, label: r.titulo, icono: 'reporte' as const })),
+          },
+        ]
+      : []),
     ...(esAdmin
       ? [
           {

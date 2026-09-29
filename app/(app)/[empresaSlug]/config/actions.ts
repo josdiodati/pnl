@@ -11,6 +11,9 @@ import { cuitEsValido, normalizarCuit } from '@/lib/checks';
 import { generarCodigoVinculo } from '@/lib/canales/telegram';
 import { guardarCredencialArca, probarCredencialArca, borrarCredencialArca, cambiarSyncAutomatico } from '@/lib/arca/mis-comprobantes/service';
 import { restablecerPassword } from '@/lib/usuarios/password';
+import { rolAlcanza } from '@/lib/roles';
+import { reporteDelCatalogo } from '@/lib/reportes-personalizados/catalogo';
+import { diffHabilitaciones, parsearGrilla, type Par } from '@/lib/reportes-personalizados/habilitaciones';
 import type { Rol } from '@prisma/client';
 
 // Company configuration: ADMINISTRADOR only (doc 08).
@@ -199,4 +202,48 @@ export async function syncAutomaticoArcaAction(formData: FormData): Promise<void
     volver(slug, err);
   }
   volver(slug, undefined, activo ? 'Sync diario de Mis Comprobantes activado (06:30).' : 'Sync diario de Mis Comprobantes desactivado.');
+}
+
+// Grilla de reportes personalizados: un checkbox h:<reporteId>:<usuarioId> por
+// celda editable. Sólo se tocan celdas válidas (reporte en catálogo, miembro
+// de la empresa, rol suficiente); ver diffHabilitaciones.
+export async function guardarReportesAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  let cambios = 0;
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    const [miembros, actuales] = await Promise.all([
+      prisma.usuarioEmpresa.findMany({ where: { empresaId: ctx.empresa.id }, include: { usuario: { select: { email: true } } } }),
+      ctx.db.reporteHabilitado.findMany({ select: { usuarioId: true, reporteId: true } }),
+    ]);
+    const miembro = new Map(miembros.map((m) => [m.usuarioId, m]));
+    const valido = (p: Par) => {
+      const r = reporteDelCatalogo(p.reporteId);
+      const m = miembro.get(p.usuarioId);
+      return Boolean(r && m && rolAlcanza(m.rol, r.rolMinimo));
+    };
+    const { altas, bajas } = diffHabilitaciones(actuales, parsearGrilla(formData), valido);
+    if (altas.length) {
+      await ctx.db.reporteHabilitado.createMany({
+        data: altas.map((p) => ({ ...p, habilitadoPor: ctx.usuario.id })) as never,
+        skipDuplicates: true,
+      });
+    }
+    for (const p of bajas) await ctx.db.reporteHabilitado.deleteMany({ where: p });
+    for (const [accion, pares] of [['HABILITAR', altas], ['DESHABILITAR', bajas]] as const) {
+      for (const p of pares) {
+        await writeAudit(ctx.db, {
+          usuarioId: ctx.usuario.id,
+          entidad: 'ReporteHabilitado',
+          entidadId: p.usuarioId,
+          accion,
+          despues: { reporteId: p.reporteId, email: miembro.get(p.usuarioId)?.usuario.email },
+        });
+      }
+    }
+    cambios = altas.length + bajas.length;
+  } catch (err) {
+    volver(slug, err);
+  }
+  volver(slug, undefined, cambios ? 'Reportes personalizados actualizados.' : 'Sin cambios en reportes personalizados.');
 }

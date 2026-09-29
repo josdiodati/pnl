@@ -103,6 +103,7 @@ describe('parsearGrilla', () => {
 describe('agruparGastoPorProveedor', () => {
   const compra = (contraparteId: string | null, total: number, over: Partial<CompraAgrupable> = {}): CompraAgrupable => ({
     contraparteId,
+    cuitEmisor: null,
     proveedor: contraparteId ? `Prov ${contraparteId}` : 'ACME (sin identificar)',
     moneda: 'ARS',
     tipoCambio: null,
@@ -149,9 +150,26 @@ describe('agruparGastoPorProveedor', () => {
     expect(r.sinTipoCambio).toBe(1);
   });
 
-  it('sin contraparte: una sola fila "Sin identificar", sin id', () => {
-    const r = agruparGastoPorProveedor([compra(null, 10), compra(null, 20, { proveedor: 'Otro' })]);
+  it('sin contraparte: agrupa por CUIT emisor con el nombre del documento', () => {
+    const r = agruparGastoPorProveedor([
+      compra(null, 10, { cuitEmisor: '30712093486', proveedor: 'ACME SA' }),
+      compra(null, 20, { cuitEmisor: '30712093486', proveedor: 'ACME S.A.' }),
+      compra(null, 5, { cuitEmisor: '20111111112', proveedor: 'Otro' }),
+    ]);
+    expect(r.filas.map((f) => [f.contraparteId, f.cuit, f.proveedor, f.cantidad, f.netoArs])).toEqual([
+      [null, '30712093486', 'ACME SA', 2, 30],
+      [null, '20111111112', 'Otro', 1, 5],
+    ]);
+  });
+
+  it('sin contraparte ni CUIT: una sola fila "Sin identificar"', () => {
+    const r = agruparGastoPorProveedor([compra(null, 10, { proveedor: '' }), compra(null, 20, { proveedor: 'X' })]);
     expect(r.filas).toHaveLength(1);
-    expect(r.filas[0]).toMatchObject({ contraparteId: null, proveedor: 'Sin identificar', cantidad: 2, netoArs: 30 });
+    expect(r.filas[0]).toMatchObject({ contraparteId: null, cuit: null, proveedor: 'Sin identificar', cantidad: 2, netoArs: 30 });
+  });
+
+  it('con contraparte, el CUIT extraído no separa grupos', () => {
+    const r = agruparGastoPorProveedor([compra('a', 10, { cuitEmisor: '1' }), compra('a', 10, { cuitEmisor: '2' })]);
+    expect(r.filas).toHaveLength(1);
   });
 });

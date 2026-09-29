@@ -25,14 +25,20 @@ export default async function GastoPorProveedorPage({ params }: { params: { empr
     select: {
       contraparteId: true, moneda: true, tipoCambio: true, tipoComprobante: true, total: true,
       iva21: true, iva105: true, iva27: true, percepcionesIva: true, percepcionesIibb: true, otrosTributos: true,
-      contraparte: { select: { razonSocial: true } },
+      contraparte: { select: { razonSocial: true } }, cuitEmisor: true, extraccionRaw: true,
     },
   });
-  const r = agruparGastoPorProveedor(compras.map((c) => ({ ...c, proveedor: c.contraparte?.razonSocial ?? '' })));
+  // Sin contraparte asignada todavía: el nombre que trae el documento.
+  const r = agruparGastoPorProveedor(compras.map((c) => ({
+    ...c,
+    proveedor: c.contraparte?.razonSocial ?? (c.extraccionRaw as { razonSocialEmisor?: string } | null)?.razonSocialEmisor ?? '',
+  })));
 
-  const drill = (contraparteId?: string) => {
+  // A Comprobantes: por contraparte o, si no está identificada, buscando su CUIT.
+  const drill = (f?: { contraparteId: string | null; cuit: string | null }) => {
     const sp = new URLSearchParams({ desde, hasta });
-    if (contraparteId) sp.set('contraparteId', contraparteId);
+    if (f?.contraparteId) sp.set('contraparteId', f.contraparteId);
+    else if (f?.cuit) sp.set('q', f.cuit);
     return `/${params.empresaSlug}/comprobantes?${sp}`;
   };
   const max = Math.max(...r.filas.map((f) => f.netoArs), 1);
@@ -57,21 +63,24 @@ export default async function GastoPorProveedorPage({ params }: { params: { empr
             <thead>
               <tr>
                 <th>Proveedor</th>
-                <th className="text-right">Comprobantes</th>
-                <th className="text-right">Neto</th>
+                <th className="!text-right">Comprobantes</th>
+                <th className="!text-right">Neto</th>
                 <th className="w-48">% del total</th>
               </tr>
             </thead>
             <tbody>
-              {r.filas.map((f) => (
-                <tr key={f.contraparteId ?? 'sin'}>
-                  <td className="font-medium">{f.proveedor}</td>
-                  <td className="text-right tabular-nums">
-                    {f.contraparteId ? <Link href={drill(f.contraparteId)} className="underline-offset-2 hover:underline">{f.cantidad}</Link> : f.cantidad}
+              {r.filas.map((f) => {
+                const link = f.contraparteId || f.cuit ? drill(f) : null;
+                const celda = (texto: string | number) =>
+                  link ? <Link href={link} className="underline-offset-2 hover:underline" title="Ver los comprobantes">{texto}</Link> : texto;
+                return (
+                <tr key={f.contraparteId ?? f.cuit ?? 'sin'}>
+                  <td className="font-medium">
+                    {f.proveedor}
+                    {!f.contraparteId && f.cuit && <span className="block text-[11px] font-normal text-ink-mute">Sin validar · CUIT {f.cuit}</span>}
                   </td>
-                  <td className="text-right font-mono tabular-nums">
-                    {f.contraparteId ? <Link href={drill(f.contraparteId)} className="underline-offset-2 hover:underline">{formatMoney(f.netoArs)}</Link> : formatMoney(f.netoArs)}
-                  </td>
+                  <td className="num">{celda(f.cantidad)}</td>
+                  <td className="num">{celda(formatMoney(f.netoArs))}</td>
                   <td>
                     <div className="flex items-center gap-2">
                       <div className="h-2 flex-1 rounded-sm bg-line">
@@ -81,21 +90,22 @@ export default async function GastoPorProveedorPage({ params }: { params: { empr
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {r.resto && (
                 <tr className="text-ink-mute">
                   <td>Resto ({r.resto.proveedores} proveedor{r.resto.proveedores > 1 ? 'es' : ''})</td>
-                  <td className="text-right tabular-nums">{r.resto.cantidad}</td>
-                  <td className="text-right font-mono tabular-nums">{formatMoney(r.resto.netoArs)}</td>
+                  <td className="num">{r.resto.cantidad}</td>
+                  <td className="num">{formatMoney(r.resto.netoArs)}</td>
                   <td className="text-right text-[12px] tabular-nums">{pct(r.total.netoArs ? r.resto.netoArs / r.total.netoArs : 0)}</td>
                 </tr>
               )}
             </tbody>
             <tfoot>
               <tr className="font-semibold">
-                <td>Total</td>
-                <td className="text-right tabular-nums"><Link href={drill()} className="underline-offset-2 hover:underline">{r.total.cantidad}</Link></td>
-                <td className="text-right font-mono tabular-nums"><Link href={drill()} className="underline-offset-2 hover:underline">{formatMoney(r.total.netoArs)}</Link></td>
+                <td className="px-3 py-2">Total</td>
+                <td className="num px-3 py-2"><Link href={drill()} className="underline-offset-2 hover:underline">{r.total.cantidad}</Link></td>
+                <td className="num px-3 py-2"><Link href={drill()} className="underline-offset-2 hover:underline">{formatMoney(r.total.netoArs)}</Link></td>
                 <td />
               </tr>
             </tfoot>

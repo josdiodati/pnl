@@ -96,8 +96,10 @@ Tarjeta "Reportes personalizados" debajo de "Usuarios y roles" en
   1. `requireEmpresa(slug, 'ADMINISTRADOR')`.
   2. Parsea el form a un set deseado; descarta pares inválidos (reporte fuera
      de catálogo, usuario no miembro, rol insuficiente).
-  3. `diffHabilitaciones(actual, deseado)` (pura) → `{ altas, bajas }`, sólo
-     sobre reportes del catálogo (las filas huérfanas no se tocan).
+  3. `diffHabilitaciones(actual, deseado, valido)` (pura) → `{ altas, bajas }`,
+     sólo sobre celdas válidas: las filas huérfanas y las de usuarios cuyo rol
+     ya no alcanza (casilla deshabilitada, no viaja en el form) no se borran
+     — si le devuelven el rol, recupera el reporte (R4).
   4. En transacción: `createMany` altas, `deleteMany` bajas, `writeAudit` por
      cada una (`entidad: 'ReporteHabilitado'`, `accion: 'HABILITAR' |
      'DESHABILITAR'`, datos: reporteId + email).
@@ -121,6 +123,11 @@ Tarjeta "Reportes personalizados" debajo de "Usuarios y roles" en
 - Cada monto/cantidad linkea a
   `/comprobantes?contraparteId=<id>&desde=<AAAA-MM-DD>&hasta=<AAAA-MM-DD>`
   (lado compras por defecto).
+- Comprobantes sin contraparte (aún sin validar) se agrupan por el CUIT
+  emisor extraído, con la razón social del documento, marcados "Sin validar ·
+  CUIT …" y con drill-down `?q=<cuit>`. Sólo sin contraparte ni CUIT caen en
+  "Sin identificar" (sin link). Ajuste de la implementación: en la base
+  local los 325 comprobantes pendientes quedaban en una única fila.
 - La agregación es una función pura testeable (`agruparGastoPorProveedor`).
 
 ## Pruebas
