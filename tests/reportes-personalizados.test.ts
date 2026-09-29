@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CATALOGO, reporteDelCatalogo } from '@/lib/reportes-personalizados/catalogo';
 import { puedeVerReporte, diffHabilitaciones, parsearGrilla, type Par } from '@/lib/reportes-personalizados/habilitaciones';
+import { agruparGastoPorProveedor, type CompraAgrupable } from '@/lib/reportes-personalizados/gasto-por-proveedor';
 
 const ID = 'gasto-por-proveedor'; // del catálogo, rol mínimo VALIDADOR
 
@@ -96,5 +97,61 @@ describe('parsearGrilla', () => {
       { reporteId: ID, usuarioId: 'u1' },
       { reporteId: ID, usuarioId: 'u2' },
     ]);
+  });
+});
+
+describe('agruparGastoPorProveedor', () => {
+  const compra = (contraparteId: string | null, total: number, over: Partial<CompraAgrupable> = {}): CompraAgrupable => ({
+    contraparteId,
+    proveedor: contraparteId ? `Prov ${contraparteId}` : 'ACME (sin identificar)',
+    moneda: 'ARS',
+    tipoCambio: null,
+    tipoComprobante: 'FACTURA_A',
+    total,
+    iva21: 0, iva105: 0, iva27: 0, percepcionesIva: 0, percepcionesIibb: 0, otrosTributos: 0,
+    ...over,
+  });
+
+  it('neto = total − IVA − percepciones − otros, agrupado y ordenado', () => {
+    const r = agruparGastoPorProveedor([
+      compra('a', 121, { iva21: 21 }),
+      compra('b', 500),
+      compra('a', 100),
+    ]);
+    expect(r.filas.map((f) => [f.contraparteId, f.cantidad, f.netoArs])).toEqual([
+      ['b', 1, 500],
+      ['a', 2, 200],
+    ]);
+    expect(r.total).toEqual({ cantidad: 3, netoArs: 700 });
+    expect(r.filas[0].pct).toBeCloseTo(500 / 700);
+    expect(r.resto).toBeNull();
+  });
+
+  it('top N + resto', () => {
+    const r = agruparGastoPorProveedor([compra('a', 300), compra('b', 200), compra('c', 100), compra('d', 50)], 2);
+    expect(r.filas.map((f) => f.contraparteId)).toEqual(['a', 'b']);
+    expect(r.resto).toEqual({ proveedores: 2, cantidad: 2, netoArs: 150 });
+    expect(r.total.netoArs).toBe(650);
+  });
+
+  it('nota de crédito resta', () => {
+    const r = agruparGastoPorProveedor([compra('a', 1000), compra('a', 200, { tipoComprobante: 'NOTA_CREDITO_A' })]);
+    expect(r.filas[0].netoArs).toBe(800);
+  });
+
+  it('pesifica moneda extranjera y cuenta aparte la que no tiene tipo de cambio', () => {
+    const r = agruparGastoPorProveedor([
+      compra('a', 10, { moneda: 'USD', tipoCambio: 1000 }),
+      compra('a', 10, { moneda: 'USD', tipoCambio: null }),
+    ]);
+    expect(r.filas[0].netoArs).toBe(10000);
+    expect(r.filas[0].cantidad).toBe(1);
+    expect(r.sinTipoCambio).toBe(1);
+  });
+
+  it('sin contraparte: una sola fila "Sin identificar", sin id', () => {
+    const r = agruparGastoPorProveedor([compra(null, 10), compra(null, 20, { proveedor: 'Otro' })]);
+    expect(r.filas).toHaveLength(1);
+    expect(r.filas[0]).toMatchObject({ contraparteId: null, proveedor: 'Sin identificar', cantidad: 2, netoArs: 30 });
   });
 });
