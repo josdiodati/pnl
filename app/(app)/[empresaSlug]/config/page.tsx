@@ -3,6 +3,7 @@ import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { ROL_LABEL, rolAlcanza } from '@/lib/roles';
 import { CATALOGO } from '@/lib/reportes-personalizados/catalogo';
 import { MES_LABEL } from '@/lib/periodos';
+import { resendHabilitado } from '@/lib/canales/resend';
 import { telegramHabilitado } from '@/lib/canales/telegram';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { formatFechaHora } from '@/lib/format';
@@ -304,7 +305,9 @@ export default async function ConfigPage({
           Dirección de esta empresa: <code className="bg-slate-100 px-1 rounded">{emailEntrante}</code>
         </p>
         <p className="text-xs text-slate-500 mt-1">
-          {emailHabilitado
+          {resendHabilitado()
+            ? 'Habilitado (Resend): mandá o reenviá las facturas a esta dirección; en menos de un minuto entran a Carga como un lote más. Se toman PDF e imágenes (hasta 10 por mail).'
+            : emailHabilitado
             ? 'Webhook habilitado (INBOUND_EMAIL_SECRET configurado). Apuntá tu proveedor (Postmark/SES) a POST /api/inbound-email.'
             : 'Canal deshabilitado: configurá INBOUND_EMAIL_SECRET y un proveedor de email entrante (ver README). Podés probarlo igual con un payload de ejemplo.'}
         </p>

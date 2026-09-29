@@ -182,139 +182,16 @@ git commit -m "feat(resend): cliente mínimo para enviar y listar mails recibido
 
 ---
 
-### Task 2: Alertas de IA también por mail
+### Task 2: Avisos por mail a la casilla relevante (HECHO, f4b4668)
+
+Reemplaza el `ALERTAS_EMAIL` único del borrador por el ruteo de D2.
 
 **Files:**
-- Modify: `lib/ia/alertas.ts` (reemplazar `notificarTelegram` por `notificar(asunto, texto)`)
-- Modify: `.env.example` (documentar `RESEND_API_KEY`, `EMAIL_REMITENTE`, `ALERTAS_EMAIL`)
-- Test: `tests/ia-alertas-mail.test.ts` (archivo nuevo: usa `vi.mock` del módulo, que en ESM es más confiable que `vi.spyOn` sobre el namespace)
-
-**Interfaces:**
-- Consumes: `enviarEmail`, `resendHabilitado` de Task 1.
-- Produces: `notificar(asunto: string, texto: string): Promise<void>` (interno; best-effort, nunca lanza).
-
-- [ ] **Step 1: Write the failing test**
-
-```ts
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
-import Anthropic from '@anthropic-ai/sdk';
-import { prisma } from '@/lib/db';
-import { enqueueJob } from '@/lib/jobs';
-
-const enviarEmail = vi.fn();
-vi.mock('@/lib/canales/resend', () => ({ enviarEmail, resendHabilitado: () => true }));
-const { registrarFalloJob, resolverAlertasIa, alertasIaActivas } = await import('@/lib/ia/alertas');
-
-const sinCredito = () =>
-  Anthropic.APIError.generate(400, { type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' } }, undefined, { 'request-id': 'req_mail' } as never);
-const jobs: string[] = [];
-async function jobEnProceso() {
-  const j = await enqueueJob('EXTRACCION', { test: 'ia-alertas-mail' });
-  jobs.push(j.id);
-  return prisma.job.update({ where: { id: j.id }, data: { estado: 'processing', intentos: 1 } });
-}
-
-beforeEach(async () => {
-  enviarEmail.mockReset();
-  process.env.ALERTAS_EMAIL = 'a@x.com, b@x.com';
-  await prisma.alertaSistema.deleteMany({ where: { origen: 'IA' } });
-});
-afterAll(async () => {
-  delete process.env.ALERTAS_EMAIL;
-  await prisma.alertaSistema.deleteMany({ where: { origen: 'IA' } });
-  await prisma.job.deleteMany({ where: { id: { in: jobs } } });
-});
-
-describe('aviso por mail', () => {
-  it('una alerta nueva manda un mail a ALERTAS_EMAIL con el código en el asunto', async () => {
-    enviarEmail.mockResolvedValue(undefined);
-    await registrarFalloJob(await jobEnProceso(), sinCredito());
-    expect(enviarEmail).toHaveBeenCalledOnce();
-    const m = enviarEmail.mock.calls[0][0];
-    expect(m.to).toEqual(['a@x.com', 'b@x.com']);
-    expect(m.subject).toMatch(/SIN_CREDITO/);
-    expect(m.text).toMatch(/console\.anthropic\.com/);
-  });
-
-  it('la misma alerta repetida no vuelve a mandar mail', async () => {
-    enviarEmail.mockResolvedValue(undefined);
-    await registrarFalloJob(await jobEnProceso(), sinCredito());
-    await registrarFalloJob(await jobEnProceso(), sinCredito());
-    expect(enviarEmail).toHaveBeenCalledOnce();
-  });
-
-  it('si el mail falla, la alerta queda registrada igual', async () => {
-    enviarEmail.mockRejectedValue(new Error('Resend 500'));
-    await registrarFalloJob(await jobEnProceso(), sinCredito());
-    expect((await alertasIaActivas())[0].codigo).toBe('SIN_CREDITO');
-  });
-
-  it('al resolverse avisa por mail', async () => {
-    enviarEmail.mockResolvedValue(undefined);
-    await registrarFalloJob(await jobEnProceso(), sinCredito());
-    await resolverAlertasIa();
-    expect(enviarEmail).toHaveBeenCalledTimes(2);
-    expect(enviarEmail.mock.calls[1][0].subject).toMatch(/volvió a funcionar/);
-  });
-});
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `npx vitest run tests/ia-alertas-mail.test.ts`
-Expected: FAIL — `expected "spy" to be called once, but got 0 times`
-
-- [ ] **Step 3: Implementation** — en `lib/ia/alertas.ts`:
-
-```ts
-import { enviarEmail, resendHabilitado } from '@/lib/canales/resend';
-
-const lista = (v: string | undefined) => (v ?? '').split(',').map((c) => c.trim()).filter(Boolean);
-
-/** Aviso fuera de la app (mail y/o Telegram). Best-effort: nunca lanza. */
-async function notificar(asunto: string, texto: string): Promise<void> {
-  const correos = lista(process.env.ALERTAS_EMAIL);
-  if (correos.length && resendHabilitado()) {
-    try {
-      await enviarEmail({ to: correos, subject: asunto, text: texto });
-    } catch (err) {
-      console.error('[alertas] no se pudo avisar por mail:', err instanceof Error ? err.message : err);
-    }
-  }
-  for (const chat of lista(process.env.ALERTAS_TELEGRAM_CHAT_ID)) {
-    try {
-      await responder(chat, `${asunto}\n\n${texto}`);
-    } catch (err) {
-      console.error('[alertas] no se pudo avisar por Telegram:', err instanceof Error ? err.message : err);
-    }
-  }
-}
-```
-
-y los dos llamados:
-
-```ts
-// en registrarAlertaIa (alerta nueva)
-await notificar(
-  `⚠️ P&L Manager: extracción con IA con problemas (${e.codigo})`,
-  `${e.titulo}\n\nQué hacer: ${e.accion}\n\nRespuesta de la API:\n${mensaje}\n\nLos documentos quedan en espera y se procesan solos cuando se resuelva.`,
-);
-// en resolverAlertasIa
-await notificar(`✅ P&L Manager: la extracción con IA volvió a funcionar`, `Se resolvió: ${codigos}.`);
-```
-
-En `.env.example`, debajo de `ANTHROPIC_API_KEY`:
-
-```
-# Resend (mails): avisos salientes y recepción de facturas en comprobantes+{empresa}@<dominio>
-RESEND_API_KEY=
-EMAIL_REMITENTE="P&L Manager <avisos@ledger.ar>"
-# Casillas que reciben las alertas del sistema (separadas por coma)
-ALERTAS_EMAIL=
-```
-
-- [ ] **Step 4: Run tests** — `npx vitest run tests/ia-alertas-mail.test.ts tests/ia-alertas.test.ts` → PASS (4 + 7 tests)
-- [ ] **Step 5: Commit** — `git commit -am "feat(alertas): las alertas de IA también llegan por mail (Resend)"`
+- Create: `lib/notificaciones.ts` — `type Destino = {tipo:'APP'} | {tipo:'EMPRESA', empresaId} | {tipo:'USUARIO', usuarioId}`; `destinatarios(d)`, `notificar(destinos, asunto, texto)` (junta casillas sin repetir, best-effort, firma con `APP_URL`), `notificarErrorCarga(tipoJob, payload, error)`.
+- Modify: `lib/ia/alertas.ts` — las alertas de IA avisan con `notificar({tipo:'APP'})` (+ Telegram opcional) al abrirse y al resolverse.
+- Modify: `worker.ts` — cuando un job de extracción (comprobante, resumen, recibo) termina con error final, `notificarErrorCarga` al que lo cargó.
+- Modify: `lib/arca/mis-comprobantes/service.ts` — clave bloqueada en el sync automático (sin `usuarioId`) avisa a los admins; el 3.er error seguido del portal avisa a admins + owner, una sola vez.
+- Tests: `tests/notificaciones.test.ts` (10), `tests/ia-alertas-mail.test.ts` (4), `tests/arca-avisos.test.ts` (3).
 
 ---
 
@@ -488,7 +365,7 @@ Nota: `slugDesdeDireccion` ya pasa a minúsculas, así que `Comprobantes+Kawellu
 **Files:**
 - Modify: `worker.ts` (`correrProgramador`)
 - Modify: `app/(app)/[empresaSlug]/config/page.tsx:~300` (texto del canal de email)
-- Modify: `.env` de pnlvm: `INBOUND_EMAIL_DOMAIN=ledger.ar`, `ALERTAS_EMAIL=<D2>`
+- Modify: `.env` de pnlvm: `INBOUND_EMAIL_DOMAIN=ledger.ar`, `APP_OWNER_EMAIL=jdiodati@kawellu.com.ar`
 
 **Interfaces:**
 - Consumes: `sincronizarRecibidos` (Task 3), `resendHabilitado` (Task 1).
@@ -512,8 +389,8 @@ con los imports `import { sincronizarRecibidos } from '@/lib/canales/resend-entr
 
 - [ ] **Step 3: Verificar** — `npx tsc --noEmit -p .`, `npx vitest run` (todo verde salvo `empleados-pdf.test.ts`, que necesita un PDF gitignoreado), `npm run build`.
 
-- [ ] **Step 4: Commit y deploy** — commit; deploy con el runbook de pnlvm (rsync + build + restart, sin `prisma db push`: no hay cambio de schema); agregar `INBOUND_EMAIL_DOMAIN=ledger.ar` y `ALERTAS_EMAIL` al `.env` de pnlvm; `systemctl restart pnl-worker`.
+- [ ] **Step 4: Commit y deploy** — commit; deploy con el runbook de pnlvm (rsync + build + restart, sin `prisma db push`: no hay cambio de schema); agregar `INBOUND_EMAIL_DOMAIN=ledger.ar` y `APP_OWNER_EMAIL` al `.env` de pnlvm; `systemctl restart pnl-worker`.
 
 - [ ] **Step 5: Prueba punta a punta (con el usuario)**
-  1. Mail de prueba de alertas: desde pnlvm, `npx tsx` con `enviarEmail({ to: ALERTAS_EMAIL, subject: 'Prueba P&L', text: 'ok' })` → llega a la casilla (revisar spam la primera vez).
+  1. Mail de prueba de alertas: desde pnlvm, `npx tsx` con `notificar({ tipo: 'APP' }, 'Prueba P&L', 'ok')` → llega a la casilla (revisar spam la primera vez).
   2. Con el MX ya verificado: el usuario manda una factura PDF a `comprobantes+ewwo@ledger.ar` → en ≤ 1 min `journalctl -u pnl-worker` muestra `mails de Resend: 1 encolado(s)` y aparece un lote con canal EMAIL en /ewwo/carga.

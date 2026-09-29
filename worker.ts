@@ -4,6 +4,8 @@
 import { claimNextJob, completeJob } from '@/lib/jobs';
 import { registrarFalloJob, resolverAlertasIa, verificarConfiguracionIa, TIPOS_JOB_IA } from '@/lib/ia/alertas';
 import { notificarErrorCarga } from '@/lib/notificaciones';
+import { sincronizarRecibidos } from '@/lib/canales/resend-entrante';
+import { resendHabilitado } from '@/lib/canales/resend';
 import { procesarExtraccion, procesarArca, marcarErrorProcesamiento } from '@/lib/pipeline';
 import { procesarEmailEntrante } from '@/lib/canales/email';
 import { procesarUpdateTelegram } from '@/lib/canales/telegram';
@@ -80,7 +82,7 @@ async function procesarJob(): Promise<boolean> {
 const PROGRAMADOR_MS = 60_000;
 let ultimoProgramador = 0;
 
-/** Tareas programadas (sync diario de Mis Comprobantes a las 06:30 AR): se revisan una vez por minuto. */
+/** Tareas programadas (sync diario de Mis Comprobantes a las 06:30 AR, mails entrantes de Resend): se revisan una vez por minuto. */
 async function correrProgramador(): Promise<void> {
   if (Date.now() - ultimoProgramador < PROGRAMADOR_MS) return;
   ultimoProgramador = Date.now();
@@ -89,6 +91,15 @@ async function correrProgramador(): Promise<void> {
     if (n > 0) console.log(`[worker] programador: ${n} sync(s) de Mis Comprobantes encolado(s)`);
   } catch (err) {
     console.error('[worker] programador falló:', err instanceof Error ? err.message : err);
+  }
+  // Facturas por mail (Resend), por polling: Cloudflare Access no deja entrar webhooks.
+  if (resendHabilitado()) {
+    try {
+      const r = await sincronizarRecibidos();
+      if (r.encolados || r.ignorados) console.log(`[worker] mails de Resend: ${r.encolados} encolado(s), ${r.ignorados} ignorado(s)`);
+    } catch (err) {
+      console.error('[worker] recepción de mails (Resend) falló:', err instanceof Error ? err.message : err);
+    }
   }
 }
 
