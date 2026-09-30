@@ -7,6 +7,11 @@ import { isDomainError, isForbidden } from '@/lib/errors';
 import { asignarMovimiento } from '@/lib/movimientos/service';
 import { guardarReglaDesdeAsignacion } from '@/lib/reglas/guardar-desde-asignacion';
 import { nombreContraparte, cuitContraparteDe } from '@/lib/movimientos/nombre-contraparte';
+import { vincularMovimiento } from '@/lib/empleados/service';
+import { esCategoriaAdicionalesSalario } from '@/lib/empleados/vinculos';
+import { rolAlcanza } from '@/lib/roles';
+import { parsearImporteAr } from '@/lib/format';
+import { DomainError } from '@/lib/errors';
 
 function leerLineas(formData: FormData) {
   const ccIds = formData.getAll('linea_centroCostoId').map(String);
@@ -37,7 +42,26 @@ export async function asignarAction(formData: FormData): Promise<void> {
 
   try {
     const ctx = await requireEmpresa(slug, 'VALIDADOR');
+
+    // Adicional de salario con empleado elegido (sólo ADMINISTRADOR, como
+    // toda la sección Empleados). El monto se valida ANTES de asignar para no
+    // dejar el comprobante asignado sin su vínculo.
+    let empleadoId = String(formData.get('empleadoId') ?? '') || null;
+    let montoEmpleado: number | null = null;
+    if (empleadoId) {
+      const categoria = await ctx.db.categoria.findFirst({ where: { id: categoriaId } });
+      if (!esCategoriaAdicionalesSalario(categoria?.nombre)) empleadoId = null; // cambió de categoría
+      else if (!rolAlcanza(ctx.rol, 'ADMINISTRADOR')) throw new DomainError('Sólo un administrador puede vincular el comprobante a un empleado.');
+      else {
+        montoEmpleado = parsearImporteAr(String(formData.get('montoEmpleado') ?? '')) ?? null;
+        if (montoEmpleado == null || !(montoEmpleado > 0)) throw new DomainError('Indicá el monto a vincular al empleado.');
+      }
+    }
+
     await asignarMovimiento(ctx, movimientoId, { categoriaId, lineas });
+    if (empleadoId && montoEmpleado != null) {
+      await vincularMovimiento(ctx, { movimientoId, empleadoId, monto: montoEmpleado });
+    }
 
     // La regla es un extra opt-in: se guarda DESPUÉS de asignar y nunca deshace
     // la asignación si falla.
@@ -56,6 +80,7 @@ export async function asignarAction(formData: FormData): Promise<void> {
         canal: String(formData.get('reglaCanal') ?? '') || null,
         cargadoPorId: String(formData.get('reglaCargadoPorId') ?? '') || null,
         nombre: String(formData.get('reglaNombre') ?? '').trim() || null,
+        empleadoId,
       });
       if (resultado.ok) mensajeRegla = ` — ${resultado.mensaje}`;
       else avisoRegla = resultado.mensaje;

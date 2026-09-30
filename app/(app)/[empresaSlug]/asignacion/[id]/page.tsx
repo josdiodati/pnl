@@ -8,6 +8,10 @@ import { DistribucionEditor } from '@/components/distribucion-editor';
 import { ErrorBanner, OkBanner, AvisoBanner } from '@/components/error-banner';
 import { ArcaBadge } from '@/components/badges';
 import { ReglaDesdeAsignacion } from '@/components/regla-desde-asignacion';
+import { EmpleadoAdicionalSalario } from '@/components/empleado-adicional-salario';
+import { esCategoriaAdicionalesSalario, montoVinculableDe } from '@/lib/empleados/vinculos';
+import { rolAlcanza } from '@/lib/roles';
+import { MES_LABEL } from '@/lib/periodos';
 import { HistorialComprobante } from '@/components/historial-comprobante';
 import { buscarReglasPorCuit } from '@/lib/reglas/guardar-desde-asignacion';
 import { describirCondiciones } from '@/lib/reglas/desde-asignacion';
@@ -31,7 +35,7 @@ export default async function AsignacionDetallePage({
 
   const mov = await ctx.db.movimiento.findFirst({
     where: { id: params.id },
-    include: { contraparte: true, categoria: true, lineas: true },
+    include: { contraparte: true, categoria: true, lineas: true, periodo: true, vinculosEmpleados: true },
   });
   if (!mov) notFound();
   if (mov.estado !== 'VALIDADO' && mov.estado !== 'ASIGNADO') notFound();
@@ -47,6 +51,13 @@ export default async function AsignacionDetallePage({
     prisma.usuarioEmpresa.findMany({ where: { empresaId: ctx.empresa.id }, include: { usuario: { select: { id: true, nombre: true, email: true } } }, orderBy: { usuario: { nombre: 'asc' } } }),
   ]);
   const miembrosRegla = miembros.map((m) => ({ id: m.usuario.id, nombre: m.usuario.nombre || m.usuario.email }));
+  // Empleados (sólo ADMINISTRADOR, como toda la sección): para vincular un
+  // adicional de salario al asignar.
+  const puedeVincularEmpleado = rolAlcanza(ctx.rol, 'ADMINISTRADOR');
+  const empleadosActivos = puedeVincularEmpleado
+    ? await ctx.db.empleado.findMany({ where: { fechaEgreso: null }, orderBy: { nombre: 'asc' }, select: { id: true, nombre: true } })
+    : [];
+  const categoriasAdicionales = categorias.filter((c) => esCategoriaAdicionalesSalario(c.nombre)).map((c) => c.id);
 
   const tfCents = totalFirmadoDe(mov as never);
   const totalFirmado = tfCents != null ? tfCents / 100 : null;
@@ -54,6 +65,7 @@ export default async function AsignacionDetallePage({
   // Si el movimiento llega sin líneas, una regla de preasignación puede pre-llenar
   // la asignación (categoría + líneas). Es sólo un default editable.
   let reglaAplicada: string | null = null;
+  let empleadoDeRegla: string | null = null;
   let sugerida: Awaited<ReturnType<typeof resolverAsignacionDeRegla>> | null = null;
   if (mov.lineas.length === 0) {
     const raw = mov.extraccionRaw as { razonSocialEmisor?: string; razonSocialReceptor?: string } | null;
@@ -67,6 +79,7 @@ export default async function AsignacionDetallePage({
     if (regla) {
       sugerida = await resolverAsignacionDeRegla(ctx.db, regla);
       reglaAplicada = regla.nombre;
+      empleadoDeRegla = regla.empleadoId ?? null;
     }
   }
 
@@ -173,6 +186,20 @@ export default async function AsignacionDetallePage({
                 ))}
               </select>
             </div>
+
+            {puedeVincularEmpleado && categoriasAdicionales.length > 0 && (
+              <EmpleadoAdicionalSalario
+                selectId="categoriaId"
+                categoriasIds={categoriasAdicionales}
+                empleados={empleadosActivos}
+                empleadoInicial={mov.vinculosEmpleados[0]?.empleadoId ?? empleadoDeRegla}
+                montoInicial={(() => {
+                  const m = mov.vinculosEmpleados[0] ? Number(mov.vinculosEmpleados[0].monto) : montoVinculableDe(mov);
+                  return m != null ? m.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+                })()}
+                periodo={mov.periodo ? `${MES_LABEL[mov.periodo.mes]} ${mov.periodo.anio}` : null}
+              />
+            )}
 
             {/* Distribution editor */}
             <DistribucionEditor

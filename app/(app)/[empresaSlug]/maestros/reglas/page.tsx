@@ -14,7 +14,7 @@ export default async function ReglasPage({
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const [reglas, miembros, categorias, plantillas, centros, clientes, proyectos, contrapartes] =
     await Promise.all([
-      ctx.db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }, { nombre: 'asc' }] }),
+      ctx.db.reglaAsignacion.findMany({ orderBy: [{ prioridad: 'asc' }, { nombre: 'asc' }], include: { empleado: { select: { nombre: true } } } }),
       ctx.db.usuarioEmpresa.findMany({
         where: { empresaId: ctx.empresa.id },
         include: { usuario: true },
@@ -246,6 +246,7 @@ export default async function ReglasPage({
               } else if (cat) {
                 const extra = dist ? dist.nombre : cc ? cc.nombre : null;
                 accionLabel = extra ? `${cat.nombre} / ${extra}` : cat.nombre;
+                if (r.empleado) accionLabel += ` → empleado ${r.empleado.nombre}`;
               }
 
               return (

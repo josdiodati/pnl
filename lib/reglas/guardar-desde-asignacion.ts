@@ -20,6 +20,8 @@ export type ParametrosReglaDesdeAsignacion = {
   canal?: string | null;
   cargadoPorId?: string | null;
   nombre: string | null;
+  /** Adicionales de salario: el empleado al que la regla vincula lo que asigne. */
+  empleadoId?: string | null;
 };
 
 /** Reglas de imputación vigentes para ese CUIT (puede haber varias), en el
@@ -61,6 +63,9 @@ export async function guardarReglaDesdeAsignacion(
       ? await prisma.usuarioEmpresa.findFirst({ where: { empresaId: ctx.empresa.id, usuarioId: cargadoPorId }, include: { usuario: { select: { nombre: true, email: true } } } })
       : null;
     if (cargadoPorId && !miembro) return falla('No se creó la regla: el usuario elegido no pertenece a la empresa.');
+    const empleado = p.empleadoId ? await ctx.db.empleado.findFirst({ where: { id: p.empleadoId } }) : null;
+    if (p.empleadoId && !empleado) return falla('No se creó la regla: el empleado elegido no existe.');
+    const avisoEmpleado = empleado ? `; vincula al empleado ${empleado.nombre}` : '';
 
     const decision = construirReglaDesdeAsignacion({
       cuit: p.cuit,
@@ -117,7 +122,7 @@ export async function guardarReglaDesdeAsignacion(
     const reglas = await ctx.db.reglaAsignacion.findMany();
     const existente = reglaEquivalente(reglas, decision.regla);
     const prioridad = existente ? null : prioridadParaEspecifica(reglas, decision.regla);
-    const datos = { ...decision.regla, accion: 'ASIGNAR', ...(prioridad != null ? { prioridad } : {}) };
+    const datos = { ...decision.regla, accion: 'ASIGNAR', empleadoId: empleado?.id ?? null, ...(prioridad != null ? { prioridad } : {}) };
 
     if (existente) {
       await ctx.db.reglaAsignacion.update({ where: { id: existente.id }, data: datos as never });
@@ -130,7 +135,7 @@ export async function guardarReglaDesdeAsignacion(
         despues: { ...datos, desdeAsignacion: true },
       });
       plantillaCreadaId = null;
-      return { ok: true, mensaje: `regla «${decision.regla.nombre}» actualizada${avisoPlantilla}` };
+      return { ok: true, mensaje: `regla «${decision.regla.nombre}» actualizada${avisoPlantilla}${avisoEmpleado}` };
     }
 
     const creada = await ctx.db.reglaAsignacion.create({ data: datos as never });
@@ -145,8 +150,8 @@ export async function guardarReglaDesdeAsignacion(
     return {
       ok: true,
       mensaje: prioridad != null
-        ? `regla «${decision.regla.nombre}» creada${avisoPlantilla}; se evalúa antes que las reglas más generales de este emisor`
-        : `regla «${decision.regla.nombre}» creada${avisoPlantilla}`,
+        ? `regla «${decision.regla.nombre}» creada${avisoPlantilla}${avisoEmpleado}; se evalúa antes que las reglas más generales de este emisor`
+        : `regla «${decision.regla.nombre}» creada${avisoPlantilla}${avisoEmpleado}`,
     };
   } catch {
     // Nombre repetido (unique empresaId+nombre) o cualquier otro fallo: la

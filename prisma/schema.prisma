@@ -281,12 +281,12 @@ model PlantillaRecurrente {
 
 // Regla de preasignación: condiciones (AND) -> acción (categoría + distribución)
 model ReglaAsignacion {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   empresaId      String
   nombre         String
-  prioridad      Int      @default(100) // menor = se evalúa primero
-  activa         Boolean  @default(true)
-  accion         String   @default("ASIGNAR") // ASIGNAR | OBSERVAR (descarta a Observado)
+  prioridad      Int       @default(100) // menor = se evalúa primero
+  activa         Boolean   @default(true)
+  accion         String    @default("ASIGNAR") // ASIGNAR | OBSERVAR (descarta a Observado)
   cargadoPorId   String?
   cuit           String?
   canal          String?
@@ -296,9 +296,13 @@ model ReglaAsignacion {
   centroCostoId  String?
   clienteId      String?
   proyectoId     String?
-  empresa        Empresa  @relation(fields: [empresaId], references: [id])
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  // Adicionales de salario: el comprobante que asigna esta regla se vincula a
+  // este empleado (monto = neto gravado, período = el del comprobante).
+  empleadoId     String?
+  empleado       Empleado? @relation(fields: [empleadoId], references: [id], onDelete: SetNull)
+  empresa        Empresa   @relation(fields: [empresaId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@unique([empresaId, nombre])
 }
@@ -737,6 +741,7 @@ model Empleado {
   costosManuales CostoManualEmpleado[]
   prepagas       PrepagaEmpleado[]
   vinculos       MovimientoEmpleado[]
+  reglas         ReglaAsignacion[]
   createdAt      DateTime                    @default(now())
 
   @@unique([empresaId, cuil])

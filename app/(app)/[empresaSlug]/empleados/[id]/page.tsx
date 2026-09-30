@@ -6,6 +6,7 @@ import { formatMoney, formatFecha } from '@/lib/format';
 import { formatearCuit } from '@/lib/checks/cuit';
 import { DistribucionEditor } from '@/components/distribucion-editor';
 import { OkBanner } from '@/components/error-banner';
+import { BuscadorComprobanteEmpleado } from '@/components/buscador-comprobante-empleado';
 import {
   guardarFichaAction, guardarDistribucionAction, vincularAction, desvincularAction,
   agregarCostoManualAction, eliminarCostoManualAction,
@@ -32,16 +33,10 @@ export default async function EmpleadoPage({
   });
   if (!empleado) notFound();
 
-  const [centros, clientes, proyectos, movimientosVinculables] = await Promise.all([
+  const [centros, clientes, proyectos] = await Promise.all([
     ctx.db.centroCosto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.cliente.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
     ctx.db.proyecto.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
-    ctx.db.movimiento.findMany({
-      where: { estado: 'ASIGNADO', total: { not: null } },
-      include: { contraparte: true },
-      orderBy: [{ fechaDevengamiento: 'desc' }],
-      take: 100,
-    }),
   ]);
 
   // Historial: recibos confirmados + vinculados, agrupados por período.
@@ -252,7 +247,7 @@ export default async function EmpleadoPage({
 
       <div className="card p-3 space-y-3">
         <p className="text-sm font-medium">Comprobantes vinculados</p>
-        <p className="text-xs text-slate-500">La porción vinculada computa como costo de este empleado (con su distribución) y se descuenta del gasto general del libro.</p>
+        <p className="text-xs text-slate-500">La porción vinculada computa como costo de este empleado (con su distribución) en el período del comprobante, y se descuenta del gasto general del libro. Por defecto se vincula el neto gravado (sin IVA ni percepciones).</p>
         {empleado.vinculos.map((v) => (
           <form key={v.id} action={desvincularAction} className="flex items-center gap-2 text-sm">
             <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
@@ -260,6 +255,7 @@ export default async function EmpleadoPage({
             <input type="hidden" name="movimientoId" value={v.movimientoId} />
             <span className="grow">
               {v.movimiento.contraparte?.razonSocial ?? v.movimiento.descripcion ?? v.movimientoId} · {formatFecha(v.movimiento.fechaDevengamiento)} · total {formatMoney(v.movimiento.total ? Number(v.movimiento.total) : null)}
+              {v.movimiento.periodo && <span className="text-slate-500"> · período {MES_LABEL[v.movimiento.periodo.mes]} {v.movimiento.periodo.anio}</span>}
             </span>
             <span className="num font-medium">{formatMoney(Number(v.monto))}</span>
             <button className="btn-secondary text-xs" disabled={v.movimiento.periodo?.estado === 'CERRADO'}>Quitar</button>
@@ -269,21 +265,7 @@ export default async function EmpleadoPage({
         <form action={vincularAction} className="flex flex-wrap items-end gap-2">
           <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
           <input type="hidden" name="empleadoId" value={empleado.id} />
-          <div className="grow min-w-64">
-            <label className="label">Comprobante (asignados recientes)</label>
-            <select name="movimientoId" className="input text-sm">
-              {movimientosVinculables.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.contraparte?.razonSocial ?? m.descripcion ?? m.id} · {m.fechaDevengamiento?.toISOString().slice(0, 10) ?? ''} · ${Number(m.total).toLocaleString('es-AR')}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Monto vinculado ($)</label>
-            <input name="monto" className="input text-sm w-36" placeholder="0,00" />
-          </div>
-          <button className="btn-primary text-sm">Vincular</button>
+          <BuscadorComprobanteEmpleado empresaSlug={params.empresaSlug} />
         </form>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { vincularPorRegla } from '@/lib/empleados/vinculos';
 import { prisma } from '@/lib/db';
 import { scopedDb } from '@/lib/empresa/scope';
 import { getFileStorage } from '@/lib/storage';
@@ -391,6 +392,7 @@ export async function procesarExtraccion(
   // matcheó (condiciones) y qué imputación resolvió.
   type ReglaInfo = { id: string; nombre: string; condiciones: CondicionRegla[]; categoriaId?: string | null };
   let reglaAplicada: ReglaInfo | null = null;
+  let empleadoDeRegla: string | null = null; // adicionales de salario: vínculo automático
   const auto = evaluarAutovalidacion({
     qrEstado,
     esComprobanteFiscalArg: !!extraccion.esComprobanteFiscalArg,
@@ -436,6 +438,7 @@ export async function procesarExtraccion(
       categoriaEfectiva = asign.categoriaId;
       lineasEfectivas = asign.lineas;
       reglaAplicada = { id: regla.id, nombre: regla.nombre, condiciones: condicionesDeMatch(regla), categoriaId: asign.categoriaId };
+      empleadoDeRegla = regla.empleadoId ?? null;
       flags.reglaPreasignacion = regla.nombre; // marcador para la vista de Validación
     }
   }
@@ -539,6 +542,11 @@ export async function procesarExtraccion(
       accion: estadoFinalReal === 'ASIGNADO' ? 'AUTO_ASIGNAR' : 'AUTO_VALIDAR',
       despues: { estado: estadoFinalReal, regla: reglaAplicada, chequeos: auto.aprobados, lineas: lineasEfectivas },
     });
+    // Regla con empleado (adicionales de salario): si quedó asignado, se
+    // vincula solo por el neto gravado. Best-effort: nunca frena la ingesta.
+    if (estadoFinalReal === 'ASIGNADO' && empleadoDeRegla && reglaAplicada) {
+      await vincularPorRegla(db, { movimientoId: mov.id, empleadoId: empleadoDeRegla, regla: reglaAplicada.nombre }).catch(() => false);
+    }
   } else if (estadoFinalReal === 'DUPLICADO') {
     await writeAudit(db, {
       entidad: 'Movimiento',
