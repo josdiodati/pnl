@@ -1,14 +1,14 @@
 import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
-import { rolAlcanza } from '@/lib/roles';
 import { mesesDeEjercicio, ejercicioDeMes, MES_LABEL } from '@/lib/periodos';
 import { signoMovimiento } from '@/lib/movimientos/signo';
 import { formatMoneyFirmado } from '@/lib/format';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
-import { cerrarPeriodoAction, reabrirPeriodoAction } from './actions';
+import { estadoCierre, claveMes } from '@/lib/periodos/cierre';
 
-// Fiscal-year grid: 12 months with state, validated totals and close/reopen
-// actions by role (doc 07).
+// Fiscal-year grid: 12 months with state, validated totals and a summary of
+// what's left to resolve (lib/periodos/cierre). Closing and reopening happen
+// in each month's detail (/periodos/AAAA-MM).
 export default async function PeriodosPage({
   params,
   searchParams,
@@ -17,7 +17,6 @@ export default async function PeriodosPage({
   searchParams: { ejercicio?: string; error?: string; ok?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
-  const esAdmin = rolAlcanza(ctx.rol, 'ADMINISTRADOR');
   const inicio = ctx.empresa.inicioEjercicioFiscal;
 
   const hoy = new Date();
@@ -28,7 +27,7 @@ export default async function PeriodosPage({
   const desde = new Date(Date.UTC(meses[0].anio, meses[0].mes - 1, 1));
   const hasta = new Date(Date.UTC(meses[11].anio, meses[11].mes, 1));
 
-  const [periodos, asignados, pendientes, pendientesPorPeriodo] = await Promise.all([
+  const [periodos, asignados, cierre] = await Promise.all([
     ctx.db.periodo.findMany({
       where: { OR: meses.map((m) => ({ anio: m.anio, mes: m.mes })) },
     }),
@@ -36,18 +35,7 @@ export default async function PeriodosPage({
       where: { estado: 'ASIGNADO', fechaDevengamiento: { gte: desde, lt: hasta } },
       include: { categoria: true },
     }),
-    ctx.db.movimiento.findMany({
-      where: {
-        estado: { in: ['PENDIENTE_VALIDACION', 'OBSERVADO', 'RETENIDO', 'VALIDADO'] },
-        fechaDevengamiento: { gte: desde, lt: hasta },
-      },
-      select: { id: true, estado: true, fechaDevengamiento: true, descripcion: true },
-    }),
-    ctx.db.reciboSueldo.groupBy({
-      by: ['periodoId'],
-      where: { estado: 'PENDIENTE_REVISION' },
-      _count: { id: true },
-    }),
+    estadoCierre(ctx.db, ctx.empresa.id, meses),
   ]);
 
   const clave = (a: number, m: number) => `${a}-${m}`;
@@ -57,12 +45,6 @@ export default async function PeriodosPage({
     const signo = signoMovimiento(mov.categoria.tipo, mov.tipoComprobante);
     const k = clave(mov.fechaDevengamiento.getUTCFullYear(), mov.fechaDevengamiento.getUTCMonth() + 1);
     totalPorMes.set(k, (totalPorMes.get(k) ?? 0) + signo * Math.round(Number(mov.total) * 100));
-  }
-  const pendPorMes = new Map<string, typeof pendientes>();
-  for (const p of pendientes) {
-    if (!p.fechaDevengamiento) continue;
-    const k = clave(p.fechaDevengamiento.getUTCFullYear(), p.fechaDevengamiento.getUTCMonth() + 1);
-    pendPorMes.set(k, [...(pendPorMes.get(k) ?? []), p]);
   }
 
   return (
@@ -97,14 +79,8 @@ export default async function PeriodosPage({
               const periodo = periodos.find((p) => p.anio === anio && p.mes === mes);
               const cerrado = periodo?.estado === 'CERRADO';
               const total = totalPorMes.get(k) ?? 0;
-              const pend = pendPorMes.get(k) ?? [];
-              const porValidar = pend.filter((p) => p.estado === 'PENDIENTE_VALIDACION' || p.estado === 'OBSERVADO').length;
-              const porAsignar = pend.filter((p) => p.estado === 'VALIDADO').length;
-              const retenidos = pend.filter((p) => p.estado === 'RETENIDO').length;
-              const bloqueantes = porValidar + porAsignar + retenidos;
-              const pendRecibos = periodo
-                ? pendientesPorPeriodo.find((p) => p.periodoId === periodo.id)?._count.id ?? 0
-                : 0;
+              const e = cierre.get(claveMes(anio, mes))!;
+              const detalle = `/${params.empresaSlug}/periodos/${anio}-${String(mes).padStart(2, '0')}`;
               return (
                 <tr key={k} className={cerrado ? 'bg-slate-50' : ''}>
                   <td className="font-medium whitespace-nowrap">{MES_LABEL[mes]} {anio}</td>
@@ -116,50 +92,21 @@ export default async function PeriodosPage({
                   <td className={`num font-medium ${total < 0 ? 'text-red-700' : total > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
                     {formatMoneyFirmado(total)}
                   </td>
-                  <td className="text-sm space-x-2">
-                    {porValidar > 0 && (
-                      <Link href={`/${params.empresaSlug}/validacion`} className="text-amber-700 underline">
-                        {porValidar} por validar
+                  <td className="text-sm">
+                    {e.bloqueantes > 0 && (
+                      <Link href={detalle} className="text-red-700 underline mr-2">
+                        {e.bloqueantes} comprobante{e.bloqueantes !== 1 ? 's' : ''} sin resolver
                       </Link>
                     )}
-                    {porAsignar > 0 && (
-                      <Link href={`/${params.empresaSlug}/asignacion`} className="text-amber-700 underline">
-                        {porAsignar} por asignar
+                    {e.advertencias > 0 && (
+                      <Link href={detalle} className="text-amber-700 underline">
+                        {e.advertencias} tema{e.advertencias !== 1 ? 's' : ''} para revisar
                       </Link>
                     )}
-                    {retenidos > 0 && (
-                      <span className="text-orange-700">{retenidos} retenido{retenidos !== 1 ? 's' : ''}</span>
-                    )}
-                    {bloqueantes === 0 && pendRecibos === 0 && <span className="text-slate-400">—</span>}
-                    {pendRecibos > 0 && (
-                      <p className="text-[11px] text-amber-700">
-                        ⚠ {pendRecibos} recibo{pendRecibos !== 1 ? 's' : ''} de sueldo pendiente{pendRecibos !== 1 ? 's' : ''} de revisión: se pueden confirmar después sólo reabriendo el período.
-                      </p>
-                    )}
+                    {e.bloqueantes === 0 && e.advertencias === 0 && <span className="text-emerald-700">✓</span>}
                   </td>
                   <td className="text-right whitespace-nowrap">
-                    {!cerrado ? (
-                      <form action={cerrarPeriodoAction} className="inline">
-                        <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
-                        <input type="hidden" name="ejercicio" value={String(ejercicio)} />
-                        <input type="hidden" name="anio" value={anio} />
-                        <input type="hidden" name="mes" value={mes} />
-                        <button className="btn-secondary text-xs" title={bloqueantes > 0 ? 'Hay movimientos sin resolver: el cierre va a fallar y te los lista' : 'Congela el mes'}>
-                          Cerrar mes
-                        </button>
-                      </form>
-                    ) : esAdmin ? (
-                      <form action={reabrirPeriodoAction} className="inline-flex items-center gap-1">
-                        <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
-                        <input type="hidden" name="ejercicio" value={String(ejercicio)} />
-                        <input type="hidden" name="anio" value={anio} />
-                        <input type="hidden" name="mes" value={mes} />
-                        <input name="motivo" required placeholder="Motivo (obligatorio)" className="input !w-44 text-xs" />
-                        <button className="btn-danger text-xs">Reabrir</button>
-                      </form>
-                    ) : (
-                      <span className="text-xs text-slate-400">Solo un administrador puede reabrir</span>
-                    )}
+                    <Link href={detalle} className="btn-secondary text-xs">Detalle</Link>
                   </td>
                 </tr>
               );
@@ -168,7 +115,9 @@ export default async function PeriodosPage({
         </table>
       </div>
       <p className="text-xs text-slate-500 max-w-2xl">
-        Cerrar un mes lo congela: no se pueden crear, validar, editar ni anular movimientos con fecha en él. Los
+        Desde el <strong>Detalle</strong> de cada mes se ve qué falta (comprobantes, resúmenes, ARCA, sueldos) y se cierra.
+        Sólo los comprobantes sin validar o asignar impiden el cierre. Cerrar un mes lo congela: no se pueden crear,
+        validar, editar ni anular movimientos con fecha en él. Los
         comprobantes que lleguen con fecha de un mes cerrado quedan <strong>retenidos</strong> hasta que un
         administrador reabra el período (acción auditada con motivo).
       </p>

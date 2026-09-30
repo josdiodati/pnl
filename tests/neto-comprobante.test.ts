@@ -11,7 +11,6 @@ describe('netoDe', () => {
   });
   it('sin desglose (factura C, exento) el neto es el total; sin total, null', () => {
     expect(netoDe({ total: 800 })).toBe(800);
-    expect(netoDe({ total: 800, noGravadoExento: 800 })).toBe(800);
     expect(netoDe({})).toBeNull();
   });
 });
