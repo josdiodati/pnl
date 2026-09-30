@@ -35,6 +35,14 @@ export async function listarRecibidos(after?: string, f?: typeof fetch): Promise
   return { data: r.data ?? [], hasMore: Boolean(r.has_more) };
 }
 
+export type AutenticacionResend = { spf?: string; dkim?: string; dmarc?: string } | null;
+
+/** Detalle de un mail recibido; se usa el veredicto de SPF/DKIM/DMARC. */
+export async function obtenerRecibido(emailId: string, f?: typeof fetch): Promise<{ authentication: AutenticacionResend }> {
+  const r = await llamar(`/emails/receiving/${encodeURIComponent(emailId)}`, {}, f);
+  return { authentication: r.authentication ?? null };
+}
+
 export async function listarAdjuntos(emailId: string, f?: typeof fetch): Promise<AdjuntoResend[]> {
   return (await llamar(`/emails/receiving/${encodeURIComponent(emailId)}/attachments`, {}, f)).data ?? [];
 }

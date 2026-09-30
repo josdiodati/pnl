@@ -3,13 +3,15 @@ import { enqueueJob } from '@/lib/jobs';
 import { slugDesdeDireccion, type EmailInPayload } from '@/lib/canales/email';
 import { registrarEventoUnico, yaRegistrado } from '@/lib/canales/eventos';
 import * as resend from '@/lib/canales/resend';
-import type { AdjuntoResend } from '@/lib/canales/resend';
+import type { AdjuntoResend, AutenticacionResend } from '@/lib/canales/resend';
+import { usuarioDeCasilla } from '@/lib/usuarios/casillas';
 
 // Facturas por mail vía Resend, por POLLING (Cloudflare Access no deja
 // entrar webhooks a pnl.ledger.ar). El worker llama a sincronizarRecibidos
 // una vez por minuto: recorre la bandeja hacia atrás mientras los mails sean
 // de los últimos VENTANA_DIAS y, por cada uno no visto dirigido a
-// comprobantes+{slug}@dominio, baja los adjuntos y encola el mismo EMAIL_IN
+// comprobantes+{slug}@dominio desde una casilla de un usuario de esa empresa
+// (con DMARC = pass), baja los adjuntos y encola el mismo EMAIL_IN
 // que usa el webhook de email. Un mail que falla (429, descarga) no se marca
 // como visto: se reintenta en las pasadas siguientes dentro de la ventana.
 
@@ -30,9 +32,19 @@ const MIME_POR_EXTENSION: Record<string, string> = {
 };
 const MIMES = new Set(Object.values(MIME_POR_EXTENSION));
 
-type Deps = Pick<typeof resend, 'listarRecibidos' | 'listarAdjuntos' | 'descargarAdjunto'> & { pausaMs: number };
+type Deps = Pick<typeof resend, 'listarRecibidos' | 'obtenerRecibido' | 'listarAdjuntos' | 'descargarAdjunto'> & { pausaMs: number };
 
 const dormir = (ms: number) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
+
+/**
+ * El remitente es quien dice ser: DMARC = pass (el dominio del From firmó o
+ * autorizó el envío). Sin esto cualquiera podría hacerse pasar por la casilla
+ * de un usuario. EMAIL_EXIGIR_DMARC=off lo apaga (sólo para una emergencia).
+ */
+function remitenteAutenticado(a: AutenticacionResend): boolean {
+  if (process.env.EMAIL_EXIGIR_DMARC === 'off') return true;
+  return a?.dmarc === 'pass';
+}
 
 /** "Juan Pérez <Juan@X.com>" -> "juan@x.com" (para reconocer al usuario que manda). */
 export function direccionDe(from: string): string {
@@ -78,6 +90,7 @@ function seleccionarAdjuntos(adjuntos: AdjuntoResend[], emailId: string): { a: A
 export async function sincronizarRecibidos(deps: Partial<Deps> = {}): Promise<{ encolados: number; ignorados: number }> {
   const d: Deps = {
     listarRecibidos: resend.listarRecibidos,
+    obtenerRecibido: resend.obtenerRecibido,
     listarAdjuntos: resend.listarAdjuntos,
     descargarAdjunto: resend.descargarAdjunto,
     pausaMs: PAUSA_MS,
@@ -114,7 +127,21 @@ export async function sincronizarRecibidos(deps: Partial<Deps> = {}): Promise<{ 
     const empresa = slug ? await prisma.empresa.findUnique({ where: { slug } }) : null;
     if (!empresa) { await ignorar(slug ? `empresa inexistente "${slug}"` : 'dirección sin comprobantes+{empresa}'); continue; }
 
+    // Sólo lo que manda una casilla de un usuario de la empresa (Configuración →
+    // Usuarios y roles → Casillas); se decide antes de bajar nada.
+    const remitente = direccionDe(m.from);
+    if (!(await usuarioDeCasilla(empresa.id, remitente))) {
+      await ignorar(`${remitente} no es casilla de ningún usuario de ${empresa.slug}`);
+      continue;
+    }
+
     try {
+      await dormir(d.pausaMs);
+      const { authentication } = await d.obtenerRecibido(m.id);
+      if (!remitenteAutenticado(authentication)) {
+        await ignorar(`remitente no verificado (DMARC ${authentication?.dmarc ?? 'sin dato'}, SPF ${authentication?.spf ?? '?'}, DKIM ${authentication?.dkim ?? '?'})`);
+        continue;
+      }
       await dormir(d.pausaMs);
       const utiles = seleccionarAdjuntos(await d.listarAdjuntos(m.id), m.id);
       if (!utiles.length) { await ignorar('sin adjuntos PDF/imagen'); continue; }

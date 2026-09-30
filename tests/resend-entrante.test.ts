@@ -3,8 +3,10 @@ import { prisma } from '@/lib/db';
 import { sincronizarRecibidos } from '@/lib/canales/resend-entrante';
 import type { RecibidoResend, AdjuntoResend } from '@/lib/canales/resend';
 
+const slug = `rs${Date.now()}`;
+const REMITENTE = `carga-${slug}@gmail.com`; // casilla asociada a un usuario de la empresa
 const hace = (dias: number) => new Date(Date.now() - dias * 86_400_000).toISOString();
-const mail = (id: string, to: string, from = 'proveedor@x.com', creado = hace(0)): RecibidoResend => ({ id, from, to: [to], subject: 'Factura', created_at: creado });
+const mail = (id: string, to: string, from = REMITENTE, creado = hace(0)): RecibidoResend => ({ id, from, to: [to], subject: 'Factura', created_at: creado });
 const pdf = (id: string, extra: Partial<AdjuntoResend> = {}): AdjuntoResend =>
   ({ id, filename: `${id}.pdf`, content_type: 'application/pdf', content_disposition: 'attachment', size: 1000, download_url: `https://cdn/${id}`, ...extra });
 
@@ -15,11 +17,17 @@ const pdf = (id: string, extra: Partial<AdjuntoResend> = {}): AdjuntoResend =>
 function deps(
   recibidos: RecibidoResend[],
   adjuntos: Record<string, AdjuntoResend[]>,
-  opts: { fallaDescarga?: boolean; fallaAdjuntos?: string[]; porPagina?: number; paginasPedidas?: string[] } = {},
+  opts: {
+    fallaDescarga?: boolean; fallaAdjuntos?: string[]; porPagina?: number; paginasPedidas?: string[];
+    autenticacion?: Record<string, string> | null; adjuntosPedidos?: string[];
+  } = {},
 ) {
   const porPagina = opts.porPagina ?? 100;
   return {
     pausaMs: 0,
+    obtenerRecibido: async () => ({
+      authentication: opts.autenticacion === undefined ? { spf: 'pass', dkim: 'pass', dmarc: 'pass' } : opts.autenticacion,
+    }),
     listarRecibidos: async (after?: string) => {
       opts.paginasPedidas?.push(after ?? '(primera)');
       const desde = after ? recibidos.findIndex((m) => m.id === after) + 1 : 0;
@@ -27,6 +35,7 @@ function deps(
       return { data, hasMore: desde + porPagina < recibidos.length };
     },
     listarAdjuntos: async (id: string) => {
+      opts.adjuntosPedidos?.push(id);
       if (opts.fallaAdjuntos?.includes(id)) throw new Error('Resend 429: Too many requests');
       return adjuntos[id] ?? [];
     },
@@ -34,10 +43,10 @@ function deps(
   };
 }
 
-const ids = Array.from({ length: 12 }, (_, i) => `rs-${i + 1}`);
-const slug = `rs${Date.now()}`;
+const ids = Array.from({ length: 20 }, (_, i) => `rs-${i + 1}`);
 const para = () => `comprobantes+${slug}@ledger.ar`;
 let empresaId = '';
+let usuarioId = '';
 const jobDe = (id: string) => prisma.job.findFirst({ where: { tipo: 'EMAIL_IN', payload: { path: ['messageId'], equals: `resend:${id}` } } });
 
 async function limpiar() {
@@ -45,12 +54,18 @@ async function limpiar() {
   await prisma.job.deleteMany({ where: { tipo: 'EMAIL_IN', payload: { path: ['messageId'], string_starts_with: 'resend:rs-' } } });
 }
 beforeAll(async () => {
-  empresaId = (await prisma.empresa.create({ data: { slug, razonSocial: 'Resend SA', cuit: '30714325651' } })).id;
+  usuarioId = (await prisma.usuario.create({ data: { email: `login-${slug}@test.local`, nombre: 'Carga', passwordHash: 'x' } })).id;
+  await prisma.casillaUsuario.createMany({ data: [{ usuarioId, email: REMITENTE }, { usuarioId, email: `juan-${slug}@proveedor.com` }] });
+  empresaId = (await prisma.empresa.create({
+    data: { slug, razonSocial: 'Resend SA', cuit: '30714325651', usuarios: { create: [{ usuarioId, rol: 'CARGADOR' }] } },
+  })).id;
 });
 beforeEach(limpiar);
 afterAll(async () => {
   await limpiar();
+  await prisma.usuarioEmpresa.deleteMany({ where: { empresaId } });
   await prisma.empresa.delete({ where: { id: empresaId } });
+  await prisma.usuario.delete({ where: { id: usuarioId } }); // casillas en cascada
 });
 
 describe('sincronizarRecibidos', () => {
@@ -110,8 +125,8 @@ describe('sincronizarRecibidos', () => {
   });
 
   it('guarda sólo la dirección del remitente, sin el nombre', async () => {
-    await sincronizarRecibidos(deps([mail('rs-8', para(), 'Juan Pérez <Juan@Proveedor.com>')], { 'rs-8': [pdf('a8')] }));
-    expect(((await jobDe('rs-8'))!.payload as any).from).toBe('juan@proveedor.com');
+    await sincronizarRecibidos(deps([mail('rs-8', para(), `Juan Pérez <Juan-${slug}@Proveedor.com>`)], { 'rs-8': [pdf('a8')] }));
+    expect(((await jobDe('rs-8'))!.payload as any).from).toBe(`juan-${slug}@proveedor.com`);
   });
 
   it('si falla la descarga no marca el mail como visto (se reintenta)', async () => {
@@ -138,5 +153,28 @@ describe('sincronizarRecibidos', () => {
     expect(r).toEqual({ encolados: 2, ignorados: 0 });
     expect(paginas).toEqual(['(primera)', 'rs-12', 'rs-11', 'rs-2']);
     expect(await jobDe('rs-1')).toBeNull();
+  });
+
+  it('un remitente que no es casilla de un usuario de la empresa se ignora sin bajar nada', async () => {
+    const pedidos: string[] = [];
+    const r = await sincronizarRecibidos(deps([mail('rs-13', para(), 'proveedor@desconocido.com')], { 'rs-13': [pdf('x')] }, { adjuntosPedidos: pedidos }));
+    expect(r).toEqual({ encolados: 0, ignorados: 1 });
+    expect(pedidos).toEqual([]);
+  });
+
+  it('DMARC distinto de pass (remitente posiblemente falsificado) o sin dato: se ignora', async () => {
+    const r1 = await sincronizarRecibidos(deps([mail('rs-14', para())], { 'rs-14': [pdf('x')] }, { autenticacion: { spf: 'pass', dkim: 'pass', dmarc: 'fail' } }));
+    const r2 = await sincronizarRecibidos(deps([mail('rs-15', para())], { 'rs-15': [pdf('x')] }, { autenticacion: null }));
+    expect([r1, r2]).toEqual([{ encolados: 0, ignorados: 1 }, { encolados: 0, ignorados: 1 }]);
+  });
+
+  it('con EMAIL_EXIGIR_DMARC=off alcanza con que el remitente sea una casilla asociada', async () => {
+    process.env.EMAIL_EXIGIR_DMARC = 'off';
+    try {
+      const r = await sincronizarRecibidos(deps([mail('rs-16', para())], { 'rs-16': [pdf('x')] }, { autenticacion: { dmarc: 'none' } }));
+      expect(r).toEqual({ encolados: 1, ignorados: 0 });
+    } finally {
+      delete process.env.EMAIL_EXIGIR_DMARC;
+    }
   });
 });

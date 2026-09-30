@@ -1,10 +1,12 @@
 import { prisma } from '@/lib/db';
-import { ingestarComprobante, resolverCreadorCanal } from '@/lib/pipeline';
+import { ingestarComprobante } from '@/lib/pipeline';
+import { usuarioDeCasilla } from '@/lib/usuarios/casillas';
 
 // Inbound email channel. The webhook (app/api/inbound-email) accepts a
 // Postmark/SES-style JSON payload, authenticates it with INBOUND_EMAIL_SECRET,
 // dedupes by MessageID and enqueues an EMAIL_IN job. The worker (this module)
-// resolves the company from the destination address and pushes every
+// resolves the company from the destination address, requires the sender to
+// be a mailbox of one of its users (who becomes the loader) and pushes every
 // attachment into the shared ingestion pipeline.
 
 export type EmailInPayload = {
@@ -28,8 +30,13 @@ export async function procesarEmailEntrante(payload: EmailInPayload): Promise<vo
   const empresa = await prisma.empresa.findUnique({ where: { slug } });
   if (!empresa) throw new Error(`Empresa inexistente para el slug "${slug}"`);
 
-  const creadorId = await resolverCreadorCanal(empresa.id, payload.from);
-  if (!creadorId) throw new Error(`La empresa ${slug} no tiene usuarios para asignar como cargador`);
+  // Sólo se procesa lo que manda una casilla de un usuario de la empresa, y
+  // queda cargado a su nombre (Configuración → Usuarios y roles → Casillas).
+  const creadorId = await usuarioDeCasilla(empresa.id, payload.from);
+  if (!creadorId) {
+    console.log(`[email] mail ${payload.messageId} de ${payload.from ?? '(sin remitente)'} ignorado: no es casilla de ningún usuario de ${slug}`);
+    return;
+  }
 
   const adjuntos = payload.adjuntos.filter((adj) => MIMES_PERMITIDOS.has(adj.contentType));
   if (!adjuntos.length) return;

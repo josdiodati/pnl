@@ -13,6 +13,8 @@ import {
   invitarUsuarioAction,
   cambiarRolAction,
   restablecerPasswordAction,
+  agregarCasillaAction,
+  quitarCasillaAction,
   generarCodigoTelegramAction,
   guardarCredencialArcaAction,
   probarCredencialArcaAction,
@@ -32,7 +34,7 @@ export default async function ConfigPage({
   const [miembros, invitaciones, vinculos, credencialArca, filasReportes] = await Promise.all([
     prisma.usuarioEmpresa.findMany({
       where: { empresaId: ctx.empresa.id },
-      include: { usuario: true },
+      include: { usuario: { include: { casillas: { orderBy: { email: 'asc' } } } } },
       orderBy: { usuario: { nombre: 'asc' } },
     }),
     ctx.db.invitacion.findMany({ where: { aceptada: false }, orderBy: { createdAt: 'desc' } }),
@@ -101,6 +103,42 @@ export default async function ConfigPage({
                     </select>
                     <button className="btn-secondary text-xs">Cambiar</button>
                   </form>
+                  <details className="inline-block ml-2 align-middle text-left">
+                    <summary className="btn-secondary text-xs cursor-pointer list-none inline-block">
+                      Casillas ({m.usuario.casillas.length + 1})
+                    </summary>
+                    <div className="mt-2 w-80 space-y-2 rounded border border-line bg-paper p-2 text-xs">
+                      <p className="text-ink-mute">
+                        Los comprobantes que manden o reenvíen estas casillas a {emailEntrante} quedan cargados a
+                        nombre de {m.usuario.nombre}.
+                      </p>
+                      <ul className="space-y-1">
+                        <li className="flex items-center justify-between gap-2">
+                          <span className="break-all">{m.usuario.email}</span>
+                          <span className="text-ink-mute whitespace-nowrap">(login)</span>
+                        </li>
+                        {m.usuario.casillas.map((c) => (
+                          <li key={c.id} className="flex items-center justify-between gap-2">
+                            <span className="break-all">{c.email}</span>
+                            <form action={quitarCasillaAction}>
+                              <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                              <input type="hidden" name="casillaId" value={c.id} />
+                              <button className="text-red-700 underline underline-offset-2">Quitar</button>
+                            </form>
+                          </li>
+                        ))}
+                      </ul>
+                      <form action={agregarCasillaAction} className="flex items-end gap-2">
+                        <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                        <input type="hidden" name="usuarioId" value={m.usuarioId} />
+                        <label className="flex-1">
+                          Agregar casilla
+                          <input name="email" type="email" required placeholder="facturas@dominio.com" className="input mt-1 text-xs" />
+                        </label>
+                        <button className="btn-primary text-xs">Agregar</button>
+                      </form>
+                    </div>
+                  </details>
                   <details className="inline-block ml-2 align-middle text-left">
                     <summary className="btn-secondary text-xs cursor-pointer list-none inline-block">Contraseña</summary>
                     <form action={restablecerPasswordAction} className="mt-2 flex flex-wrap items-end gap-2 rounded border border-line bg-paper p-2">
@@ -306,7 +344,7 @@ export default async function ConfigPage({
         </p>
         <p className="text-xs text-slate-500 mt-1">
           {resendHabilitado()
-            ? 'Habilitado (Resend): mandá o reenviá las facturas a esta dirección; en menos de un minuto entran a Carga como un lote más. Se toman PDF e imágenes (hasta 10 por mail).'
+            ? 'Habilitado (Resend): sólo se procesan los mails que manda o reenvía una casilla de un usuario de la empresa (su email de login o las que se asocian en Usuarios y roles → Casillas), con el remitente verificado por DMARC; quedan cargados a nombre de ese usuario. En menos de un minuto entran a Carga como un lote más. Se toman PDF e imágenes (hasta 10 por mail).'
             : emailHabilitado
             ? 'Webhook habilitado (INBOUND_EMAIL_SECRET configurado). Apuntá tu proveedor (Postmark/SES) a POST /api/inbound-email.'
             : 'Canal deshabilitado: configurá INBOUND_EMAIL_SECRET y un proveedor de email entrante (ver README). Podés probarlo igual con un payload de ejemplo.'}

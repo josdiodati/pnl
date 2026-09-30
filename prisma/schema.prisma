@@ -19,7 +19,23 @@ model Usuario {
   movimientosValidados Movimiento[]        @relation("validadoPor")
   lotesIngesta         LoteIngesta[]
   reportesHabilitados  ReporteHabilitado[]
+  casillas             CasillaUsuario[]
   createdAt            DateTime            @default(now())
+}
+
+// Casillas de mail asociadas a un usuario (además de su email de login): sólo
+// se procesan los comprobantes que llegan por mail desde una casilla de un
+// usuario de la empresa, y quedan cargados a su nombre. Ver lib/usuarios/casillas.ts.
+model CasillaUsuario {
+  id          String   @id @default(cuid())
+  usuarioId   String
+  email       String   @unique // siempre en minúsculas
+  creadoPorId String?
+  createdAt   DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
 }
 
 model Empresa {

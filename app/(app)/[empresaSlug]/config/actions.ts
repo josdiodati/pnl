@@ -11,6 +11,7 @@ import { cuitEsValido, normalizarCuit } from '@/lib/checks';
 import { generarCodigoVinculo } from '@/lib/canales/telegram';
 import { guardarCredencialArca, probarCredencialArca, borrarCredencialArca, cambiarSyncAutomatico } from '@/lib/arca/mis-comprobantes/service';
 import { restablecerPassword } from '@/lib/usuarios/password';
+import { agregarCasilla, quitarCasilla } from '@/lib/usuarios/casillas';
 import { rolAlcanza } from '@/lib/roles';
 import { reporteDelCatalogo } from '@/lib/reportes-personalizados/catalogo';
 import { diffHabilitaciones, parsearGrilla, type Par } from '@/lib/reportes-personalizados/habilitaciones';
@@ -133,6 +134,32 @@ export async function restablecerPasswordAction(formData: FormData): Promise<voi
     volver(slug, err);
   }
   volver(slug, undefined, `Contraseña de ${email} restablecida`);
+}
+
+export async function agregarCasillaAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  let email = '';
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    ({ email } = await agregarCasilla(ctx, {
+      usuarioId: String(formData.get('usuarioId') ?? ''),
+      email: String(formData.get('email') ?? ''),
+    }));
+  } catch (err) {
+    volver(slug, err);
+  }
+  volver(slug, undefined, `Casilla ${email} asociada`);
+}
+
+export async function quitarCasillaAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    await quitarCasilla(ctx, String(formData.get('casillaId') ?? ''));
+  } catch (err) {
+    volver(slug, err);
+  }
+  volver(slug, undefined, 'Casilla quitada');
 }
 
 export async function generarCodigoTelegramAction(formData: FormData): Promise<void> {
