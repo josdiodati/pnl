@@ -25,7 +25,7 @@ Reglas estrictas:
 - Los importes van como números positivos.
 - CUIL: solo los 11 dígitos, sin guiones.
 - Fechas en formato YYYY-MM-DD.
-- "periodoAnio"/"periodoMes": del período ABONADO (p.ej. "Mensual - Agosto 2026" → 2026 / 8).
+- "periodoAnio"/"periodoMes": del período ABONADO (p.ej. "Mensual - Agosto 2026" → 2026 / 8). Si el recibo imprime "PERIODO DE PAGO" o "período liquidado", usá ESE. NO uses el "PERIODO" del bloque de aportes (junto a "F. PAGO APORTES" / "último depósito"): es el mes anterior cuyos aportes se depositaron (p.ej. "PERIODO 08/2026" + "PERIODO DE PAGO SEPTIEMBRE 2026" → 2026 / 9).
 - "tipo": SAC si es aguinaldo (1ra o 2da cuota), VACACIONES si es liquidación de vacaciones, LIQUIDACION_FINAL si es liquidación final; MENSUAL para el sueldo del mes.
 - Cargá TODOS los conceptos con su naturaleza: REMUNERATIVO (haberes), RETENCION (deducciones al empleado: jubilación, obra social, adelantos, retención 4ta categoría), NO_REMUNERATIVO, CONTRIBUCION_EMPLEADOR (cargas patronales, ART, seguro colectivo).
 - "costoTotalEmpleador": SOLO si el recibo lo imprime explícitamente; si no figura, null (el sistema lo calcula).
