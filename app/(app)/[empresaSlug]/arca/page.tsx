@@ -12,6 +12,7 @@ import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { sincronizarArcaAction, ignorarArcaAction, dejarDeIgnorarArcaAction } from './actions';
 import { resumirPorMes } from '@/lib/arca/mis-comprobantes/resumen-mensual';
+import { parsearFiltrosArca, rangoDeMes, whereArca, SIN_RESOLVER, IGNORADOS } from '@/lib/arca/mis-comprobantes/exportar';
 import { MES_LABEL } from '@/lib/periodos';
 
 // ARCA · Mis Comprobantes: lo que ARCA registra como emitido y recibido por
@@ -27,8 +28,6 @@ import { MES_LABEL } from '@/lib/periodos';
 // aparte.
 
 const ORIGEN_LABEL = { EMITIDO: 'Emitidos', RECIBIDO: 'Recibidos' } as const;
-const SIN_RESOLVER = { movimientoId: null, ignoradoAt: null };
-const IGNORADOS = { movimientoId: null, ignoradoAt: { not: null } };
 
 function mesActualAr(): string {
   const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit' }).format(new Date());
@@ -46,13 +45,11 @@ export default async function ArcaPage({
   const base = `/${params.empresaSlug}/arca`;
   const esAdmin = rolAlcanza(ctx.rol, 'ADMINISTRADOR');
 
-  const origen = searchParams.origen === 'EMITIDO' || searchParams.origen === 'RECIBIDO' ? searchParams.origen : undefined;
-  const estado = searchParams.estado === 'faltantes' || searchParams.estado === 'cruzados' || searchParams.estado === 'ignorados' ? searchParams.estado : 'todos';
+  const filtros = parsearFiltrosArca(searchParams, mesActualAr());
+  const { origen, estado, mes } = filtros;
   // Sin mes: lista mensual. Con mes (o "todos"): el detalle de comprobantes.
   const vistaLista = !searchParams.mes;
-  const mes = /^\d{4}-\d{2}$/.test(searchParams.mes ?? '') ? searchParams.mes! : searchParams.mes === 'todos' ? 'todos' : mesActualAr();
-  const [anio, mesNum] = mes === 'todos' ? [0, 0] : mes.split('-').map(Number);
-  const rangoMes = mes === 'todos' ? undefined : { gte: new Date(Date.UTC(anio, mesNum - 1, 1)), lt: new Date(Date.UTC(anio, mesNum, 1)) };
+  const rangoMes = rangoDeMes(mes);
   const resumenMensual = vistaLista
     ? resumirPorMes(await ctx.db.comprobanteArca.findMany({ select: { fechaEmision: true, origen: true, movimientoId: true, ignoradoAt: true } }))
     : [];
@@ -62,11 +59,7 @@ export default async function ArcaPage({
     prisma.job.findFirst({ where: { tipo: 'SYNC_MIS_COMPROBANTES', empresaId: ctx.empresa.id, estado: { in: ['queued', 'processing'] } } }),
     prisma.job.findFirst({ where: { tipo: 'SYNC_MIS_COMPROBANTES', empresaId: ctx.empresa.id, estado: { in: ['done', 'failed'] } }, orderBy: { createdAt: 'desc' } }),
     ctx.db.comprobanteArca.findMany({
-      where: {
-        ...(origen ? { origen } : {}),
-        ...(estado === 'faltantes' ? SIN_RESOLVER : estado === 'cruzados' ? { movimientoId: { not: null } } : estado === 'ignorados' ? IGNORADOS : {}),
-        ...(rangoMes ? { fechaEmision: rangoMes } : {}),
-      },
+      where: whereArca(filtros),
       include: { movimiento: { select: { id: true, estado: true } }, ignoradoPor: { select: { nombre: true } } },
       orderBy: [{ fechaEmision: 'desc' }, { puntoVenta: 'asc' }, { numeroDesde: 'asc' }],
       take: 500,
@@ -216,6 +209,9 @@ export default async function ArcaPage({
             <Link href={filtro({ mes: 'todos', estado: 'faltantes' })} className="ml-auto text-xs underline text-slate-600">
               Ver todos los faltantes
             </Link>
+            <a href={`${base}/export?mes=todos`} className="btn-secondary text-xs" title="Todos los comprobantes de ARCA, con los datos del comprobante de PNL con el que cruzó cada uno">
+              Exportar XLSX
+            </a>
           </div>
 
           <div className="card overflow-x-auto">
@@ -370,6 +366,9 @@ export default async function ArcaPage({
             {e.l}
           </Link>
         ))}
+        <a href={`${base}/export${vistaActual.slice(base.length)}`} className="btn-secondary !py-0.5 !px-2 text-xs ml-auto" title="Lo filtrado (sin el tope de 500), con los datos del comprobante de PNL con el que cruzó cada uno">
+          Exportar XLSX
+        </a>
       </div>
 
       <div className="card overflow-x-auto">
