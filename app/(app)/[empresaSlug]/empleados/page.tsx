@@ -4,7 +4,7 @@ import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { MES_LABEL, periodoDeFecha, ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { netoComputable } from '@/lib/empleados/prepaga';
-import { costosDelMes, totalEmpleadoMes, ultimoPeriodoConRecibos, type CostoEmpleadoMes } from '@/lib/empleados/mes';
+import { costosDelMes, correspondeAlMes, totalEmpleadoMes, ultimoPeriodoConRecibos, type CostoEmpleadoMes } from '@/lib/empleados/mes';
 import { armarMatrizPersonal, type SerieMatriz } from '@/lib/empleados/matriz';
 import { RecibosUpload } from '@/components/recibos-upload';
 import { OkBanner } from '@/components/error-banner';
@@ -188,7 +188,9 @@ export default async function EmpleadosPage({
                   <td className="num">{c?.vinculado ? formatMoney(c.vinculado) : '—'}</td>
                   <td className="num">{c?.prepaga ? formatMoney(c.prepaga) : '—'}</td>
                   <td className="num font-medium">{total ? formatMoney(total) : '—'}</td>
-                  <td className="text-xs">{estadoRecibo(c)}</td>
+                  <td className="text-xs">
+                    {!c && ultimo && !correspondeAlMes(e, ultimo.anio, ultimo.mes) ? <span className="text-slate-400">egresado</span> : estadoRecibo(c)}
+                  </td>
                 </tr>
               );
             })}
@@ -277,10 +279,13 @@ export default async function EmpleadosPage({
 
   // ---------- Vista: detalle mensual (con filtro por centro) ----------
   if (vista === 'detalle') {
-    const [empleados, costos] = await Promise.all([
-      ctx.db.empleado.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
+    const [todos, costos] = await Promise.all([
+      ctx.db.empleado.findMany({ orderBy: { nombre: 'asc' } }),
       costosDelMes(ctx.db, anio, mes, centroFiltro),
     ]);
+    // Los egresados antes de este mes no se listan como "sin recibo" (su
+    // último recibo es el del mes de egreso); quien tenga costo acá, siempre.
+    const empleados = todos.filter((e) => costos.has(e.id) || (e.activo && correspondeAlMes(e, anio, mes)));
 
     // Filtro por centro (viene del drill-down de la matriz).
     const filtrados = empleados.filter((e) => {

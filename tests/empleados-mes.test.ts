@@ -1,10 +1,22 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
 import { scopedDb } from '@/lib/empresa/scope';
-import { costosDelMes, totalEmpleadoMes, ultimoPeriodoConRecibos } from '@/lib/empleados/mes';
+import { costosDelMes, correspondeAlMes, totalEmpleadoMes, ultimoPeriodoConRecibos } from '@/lib/empleados/mes';
 
 // Costo del mes por empleado (pestaña Empleados y Detalle mensual) y último
 // período con recibos (el que muestra la pestaña Empleados).
+
+describe('correspondeAlMes', () => {
+  const egreso = (iso: string) => ({ fechaEgreso: new Date(`${iso}T00:00:00Z`) });
+  it('sin egreso corresponde siempre; con egreso, hasta el mes de egreso inclusive', () => {
+    expect(correspondeAlMes({ fechaEgreso: null }, 2031, 9)).toBe(true);
+    expect(correspondeAlMes(egreso('2031-09-30'), 2031, 9)).toBe(true);
+    expect(correspondeAlMes(egreso('2031-09-01'), 2031, 9)).toBe(true);
+    expect(correspondeAlMes(egreso('2031-09-15'), 2031, 10)).toBe(false);
+    expect(correspondeAlMes(egreso('2031-12-31'), 2032, 1)).toBe(false);
+    expect(correspondeAlMes(egreso('2032-01-10'), 2031, 12)).toBe(true);
+  });
+});
 
 describe('costos del mes por empleado (integración contra la base)', () => {
   const sufijo = `empmes-${Date.now()}`;

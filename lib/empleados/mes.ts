@@ -87,3 +87,12 @@ export async function ultimoPeriodoConRecibos(db: ScopedDb): Promise<{ anio: num
   });
   return r ? { anio: r.periodo.anio, mes: r.periodo.mes } : null;
 }
+
+/** Un empleado corresponde a un mes si no egresó o si egresó ese mes o
+ *  después: su último recibo es el del mes de egreso, así que en los meses
+ *  siguientes no se lo muestra como "sin recibo". */
+export function correspondeAlMes(e: { fechaEgreso: Date | null }, anio: number, mes: number): boolean {
+  if (!e.fechaEgreso) return true;
+  const egreso = e.fechaEgreso.getUTCFullYear() * 12 + e.fechaEgreso.getUTCMonth();
+  return egreso >= anio * 12 + (mes - 1);
+}
