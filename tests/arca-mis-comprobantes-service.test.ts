@@ -207,6 +207,27 @@ describe('Mis Comprobantes: servicio (integración)', () => {
     expect(arca.find((a) => a.numeroDesde === 5)!.movimientoId).toBeNull();
   });
 
+  it('un tique factura de ARCA (81/82/111, sin CAE) cruza con lo cargado como factura de la misma letra o como TICKET', async () => {
+    const comoFactura = await movimiento({ cuitEmisor: '30646717473', tipoComprobante: 'FACTURA_A', puntoVenta: '00017', numero: '00008027', cae: null });
+    const comoTicket = await movimiento({ cuitEmisor: '30717963462', tipoComprobante: 'TICKET', puntoVenta: '6', numero: '48', cae: null });
+    const otraLetra = await movimiento({ cuitEmisor: '30695542476', tipoComprobante: 'FACTURA_B', puntoVenta: '5465', numero: '6185', cae: null });
+    const base = { empresaId, origen: 'RECIBIDO' as const, fechaEmision: new Date('2026-08-10T00:00:00Z'), codigoAutorizacion: null, fuente: 'CSV', sincronizadoAt: new Date() };
+    await prisma.comprobanteArca.createMany({
+      data: [
+        { ...base, tipoComprobante: 81, puntoVenta: 17, numeroDesde: 8027, numeroHasta: 8027, nroDocContraparte: '30646717473' },
+        { ...base, tipoComprobante: 81, puntoVenta: 6, numeroDesde: 48, numeroHasta: 48, nroDocContraparte: '30717963462' },
+        { ...base, tipoComprobante: 81, puntoVenta: 5465, numeroDesde: 6185, numeroHasta: 6185, nroDocContraparte: '30695542476' },
+      ] as never,
+    });
+    const r = await cruzarComprobantesArca(ctx.db, ctx.empresa, usuarioId);
+    expect(r.cruzados).toBe(2);
+    const arca = await prisma.comprobanteArca.findMany({ where: { empresaId } });
+    expect(arca.find((a) => a.numeroDesde === 8027)!.movimientoId).toBe(comoFactura.id);
+    expect(arca.find((a) => a.numeroDesde === 48)!.movimientoId).toBe(comoTicket.id);
+    expect(arca.find((a) => a.numeroDesde === 6185)!.movimientoId).toBeNull();
+    expect((await prisma.movimiento.findUniqueOrThrow({ where: { id: otraLetra.id } })).arcaEstado).not.toBe('VALIDO');
+  });
+
   it('emitidos cruzan contra las ventas del libro (CUIT emisor = la empresa)', async () => {
     const venta = await movimiento({ origen: 'VENTA_COMPROBANTE', cuitEmisor: CUIT_EMPRESA, tipoComprobante: 'FACTURA_A', puntoVenta: '2', numero: '686', cae: '86338977428571' });
     await prisma.comprobanteArca.create({

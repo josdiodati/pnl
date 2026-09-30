@@ -36,3 +36,16 @@ export const CODIGO_ARCA: Record<string, number> = {
   NOTA_CREDITO_C: 13,
   FACTURA_E: 19,
 };
+
+/**
+ * Código de ARCA → tipos de PNL con que ese comprobante puede estar cargado.
+ * Los tiques factura (controladores fiscales, sin CAE) no tienen tipo propio
+ * en PNL: se cargan como factura de su letra o como TICKET.
+ */
+export const TIPOS_PNL_POR_CODIGO: Record<number, string[]> = {
+  ...Object.fromEntries(Object.entries(CODIGO_ARCA).map(([tipo, codigo]) => [codigo, [tipo]])),
+  81: ['FACTURA_A', 'TICKET'],
+  82: ['FACTURA_B', 'TICKET'],
+  83: ['TICKET'],
+  111: ['FACTURA_C', 'TICKET'],
+};

@@ -8,7 +8,7 @@ import { notificar } from '@/lib/notificaciones';
 import { assertTransicion } from '@/lib/movimientos/estados';
 import { enqueueJob } from '@/lib/jobs';
 import { cuitEsValido, formatearCuit, normalizarCuit } from '@/lib/checks/cuit';
-import { CODIGO_ARCA } from './tipos-arca';
+import { TIPOS_PNL_POR_CODIGO } from './tipos-arca';
 import { cifrarSecreto, descifrarSecreto } from './cifrado';
 import { parsearCsvMisComprobantes } from './csv';
 import { extraerCsvDeZip } from './zip';
@@ -212,8 +212,6 @@ export async function guardarFilasArca(
 // El cruce corre al sincronizar/importar (todo lo bajado contra el libro) y
 // al ingresar o corregir un comprobante (ese comprobante contra lo ya bajado).
 
-const TIPO_POR_CODIGO: Record<number, string> = Object.fromEntries(Object.entries(CODIGO_ARCA).map(([tipo, codigo]) => [codigo, tipo]));
-
 function numero(s: string | null | undefined): number | null {
   if (s == null) return null;
   const n = Number(String(s).replace(/\D/g, ''));
@@ -271,8 +269,8 @@ export function emparejarConLibro(
     // Con CAE, el CUIT emisor tiene que coincidir si el movimiento lo tiene.
     candidatos = candidatos.filter((m) => !m.cuitEmisor || !cuitEmisor || normalizarCuit(m.cuitEmisor) === cuitEmisor);
     if (candidatos.length === 0 && cuitEmisor) {
-      const tipo = TIPO_POR_CODIGO[c.tipoComprobante];
-      if (tipo) candidatos = porClave.get(`${cuitEmisor}|${tipo}|${c.puntoVenta}|${c.numeroDesde}`) ?? [];
+      const tipos = TIPOS_PNL_POR_CODIGO[c.tipoComprobante] ?? [];
+      candidatos = tipos.flatMap((tipo) => porClave.get(`${cuitEmisor}|${tipo}|${c.puntoVenta}|${c.numeroDesde}`) ?? []);
     }
     if (c.origen === 'EMITIDO') {
       candidatos = candidatos.filter((m) => m.origen === 'VENTA_COMPROBANTE' || m.origen === 'VENTA_MANUAL' || normalizarCuit(m.cuitEmisor ?? '') === cuitEmpresa);
