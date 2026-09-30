@@ -20,6 +20,7 @@ model Usuario {
   lotesIngesta         LoteIngesta[]
   reportesHabilitados  ReporteHabilitado[]
   casillas             CasillaUsuario[]
+  arcaIgnorados        ComprobanteArca[]   @relation("ignoradoPor")
   createdAt            DateTime            @default(now())
 }
 
@@ -933,10 +934,15 @@ model ComprobanteArca {
   fuente                  String // CSV (importación manual) | PORTAL (sync)
   sincronizadoAt          DateTime
   movimientoId            String? // comprobante del libro con el que cruza
+  // Ignorado: imposible de conseguir; cuenta como resuelto para el cumplimiento.
+  ignoradoAt              DateTime?
+  ignoradoPorId           String?
+  motivoIgnorado          String?
   createdAt               DateTime              @default(now())
 
-  empresa    Empresa     @relation(fields: [empresaId], references: [id])
-  movimiento Movimiento? @relation(fields: [movimientoId], references: [id], onDelete: SetNull)
+  empresa     Empresa     @relation(fields: [empresaId], references: [id])
+  movimiento  Movimiento? @relation(fields: [movimientoId], references: [id], onDelete: SetNull)
+  ignoradoPor Usuario?    @relation("ignoradoPor", fields: [ignoradoPorId], references: [id])
 
   @@unique([empresaId, origen, nroDocContraparte, tipoComprobante, puntoVenta, numeroDesde])
   @@index([empresaId, fechaEmision])

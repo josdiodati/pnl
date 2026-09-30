@@ -290,7 +290,8 @@ function detalleMisComprobantes(c: Pick<ComprobanteArca, 'origen' | 'fechaEmisio
 /** Vincula la fila de ARCA al movimiento y marca el tag VALIDO (con auditoría). */
 async function vincular(db: ScopedDb, par: { comprobante: ComprobanteCruzable; movimiento: MovimientoCruzable }, usuarioId: string | null): Promise<void> {
   const { comprobante: c, movimiento: mov } = par;
-  await db.comprobanteArca.update({ where: { id: c.id }, data: { movimientoId: mov.id } });
+  // Si estaba ignorado y al final apareció, deja de estarlo.
+  await db.comprobanteArca.update({ where: { id: c.id }, data: { movimientoId: mov.id, ignoradoAt: null, ignoradoPorId: null, motivoIgnorado: null } });
   const detalle = detalleMisComprobantes(c);
   if (mov.arcaEstado !== 'VALIDO' || mov.arcaDetalle !== detalle) {
     await db.movimiento.update({ where: { id: mov.id }, data: { arcaEstado: 'VALIDO', arcaDetalle: detalle, arcaConsultadoAt: new Date() } });
@@ -603,3 +604,38 @@ export async function encolarSyncManual(ctx: EmpresaContext): Promise<void> {
   await prisma.job.updateMany({ where: { tipo: 'SYNC_MIS_COMPROBANTES', empresaId: ctx.empresa.id, estado: 'queued' }, data: { maxIntentos: 2 } });
 }
 
+
+// ---------- ignorar: comprobantes de ARCA imposibles de conseguir ----------
+//
+// Para cerrar un período: el comprobante figura en ARCA pero no se va a
+// cargar nunca. Cuenta como resuelto en el cumplimiento; si igual aparece y
+// cruza, el cruce le saca la marca.
+
+export async function ignorarComprobanteArca(ctx: EmpresaContext, id: string, motivo: string | null): Promise<void> {
+  const c = await ctx.db.comprobanteArca.findFirst({ where: { id } });
+  if (!c) throw new DomainError('No se encontró el comprobante de ARCA.');
+  if (c.movimientoId) throw new DomainError('Ese comprobante ya está cargado en PNL: no hace falta ignorarlo.');
+  const motivoLimpio = motivo?.trim().slice(0, 300) || null;
+  await ctx.db.comprobanteArca.update({ where: { id }, data: { ignoradoAt: new Date(), ignoradoPorId: ctx.usuario.id, motivoIgnorado: motivoLimpio } });
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'ComprobanteArca',
+    entidadId: id,
+    accion: 'ARCA_IGNORAR',
+    despues: { motivo: motivoLimpio },
+  });
+}
+
+export async function dejarDeIgnorarComprobanteArca(ctx: EmpresaContext, id: string): Promise<void> {
+  const c = await ctx.db.comprobanteArca.findFirst({ where: { id } });
+  if (!c) throw new DomainError('No se encontró el comprobante de ARCA.');
+  if (!c.ignoradoAt) return;
+  await ctx.db.comprobanteArca.update({ where: { id }, data: { ignoradoAt: null, ignoradoPorId: null, motivoIgnorado: null } });
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'ComprobanteArca',
+    entidadId: id,
+    accion: 'ARCA_DEJAR_DE_IGNORAR',
+    antes: { ignoradoAt: c.ignoradoAt, motivo: c.motivoIgnorado },
+  });
+}

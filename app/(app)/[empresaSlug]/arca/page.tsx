@@ -9,7 +9,7 @@ import { nombreTipoArca, numeroComprobanteArca, esNotaCreditoArca } from '@/lib/
 import { ventanaSyncDiaria } from '@/lib/arca/mis-comprobantes/service';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { AutoRefresh } from '@/components/auto-refresh';
-import { sincronizarArcaAction } from './actions';
+import { sincronizarArcaAction, ignorarArcaAction, dejarDeIgnorarArcaAction } from './actions';
 import { resumirPorMes } from '@/lib/arca/mis-comprobantes/resumen-mensual';
 import { MES_LABEL } from '@/lib/periodos';
 
@@ -20,8 +20,14 @@ import { MES_LABEL } from '@/lib/periodos';
 //
 // Sin ?mes= la vista es una lista por mes con una barra de cumplimiento
 // (cruzados / total), como Resúmenes; cada mes abre el detalle.
+//
+// Un comprobante imposible de conseguir se puede "Ignorar": cuenta como
+// resuelto en el cumplimiento (el período puede cerrar al 100%) y se cuenta
+// aparte.
 
 const ORIGEN_LABEL = { EMITIDO: 'Emitidos', RECIBIDO: 'Recibidos' } as const;
+const SIN_RESOLVER = { movimientoId: null, ignoradoAt: null };
+const IGNORADOS = { movimientoId: null, ignoradoAt: { not: null } };
 
 function mesActualAr(): string {
   const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit' }).format(new Date());
@@ -40,14 +46,14 @@ export default async function ArcaPage({
   const esAdmin = rolAlcanza(ctx.rol, 'ADMINISTRADOR');
 
   const origen = searchParams.origen === 'EMITIDO' || searchParams.origen === 'RECIBIDO' ? searchParams.origen : undefined;
-  const estado = searchParams.estado === 'faltantes' || searchParams.estado === 'cruzados' ? searchParams.estado : 'todos';
+  const estado = searchParams.estado === 'faltantes' || searchParams.estado === 'cruzados' || searchParams.estado === 'ignorados' ? searchParams.estado : 'todos';
   // Sin mes: lista mensual. Con mes (o "todos"): el detalle de comprobantes.
   const vistaLista = !searchParams.mes;
   const mes = /^\d{4}-\d{2}$/.test(searchParams.mes ?? '') ? searchParams.mes! : searchParams.mes === 'todos' ? 'todos' : mesActualAr();
   const [anio, mesNum] = mes === 'todos' ? [0, 0] : mes.split('-').map(Number);
   const rangoMes = mes === 'todos' ? undefined : { gte: new Date(Date.UTC(anio, mesNum - 1, 1)), lt: new Date(Date.UTC(anio, mesNum, 1)) };
   const resumenMensual = vistaLista
-    ? resumirPorMes(await ctx.db.comprobanteArca.findMany({ select: { fechaEmision: true, origen: true, movimientoId: true } }))
+    ? resumirPorMes(await ctx.db.comprobanteArca.findMany({ select: { fechaEmision: true, origen: true, movimientoId: true, ignoradoAt: true } }))
     : [];
 
   const [credencial, jobEnCurso, ultimoJob, comprobantes, resumenPorOrigen] = await Promise.all([
@@ -57,10 +63,10 @@ export default async function ArcaPage({
     ctx.db.comprobanteArca.findMany({
       where: {
         ...(origen ? { origen } : {}),
-        ...(estado === 'faltantes' ? { movimientoId: null } : estado === 'cruzados' ? { movimientoId: { not: null } } : {}),
+        ...(estado === 'faltantes' ? SIN_RESOLVER : estado === 'cruzados' ? { movimientoId: { not: null } } : estado === 'ignorados' ? IGNORADOS : {}),
         ...(rangoMes ? { fechaEmision: rangoMes } : {}),
       },
-      include: { movimiento: { select: { id: true, estado: true } } },
+      include: { movimiento: { select: { id: true, estado: true } }, ignoradoPor: { select: { nombre: true } } },
       orderBy: [{ fechaEmision: 'desc' }, { puntoVenta: 'asc' }, { numeroDesde: 'asc' }],
       take: 500,
     }),
@@ -70,11 +76,11 @@ export default async function ArcaPage({
       _count: { _all: true },
     }),
   ]);
-  const faltantesPorOrigen = await ctx.db.comprobanteArca.groupBy({
-    by: ['origen'],
-    where: { movimientoId: null, ...(rangoMes ? { fechaEmision: rangoMes } : {}) },
-    _count: { _all: true },
-  });
+  const [faltantesPorOrigen, ignoradosPorOrigen] = await Promise.all(
+    [SIN_RESOLVER, IGNORADOS].map((w) =>
+      ctx.db.comprobanteArca.groupBy({ by: ['origen'], where: { ...w, ...(rangoMes ? { fechaEmision: rangoMes } : {}) }, _count: { _all: true } }),
+    ),
+  );
   const cuenta = (o: 'EMITIDO' | 'RECIBIDO', lista: typeof resumenPorOrigen) => lista.find((r) => r.origen === o)?._count._all ?? 0;
 
   // "No figura en ARCA": comprobantes del libro con CAE dentro de la ventana
@@ -108,6 +114,8 @@ export default async function ArcaPage({
     for (const [k, v] of Object.entries(valores)) if (v) q.set(k, v);
     return `${base}?${q.toString()}`;
   };
+  const vistaActual = filtro({});
+  const totalIgnorados = resumenMensual.reduce((s, m) => s + m.ignorados, 0);
 
   return (
     <div className="space-y-4">
@@ -192,6 +200,18 @@ export default async function ArcaPage({
                 {resumenMensual.reduce((s, m) => s + m.faltan, 0)} de {resumenMensual.reduce((s, m) => s + m.total, 0)} comprobantes en ARCA
               </div>
             </div>
+            <div>
+              <span className="text-xs text-slate-500">Ignorados</span>
+              <div className="tabular-nums">
+                {totalIgnorados > 0 ? (
+                  <Link href={filtro({ mes: 'todos', origen: undefined, estado: 'ignorados' })} className="underline" title="Comprobantes de ARCA imposibles de conseguir: cuentan como resueltos para el cumplimiento">
+                    {totalIgnorados} {totalIgnorados === 1 ? 'comprobante' : 'comprobantes'}
+                  </Link>
+                ) : (
+                  <span className="text-slate-400">ninguno</span>
+                )}
+              </div>
+            </div>
             <Link href={filtro({ mes: 'todos', estado: 'faltantes' })} className="ml-auto text-xs underline text-slate-600">
               Ver todos los faltantes
             </Link>
@@ -212,13 +232,13 @@ export default async function ArcaPage({
               <tbody>
                 {resumenMensual.map((m) => {
                   const [a, mm] = m.mes.split('-').map(Number);
-                  const barra = (c: { total: number; cruzados: number }, ancho = 'w-16') => (
+                  const barra = (c: { total: number; cruzados: number; ignorados: number }, ancho = 'w-16') => (
                     c.total > 0 ? (
                       <div className="flex items-center gap-2">
                         <div className={`${ancho} h-1.5 rounded bg-slate-200 overflow-hidden`}>
-                          <div className="h-full bg-accent" style={{ width: `${Math.round((c.cruzados / c.total) * 100)}%` }} />
+                          <div className="h-full bg-accent" style={{ width: `${Math.round(((c.cruzados + c.ignorados) / c.total) * 100)}%` }} />
                         </div>
-                        <span className="text-xs text-slate-500 tabular-nums">{c.cruzados}/{c.total}</span>
+                        <span className="text-xs text-slate-500 tabular-nums">{c.cruzados + c.ignorados}/{c.total}</span>
                       </div>
                     ) : <span className="text-xs text-slate-400">—</span>
                   );
@@ -250,6 +270,13 @@ export default async function ArcaPage({
                           </Link>
                         ) : (
                           <span className="text-xs text-accent-strong">✔ completo</span>
+                        )}
+                        {m.ignorados > 0 && (
+                          <div>
+                            <Link href={filtro({ mes: m.mes, origen: undefined, estado: 'ignorados' })} className="text-xs text-slate-500 underline tabular-nums">
+                              {m.ignorados} {m.ignorados === 1 ? 'ignorado' : 'ignorados'}
+                            </Link>
+                          </div>
                         )}
                       </td>
                       <td>
@@ -289,6 +316,14 @@ export default async function ArcaPage({
               <Link href={filtro({ origen: o, estado: 'faltantes' })} className={cuenta(o, faltantesPorOrigen) > 0 ? 'text-red-700 underline' : 'text-slate-500'}>
                 {cuenta(o, faltantesPorOrigen)} sin cargar
               </Link>
+              {cuenta(o, ignoradosPorOrigen) > 0 && (
+                <>
+                  {' · '}
+                  <Link href={filtro({ origen: o, estado: 'ignorados' })} className="text-slate-500 underline">
+                    {cuenta(o, ignoradosPorOrigen)} ignorados
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         ))}
@@ -328,6 +363,7 @@ export default async function ArcaPage({
           { v: 'todos', l: 'Todos' },
           { v: 'faltantes', l: 'Sin cargar en PNL' },
           { v: 'cruzados', l: 'Cruzados' },
+          { v: 'ignorados', l: 'Ignorados' },
         ].map((e) => (
           <Link key={e.v} href={filtro({ estado: e.v })} className={`rounded px-2 py-0.5 ${estado === e.v ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600'}`}>
             {e.l}
@@ -350,7 +386,7 @@ export default async function ArcaPage({
           </thead>
           <tbody>
             {comprobantes.map((c) => (
-              <tr key={c.id} className={c.movimientoId ? '' : 'bg-red-50/40'}>
+              <tr key={c.id} className={c.movimientoId || c.ignoradoAt ? '' : 'bg-red-50/40'}>
                 <td className="whitespace-nowrap">{formatFecha(c.fechaEmision)}</td>
                 <td className="text-xs">{ORIGEN_LABEL[c.origen].slice(0, -1)}</td>
                 <td className="text-xs whitespace-nowrap">{nombreTipoArca(c.tipoComprobante)}</td>
@@ -367,8 +403,32 @@ export default async function ArcaPage({
                     <Link href={`/${params.empresaSlug}/validacion/${c.movimientoId}`} className="text-emerald-700 underline">
                       ✔ cargado{c.movimiento?.estado ? ` (${c.movimiento.estado.toLowerCase()})` : ''}
                     </Link>
+                  ) : c.ignoradoAt ? (
+                    <div className="space-y-0.5">
+                      <span className="text-slate-500" title={`Ignorado el ${formatFechaHora(c.ignoradoAt)}${c.ignoradoPor ? ` por ${c.ignoradoPor.nombre}` : ''}`}>
+                        Ignorado{c.motivoIgnorado ? `: ${c.motivoIgnorado}` : ''}
+                      </span>
+                      <form action={dejarDeIgnorarArcaAction}>
+                        <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                        <input type="hidden" name="id" value={c.id} />
+                        <input type="hidden" name="volver" value={vistaActual} />
+                        <button className="text-slate-500 underline">Dejar de ignorar</button>
+                      </form>
+                    </div>
                   ) : (
-                    <span className="text-red-700">Falta en PNL</span>
+                    <div className="space-y-0.5">
+                      <span className="text-red-700">Falta en PNL</span>
+                      <details>
+                        <summary className="cursor-pointer text-slate-500 underline">Ignorar</summary>
+                        <form action={ignorarArcaAction} className="mt-1 flex items-center gap-1">
+                          <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                          <input type="hidden" name="id" value={c.id} />
+                          <input type="hidden" name="volver" value={vistaActual} />
+                          <input name="motivo" maxLength={300} placeholder="Motivo (opcional)" className="input !w-40 !py-0.5 text-xs" />
+                          <button className="btn-secondary !py-0.5 !px-2 text-xs" title="No se va a poder conseguir: cuenta como resuelto para el cumplimiento del mes">Ignorar</button>
+                        </form>
+                      </details>
+                    </div>
                   )}
                 </td>
               </tr>

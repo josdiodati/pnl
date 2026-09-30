@@ -14,6 +14,8 @@ import {
   sincronizarMisComprobantes,
   encolarSyncsPendientes,
   ventanaSyncDiaria,
+  ignorarComprobanteArca,
+  dejarDeIgnorarComprobanteArca,
   type DepsArca,
 } from '@/lib/arca/mis-comprobantes/service';
 import { descifrarSecreto } from '@/lib/arca/mis-comprobantes/cifrado';
@@ -236,6 +238,45 @@ describe('Mis Comprobantes: servicio (integración)', () => {
     const r = await cruzarComprobantesArca(ctx.db, ctx.empresa, usuarioId);
     expect(r.cruzados).toBe(1);
     expect((await prisma.comprobanteArca.findFirstOrThrow({ where: { empresaId } })).movimientoId).toBe(venta.id);
+  });
+
+  // ---------- ignorar un comprobante de ARCA imposible de conseguir ----------
+
+  it('ignorar: marca quién, cuándo y por qué, audita, y se puede deshacer', async () => {
+    const c = await prisma.comprobanteArca.create({
+      data: { empresaId, origen: 'RECIBIDO', fechaEmision: new Date('2026-08-01T00:00:00Z'), tipoComprobante: 81, puntoVenta: 5465, numeroDesde: 6185, numeroHasta: 6185, nroDocContraparte: '30695542476', fuente: 'CSV', sincronizadoAt: new Date() } as never,
+    });
+    await ignorarComprobanteArca(ctx, c.id, '  El proveedor no lo entrega ');
+    const ign = await prisma.comprobanteArca.findUniqueOrThrow({ where: { id: c.id } });
+    expect(ign.ignoradoAt).toBeInstanceOf(Date);
+    expect(ign.ignoradoPorId).toBe(usuarioId);
+    expect(ign.motivoIgnorado).toBe('El proveedor no lo entrega');
+    expect(await prisma.auditLog.count({ where: { empresaId, entidadId: c.id, accion: 'ARCA_IGNORAR' } })).toBe(1);
+
+    await dejarDeIgnorarComprobanteArca(ctx, c.id);
+    const des = await prisma.comprobanteArca.findUniqueOrThrow({ where: { id: c.id } });
+    expect(des).toMatchObject({ ignoradoAt: null, ignoradoPorId: null, motivoIgnorado: null });
+    expect(await prisma.auditLog.count({ where: { empresaId, entidadId: c.id, accion: 'ARCA_DEJAR_DE_IGNORAR' } })).toBe(1);
+  });
+
+  it('ignorar: no se puede ignorar uno ya cruzado con el libro, ni uno de otra empresa', async () => {
+    const mov = await movimiento({ cuitEmisor: '30656631615', tipoComprobante: 'FACTURA_A', puntoVenta: '1', numero: '9', cae: null });
+    const c = await prisma.comprobanteArca.create({
+      data: { empresaId, origen: 'RECIBIDO', fechaEmision: new Date('2026-08-01T00:00:00Z'), tipoComprobante: 1, puntoVenta: 1, numeroDesde: 9, numeroHasta: 9, nroDocContraparte: '30656631615', fuente: 'CSV', sincronizadoAt: new Date(), movimientoId: mov.id } as never,
+    });
+    await expect(ignorarComprobanteArca(ctx, c.id, null)).rejects.toThrow(DomainError);
+    const otraCtx = { ...ctx, db: scopedDb('otra-empresa-inexistente') } as EmpresaContext;
+    await expect(ignorarComprobanteArca(otraCtx, c.id, null)).rejects.toThrow(DomainError);
+  });
+
+  it('si aparece el comprobante y cruza, deja de estar ignorado', async () => {
+    const c = await prisma.comprobanteArca.create({
+      data: { empresaId, origen: 'RECIBIDO', fechaEmision: new Date('2026-08-01T00:00:00Z'), tipoComprobante: 1, puntoVenta: 1, numeroDesde: 9, numeroHasta: 9, nroDocContraparte: '30656631615', fuente: 'CSV', sincronizadoAt: new Date() } as never,
+    });
+    await ignorarComprobanteArca(ctx, c.id, null);
+    const mov = await movimiento({ cuitEmisor: '30656631615', tipoComprobante: 'FACTURA_A', puntoVenta: '1', numero: '9', cae: null });
+    await cruzarComprobantesArca(ctx.db, ctx.empresa, usuarioId);
+    expect(await prisma.comprobanteArca.findUniqueOrThrow({ where: { id: c.id } })).toMatchObject({ movimientoId: mov.id, ignoradoAt: null, motivoIgnorado: null });
   });
 
   // ---------- el cruce es la ÚNICA fuente del tag ARCA ----------
