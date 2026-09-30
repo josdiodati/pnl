@@ -7,6 +7,7 @@ import { netoComputable } from '@/lib/empleados/prepaga';
 import { armarMatrizPersonal, type SerieMatriz } from '@/lib/empleados/matriz';
 import { RecibosUpload } from '@/components/recibos-upload';
 import { OkBanner } from '@/components/error-banner';
+import { ArchivosRecibosVista } from './archivos-vista';
 
 // Sección Empleados (sólo ADMINISTRADOR). Vista por defecto: la matriz del
 // ejercicio contable (columnas = meses, filas = métricas por centro de costo).
@@ -56,7 +57,9 @@ export default async function EmpleadosPage({
       ? 'pendientes'
       : searchParams.vista === 'detalle'
         ? 'detalle'
-        : 'ejercicio';
+        : searchParams.vista === 'archivos'
+          ? 'archivos'
+          : 'ejercicio';
   const ejercicio = Number(searchParams.ejercicio ?? ejercicioDeMes(hoy.anio, hoy.mes, inicio));
   const anio = Number(searchParams.anio ?? hoy.anio);
   const mes = Number(searchParams.mes ?? hoy.mes);
@@ -109,9 +112,22 @@ export default async function EmpleadosPage({
         <Link href={`${base}?vista=pendientes`} className={`text-sm ${vista === 'pendientes' ? 'font-semibold underline' : 'text-slate-500'}`}>
           Pendientes {pendientes.length > 0 && `(${pendientes.length})`}
         </Link>
+        <Link href={`${base}?vista=archivos`} className={`text-sm ${vista === 'archivos' ? 'font-semibold underline' : 'text-slate-500'}`}>
+          Archivos
+        </Link>
       </div>
     </>
   );
+
+  // ---------- Vista: archivos subidos (log) ----------
+  if (vista === 'archivos') {
+    return (
+      <div className="space-y-4">
+        {encabezado}
+        <ArchivosRecibosVista empresaId={ctx.empresa.id} base={base} />
+      </div>
+    );
+  }
 
   // ---------- Vista: pendientes ----------
   if (vista === 'pendientes') {

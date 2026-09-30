@@ -6,6 +6,7 @@ import { validarDistribucion, type LineaDistribucion } from '@/lib/movimientos/d
 import { validarPertenenciaLineas } from '@/lib/movimientos/service';
 import { getOrCreatePeriodo } from '@/lib/periodos';
 import type { TotalesRecibo } from './aritmetica';
+import { actualizarFichaSiEsUltimo } from './asignacion';
 
 // Acciones de usuario sobre empleados y recibos. Todas asumen que el caller ya
 // pasó por requireEmpresa(slug, 'ADMINISTRADOR'). Un período CERRADO congela
@@ -83,12 +84,14 @@ export async function confirmarRecibo(
     antes: { estado: recibo.estado },
     despues: { estado: 'CONFIRMADO', lineas: lineas.length, totalesEditados: Object.keys(t) },
   });
+  await actualizarFichaSiEsUltimo(recibo.empleadoId, recibo.periodo, lineas);
 }
 
 /**
- * Corrige la distribución de un recibo YA CONFIRMADO (meses pasados con la
- * asignación mal cargada). Sólo con período abierto; reemplaza las líneas y
- * queda auditado. No toca la ficha: eso es para los meses futuros.
+ * Corrige la distribución de un recibo YA CONFIRMADO. Sólo con período
+ * abierto; reemplaza las líneas y queda auditado. Si es el recibo más reciente
+ * del empleado, la ficha pasa a esta distribución (rige para los meses que
+ * vienen); corregir un mes viejo no la toca.
  */
 export async function reasignarRecibo(ctx: EmpresaContext, reciboId: string, lineas: LineaDistribucion[]): Promise<void> {
   const recibo = await reciboEditable(ctx, reciboId);
@@ -114,6 +117,7 @@ export async function reasignarRecibo(ctx: EmpresaContext, reciboId: string, lin
     antes: { lineas: antes.map((l) => ({ cc: l.centroCostoId, pct: Number(l.porcentaje) })) },
     despues: { lineas: lineas.map((l) => ({ cc: l.centroCostoId, pct: l.porcentaje })) },
   });
+  await actualizarFichaSiEsUltimo(recibo.empleadoId, recibo.periodo, lineas);
 }
 
 export async function anularRecibo(ctx: EmpresaContext, reciboId: string, nota: string): Promise<void> {

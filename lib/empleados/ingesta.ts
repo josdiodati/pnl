@@ -11,6 +11,7 @@ import { contarPaginasPdf, textoDePagina } from './pdf';
 import { getReciboExtractor } from '@/lib/extractor/recibo';
 import { verificarAritmeticaRecibo, calcularCostoTotal, type TotalesRecibo } from './aritmetica';
 import { decidirEstadoRecibo } from './decision';
+import { distribucionVigente } from './asignacion';
 
 // Pipeline de recibos: PDF multi-recibo -> storage (una vez) -> un Job
 // EXTRACCION_RECIBO por página -> el worker extrae, matchea por CUIL, corre la
@@ -100,7 +101,7 @@ export async function procesarExtraccionRecibo(payload: {
       despues: { nombre: creado.nombre, cuil, desdeRecibo: true },
     });
     empleado = { ...creado, distribucion: [] };
-    camposRevisar.empleado = 'Empleado nuevo dado de alta desde el recibo: revisá la ficha y cargale distribución';
+    camposRevisar.empleado = 'Empleado nuevo dado de alta desde el recibo: revisá la ficha y cargale la asignación';
   } else if (
     (extraccion.categoriaLaboral && empleado.categoria && extraccion.categoriaLaboral !== empleado.categoria) ||
     (extraccion.sector && empleado.sector && extraccion.sector !== empleado.sector)
@@ -140,13 +141,9 @@ export async function procesarExtraccionRecibo(payload: {
     where: { empleadoId: empleado.id, periodoId: periodo.id, tipo: extraccion.tipo, estado: { not: 'ANULADO' } },
   });
 
-  // --- Distribución de la ficha ---
-  const lineasFicha = empleado.distribucion.map((l) => ({
-    centroCostoId: l.centroCostoId,
-    clienteId: l.clienteId ?? null,
-    proyectoId: l.proyectoId ?? null,
-    porcentaje: Number(l.porcentaje),
-  }));
+  // --- Distribución vigente: la ficha o, si está vacía, la del último recibo
+  // confirmado (queda guardada en la ficha: la asignación es permanente) ---
+  const { lineas: lineasFicha } = await distribucionVigente(empleado.id);
   let tieneDistribucion = false;
   try {
     validarDistribucion(lineasFicha);

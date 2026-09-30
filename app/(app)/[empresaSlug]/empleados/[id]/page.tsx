@@ -11,7 +11,7 @@ import {
   agregarCostoManualAction, eliminarCostoManualAction,
 } from '../actions';
 
-// Ficha del empleado: datos editables, distribución por defecto, historial de
+// Ficha del empleado: datos editables, asignación vigente, historial de
 // costo por período y comprobantes vinculados (prepaga, etc.).
 export default async function EmpleadoPage({
   params,
@@ -122,8 +122,8 @@ export default async function EmpleadoPage({
         <form action={guardarDistribucionAction} className="card p-3 space-y-2">
           <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
           <input type="hidden" name="empleadoId" value={empleado.id} />
-          <p className="text-sm font-medium">Distribución por defecto</p>
-          <p className="text-xs text-slate-500">Cada recibo nuevo la hereda al confirmarse. Cambiarla no toca recibos ya confirmados.</p>
+          <p className="text-sm font-medium">Asignación vigente</p>
+          <p className="text-xs text-slate-500">Rige todos los meses hasta que cambie: cada recibo nuevo la hereda y se confirma solo. Cambiarla acá, o corregir el recibo más reciente, la actualiza para los meses siguientes; no toca recibos ya confirmados.</p>
           <DistribucionEditor
             centros={centros.map((c) => ({ id: c.id, nombre: c.nombre }))}
             clientes={clientes.map((c) => ({ id: c.id, nombre: c.nombre, centroCostoId: c.centroCostoId }))}
