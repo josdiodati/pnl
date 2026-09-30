@@ -2,16 +2,19 @@ import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { MES_LABEL, periodoDeFecha, ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
-import { formatMoney } from '@/lib/format';
+import { formatMoney, formatFecha } from '@/lib/format';
 import { netoComputable } from '@/lib/empleados/prepaga';
+import { costosDelMes, totalEmpleadoMes, ultimoPeriodoConRecibos, type CostoEmpleadoMes } from '@/lib/empleados/mes';
 import { armarMatrizPersonal, type SerieMatriz } from '@/lib/empleados/matriz';
 import { RecibosUpload } from '@/components/recibos-upload';
 import { OkBanner } from '@/components/error-banner';
 import { ArchivosRecibosVista } from './archivos-vista';
 
-// Sección Empleados (sólo ADMINISTRADOR). Vista por defecto: la matriz del
-// ejercicio contable (columnas = meses, filas = métricas por centro de costo).
-// Cada celda linkea al detalle mensual filtrado por centro.
+// Sección Empleados (sólo ADMINISTRADOR). Vista por defecto: el listado de
+// empleados (activos = sin fecha de egreso / inactivos) con el costo del último
+// período con recibos. Pestaña Ejercicio: la matriz del ejercicio contable
+// (columnas = meses, filas = métricas por centro); cada celda linkea al detalle
+// mensual filtrado por centro.
 
 type Busqueda = {
   vista?: string;
@@ -40,6 +43,9 @@ const fmtDinero = (centavos: number) =>
 const fmtHc = (v: number) =>
   v === 0 ? '—' : Number.isInteger(Math.round(v * 100) / 100) ? String(Math.round(v)) : v.toLocaleString('es-AR', { maximumFractionDigits: 1 });
 
+const estadoRecibo = (c: CostoEmpleadoMes | undefined) =>
+  c?.pendiente ? '⏳ pendiente' : c?.recibos ? '✔ confirmado' : '— sin recibo';
+
 export default async function EmpleadosPage({
   params,
   searchParams,
@@ -59,7 +65,9 @@ export default async function EmpleadosPage({
         ? 'detalle'
         : searchParams.vista === 'archivos'
           ? 'archivos'
-          : 'ejercicio';
+          : searchParams.vista === 'ejercicio' || searchParams.ejercicio
+            ? 'ejercicio'
+            : 'empleados';
   const ejercicio = Number(searchParams.ejercicio ?? ejercicioDeMes(hoy.anio, hoy.mes, inicio));
   const anio = Number(searchParams.anio ?? hoy.anio);
   const mes = Number(searchParams.mes ?? hoy.mes);
@@ -107,7 +115,8 @@ export default async function EmpleadosPage({
         </div>
       )}
       <div className="flex items-center gap-3 flex-wrap">
-        <Link href={base} className={`text-sm ${vista === 'ejercicio' ? 'font-semibold underline' : 'text-slate-500'}`}>Ejercicio</Link>
+        <Link href={base} className={`text-sm ${vista === 'empleados' ? 'font-semibold underline' : 'text-slate-500'}`}>Empleados</Link>
+        <Link href={`${base}?vista=ejercicio`} className={`text-sm ${vista === 'ejercicio' ? 'font-semibold underline' : 'text-slate-500'}`}>Ejercicio</Link>
         <Link href={`${base}?vista=detalle&anio=${anio}&mes=${mes}`} className={`text-sm ${vista === 'detalle' ? 'font-semibold underline' : 'text-slate-500'}`}>Detalle mensual</Link>
         <Link href={`${base}?vista=pendientes`} className={`text-sm ${vista === 'pendientes' ? 'font-semibold underline' : 'text-slate-500'}`}>
           Pendientes {pendientes.length > 0 && `(${pendientes.length})`}
@@ -118,6 +127,109 @@ export default async function EmpleadosPage({
       </div>
     </>
   );
+
+  // ---------- Vista: empleados (default) ----------
+  // Todos los empleados, activos (sin fecha de egreso) e inactivos, con el
+  // costo del último período del que hay recibos.
+  if (vista === 'empleados') {
+    const [todos, ultimo] = await Promise.all([
+      ctx.db.empleado.findMany({
+        orderBy: { nombre: 'asc' },
+        include: { distribucion: { include: { centroCosto: true, cliente: true, proyecto: true } } },
+      }),
+      ultimoPeriodoConRecibos(ctx.db),
+    ]);
+    const costos = ultimo ? await costosDelMes(ctx.db, ultimo.anio, ultimo.mes) : new Map<string, CostoEmpleadoMes>();
+    const activos = todos.filter((e) => !e.fechaEgreso);
+    const inactivos = todos.filter((e) => e.fechaEgreso);
+    const costoMes = [...costos.values()].reduce((a, c) => a + totalEmpleadoMes(c), 0);
+    const activosConRecibo = activos.filter((e) => costos.get(e.id)?.tieneRecibo).length;
+    const periodoLabel = ultimo ? `${MES_LABEL[ultimo.mes]} ${ultimo.anio}` : 'sin recibos';
+
+    const tabla = (lista: typeof todos, inactivo: boolean) => (
+      <div className="card overflow-x-auto">
+        <table className="table-base">
+          <thead>
+            <tr>
+              <th>Empleado</th>
+              <th>Categoría / sector</th>
+              <th>Asignación</th>
+              <th>{inactivo ? 'Ingreso / egreso' : 'Ingreso'}</th>
+              <th className="text-right">Recibos</th>
+              <th className="text-right">Vinculados</th>
+              <th className="text-right" title="Neto de la prepaga asignada (plan − % × aportes+contribuciones); se carga en Personal → Prepagas">Prepaga</th>
+              <th className="text-right">Costo total</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lista.map((e) => {
+              const c = costos.get(e.id);
+              const total = totalEmpleadoMes(c);
+              return (
+                <tr key={e.id} className="hover:bg-slate-50">
+                  <td><Link href={`${base}/${e.id}`} className="font-medium hover:underline">{e.nombre}</Link></td>
+                  <td className="text-xs text-slate-500">{[e.categoria, e.sector].filter(Boolean).join(' / ') || '—'}</td>
+                  <td className="text-xs">
+                    {e.distribucion.length === 0
+                      ? <span className="text-amber-700">sin asignar</span>
+                      : e.distribucion.map((l) => (
+                          <span key={l.id} className="block">
+                            {[l.centroCosto.nombre, l.cliente?.nombre, l.proyecto?.nombre].filter(Boolean).join(' › ')}
+                            {Number(l.porcentaje) !== 100 && <span className="text-slate-500"> {Number(l.porcentaje)}%</span>}
+                          </span>
+                        ))}
+                  </td>
+                  <td className="text-xs tabular-nums">
+                    {formatFecha(e.fechaIngreso)}
+                    {inactivo && <> / {formatFecha(e.fechaEgreso)}</>}
+                  </td>
+                  <td className="num">{c?.recibos ? formatMoney(c.recibos) : '—'}</td>
+                  <td className="num">{c?.vinculado ? formatMoney(c.vinculado) : '—'}</td>
+                  <td className="num">{c?.prepaga ? formatMoney(c.prepaga) : '—'}</td>
+                  <td className="num font-medium">{total ? formatMoney(total) : '—'}</td>
+                  <td className="text-xs">{estadoRecibo(c)}</td>
+                </tr>
+              );
+            })}
+            {lista.length === 0 && (
+              <tr><td colSpan={9} className="text-center text-slate-400 py-8">
+                {inactivo ? 'No hay empleados con fecha de egreso.' : 'Sin empleados: subí el PDF de recibos para darlos de alta.'}
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+
+    return (
+      <div className="space-y-4">
+        {encabezado}
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div className="card p-3">
+            <p className="text-xs text-slate-500">Costo total de personal · {periodoLabel}</p>
+            <p className="text-xl font-semibold tabular-nums text-red-700">{formatMoney(costoMes)}</p>
+          </div>
+          <div className="card p-3">
+            <p className="text-xs text-slate-500">Activos con recibo · {periodoLabel}</p>
+            <p className="text-xl font-semibold tabular-nums">{activosConRecibo} / {activos.length}</p>
+          </div>
+          <div className="card p-3">
+            <p className="text-xs text-slate-500">Pendientes de revisión (todos los períodos)</p>
+            <p className="text-xl font-semibold tabular-nums">{pendientes.length}</p>
+          </div>
+        </div>
+        <p className="text-xs text-slate-500">
+          Costos del último período con recibos ({periodoLabel}).
+          {ultimo && <> <Link href={`${base}?vista=detalle&anio=${ultimo.anio}&mes=${ultimo.mes}`} className="underline">Ver otros meses</Link></>}
+        </p>
+        <h2 className="text-sm font-semibold">Activos ({activos.length})</h2>
+        {tabla(activos, false)}
+        <h2 className="text-sm font-semibold">Inactivos ({inactivos.length})</h2>
+        {tabla(inactivos, true)}
+      </div>
+    );
+  }
 
   // ---------- Vista: archivos subidos (log) ----------
   if (vista === 'archivos') {
@@ -165,77 +277,24 @@ export default async function EmpleadosPage({
 
   // ---------- Vista: detalle mensual (con filtro por centro) ----------
   if (vista === 'detalle') {
-    const [empleados, recibosPeriodo, vinculos, prepagasMesRegistros] = await Promise.all([
+    const [empleados, costos] = await Promise.all([
       ctx.db.empleado.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
-      ctx.db.reciboSueldo.findMany({
-        where: { periodo: { anio, mes }, estado: { in: ['CONFIRMADO', 'PENDIENTE_REVISION'] } },
-        include: { empleado: true, lineas: true },
-      }),
-      ctx.db.movimientoEmpleado.findMany({
-        where: { movimiento: { estado: 'ASIGNADO', periodo: { anio, mes } } },
-        include: { empleado: { include: { distribucion: true } } },
-      }),
-      ctx.db.prepagaEmpleado.findMany({
-        where: { periodo: { anio, mes } },
-        include: { empleado: { include: { distribucion: true } } },
-      }),
+      costosDelMes(ctx.db, anio, mes, centroFiltro),
     ]);
-
-    // Porcentaje de unas líneas que cae en el centro filtrado (1 si no hay filtro).
-    const pctEnCentro = (lineas: { centroCostoId: string; porcentaje: unknown }[]) => {
-      if (!centroFiltro || centroFiltro === 'SIN_ASIGNAR') return 1;
-      return lineas.filter((l) => l.centroCostoId === centroFiltro).reduce((a, l) => a + Number(l.porcentaje), 0) / 100;
-    };
-
-    // Con filtro activo, las columnas muestran LA PORCIÓN de ese centro (un
-    // empleado repartido 60/40 no aparece por su costo completo) — así la
-    // tabla cuadra con la celda de la matriz.
-    const vinculadoPorEmpleado = new Map<string, number>();
-    for (const v of vinculos) {
-      const porcion = Number(v.monto) * pctEnCentro(v.empleado.distribucion);
-      vinculadoPorEmpleado.set(v.empleadoId, (vinculadoPorEmpleado.get(v.empleadoId) ?? 0) + porcion);
-    }
-    const recibosPorEmpleado = new Map<string, { confirmado: number; pendiente: boolean; centros: Set<string> }>();
-    for (const r of recibosPeriodo) {
-      const acc = recibosPorEmpleado.get(r.empleadoId) ?? { confirmado: 0, pendiente: false, centros: new Set<string>() };
-      if (r.estado === 'CONFIRMADO') {
-        acc.confirmado += Number(r.costoTotalEmpleador ?? 0) * pctEnCentro(r.lineas);
-        for (const l of r.lineas) acc.centros.add(l.centroCostoId);
-        if (r.lineas.length === 0) acc.pendiente = true; // confirmado sin líneas: cuenta como sin asignar
-      } else acc.pendiente = true;
-      recibosPorEmpleado.set(r.empleadoId, acc);
-    }
 
     // Filtro por centro (viene del drill-down de la matriz).
     const filtrados = empleados.filter((e) => {
       if (!centroFiltro) return true;
-      const r = recibosPorEmpleado.get(e.id);
-      if (!r) return false;
-      return centroFiltro === 'SIN_ASIGNAR' ? r.pendiente : r.centros.has(centroFiltro);
+      const c = costos.get(e.id);
+      if (!c?.tieneRecibo) return false;
+      return centroFiltro === 'SIN_ASIGNAR' ? c.pendiente : c.centros.has(centroFiltro);
     });
-
-    // Prepagas ASIGNADAS por empleado (gestión): la porción del centro sale de
-    // la distribución de la ficha; el agregado contable queda en el libro.
-    const prepagaPorEmpleado = new Map<string, number>();
-    for (const r of prepagasMesRegistros) {
-      const neto =
-        netoComputable({
-          costoPlan: Number(r.costoPlan),
-          aportes: Number(r.aportes),
-          contribuciones: Number(r.contribuciones),
-          fsrPct: Number(r.fsrPct),
-        }) / 100;
-      const porcion = neto * pctEnCentro(r.empleado.distribucion);
-      if (porcion > 0) prepagaPorEmpleado.set(r.empleadoId, (prepagaPorEmpleado.get(r.empleadoId) ?? 0) + porcion);
-    }
-
     const idsFiltrados = new Set(filtrados.map((e) => e.id));
-    const sumaFiltrada = (m: Map<string, number>) =>
-      [...m.entries()].reduce((a, [id, v]) => a + (idsFiltrados.has(id) || !centroFiltro ? v : 0), 0);
-    const costoTotal =
-      sumaFiltrada(new Map([...recibosPorEmpleado.entries()].map(([id, r]) => [id, r.confirmado]))) +
-      sumaFiltrada(vinculadoPorEmpleado) +
-      sumaFiltrada(prepagaPorEmpleado);
+    const costoTotal = [...costos.entries()].reduce(
+      (acc, [id, c]) => acc + (idsFiltrados.has(id) || !centroFiltro ? totalEmpleadoMes(c) : 0),
+      0,
+    );
+    const conRecibo = [...costos.values()].filter((c) => c.tieneRecibo).length;
     const mesAnterior = mes === 1 ? { anio: anio - 1, mes: 12 } : { anio, mes: mes - 1 };
     const mesSiguiente = mes === 12 ? { anio: anio + 1, mes: 1 } : { anio, mes: mes + 1 };
     const qsCentro = centroFiltro ? `&centro=${centroFiltro}` : '';
@@ -254,7 +313,7 @@ export default async function EmpleadosPage({
           </div>
           <div className="card p-3">
             <p className="text-xs text-slate-500">Empleados con recibo</p>
-            <p className="text-xl font-semibold tabular-nums">{recibosPorEmpleado.size} / {empleados.length}</p>
+            <p className="text-xl font-semibold tabular-nums">{conRecibo} / {empleados.length}</p>
           </div>
           <div className="card p-3">
             <p className="text-xs text-slate-500">Pendientes de revisión (todos los períodos)</p>
@@ -289,19 +348,19 @@ export default async function EmpleadosPage({
             </thead>
             <tbody>
               {filtrados.map((e) => {
-                const r = recibosPorEmpleado.get(e.id);
-                const vinc = vinculadoPorEmpleado.get(e.id) ?? 0;
-                const prep = prepagaPorEmpleado.get(e.id) ?? 0;
-                const total = (r?.confirmado ?? 0) + vinc + prep;
+                const c = costos.get(e.id);
+                const vinc = c?.vinculado ?? 0;
+                const prep = c?.prepaga ?? 0;
+                const total = totalEmpleadoMes(c);
                 return (
                   <tr key={e.id} className="hover:bg-slate-50">
                     <td><Link href={`${base}/${e.id}`} className="font-medium hover:underline">{e.nombre}</Link></td>
                     <td className="text-xs text-slate-500">{[e.categoria, e.sector].filter(Boolean).join(' / ') || '—'}</td>
-                    <td className="num">{r?.confirmado ? formatMoney(r.confirmado) : '—'}</td>
+                    <td className="num">{c?.recibos ? formatMoney(c.recibos) : '—'}</td>
                     <td className="num">{vinc ? formatMoney(vinc) : '—'}</td>
                     <td className="num">{prep ? formatMoney(prep) : '—'}</td>
                     <td className="num font-medium">{total ? formatMoney(total) : '—'}</td>
-                    <td className="text-xs">{r?.pendiente ? '⏳ pendiente' : r?.confirmado ? '✔ confirmado' : '— sin recibo'}</td>
+                    <td className="text-xs">{estadoRecibo(c)}</td>
                   </tr>
                 );
               })}
@@ -411,11 +470,11 @@ export default async function EmpleadosPage({
     <div className="space-y-4">
       {encabezado}
       <div className="flex items-center gap-2">
-        <Link href={`${base}?ejercicio=${ejercicio - 1}`} className="btn-secondary text-xs">←</Link>
+        <Link href={`${base}?vista=ejercicio&ejercicio=${ejercicio - 1}`} className="btn-secondary text-xs">←</Link>
         <span className="text-sm font-medium">
           Ejercicio {ejercicio}/{ejercicio + 1} ({MES_LABEL[inicio]} {ejercicio} – {MES_LABEL[inicio === 1 ? 12 : inicio - 1]} {inicio === 1 ? ejercicio : ejercicio + 1})
         </span>
-        <Link href={`${base}?ejercicio=${ejercicio + 1}`} className="btn-secondary text-xs">→</Link>
+        <Link href={`${base}?vista=ejercicio&ejercicio=${ejercicio + 1}`} className="btn-secondary text-xs">→</Link>
         <span className="text-xs text-slate-400 ml-2">montos en $ · click en una celda para ver el detalle</span>
       </div>
 
