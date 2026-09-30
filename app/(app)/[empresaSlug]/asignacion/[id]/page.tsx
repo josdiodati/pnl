@@ -16,6 +16,7 @@ import { HistorialComprobante } from '@/components/historial-comprobante';
 import { buscarReglasPorCuit } from '@/lib/reglas/guardar-desde-asignacion';
 import { describirCondiciones } from '@/lib/reglas/desde-asignacion';
 import { nombreContraparte, cuitContraparteDe, esVenta } from '@/lib/movimientos/nombre-contraparte';
+import { netoDe } from '@/lib/movimientos/neto';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { totalFirmadoDe } from '@/lib/movimientos/query';
 import { elegirRegla, textoDeMatching, textoDocumentoDe } from '@/lib/reglas/matching';
@@ -158,8 +159,10 @@ export default async function AsignacionDetallePage({
             </dd>
             <dt className="text-slate-500">Fecha</dt>
             <dd>{formatFecha(mov.fechaDevengamiento)}</dd>
+            <dt className="text-slate-500" title="Sin IVA, percepciones ni otros tributos">Neto</dt>
+            <dd className="tabular-nums">{formatMoney(netoDe(mov))}{mov.moneda !== 'ARS' ? ` ${mov.moneda}` : ''}</dd>
             <dt className="text-slate-500">Total</dt>
-            <dd className="tabular-nums font-medium">{formatMoney(mov.total ? Number(mov.total) : null)}</dd>
+            <dd className="tabular-nums font-medium">{formatMoney(mov.total ? Number(mov.total) : null)}{mov.moneda !== 'ARS' ? ` ${mov.moneda}` : ''}</dd>
             <dt className="text-slate-500">ARCA</dt>
             <dd><ArcaBadge estado={mov.arcaEstado} /></dd>
           </dl>

@@ -3,6 +3,8 @@
 // neto = total − IVA − percepciones − otros tributos, la nota de crédito resta.
 // Recibe sólo comprobantes vigentes (el where ya excluye duplicados y anulados).
 
+import { netoDe } from '@/lib/movimientos/neto';
+
 export type CompraAgrupable = {
   contraparteId: string | null;
   cuitEmisor: string | null; // extraído del documento: agrupa lo que aún no tiene contraparte
@@ -40,8 +42,7 @@ export function agruparGastoPorProveedor(compras: CompraAgrupable[], topN = 15):
     const tc = c.moneda === 'ARS' ? 1 : n(c.tipoCambio);
     if (!tc) { sinTipoCambio += 1; continue; }
     const signo = c.tipoComprobante?.startsWith('NOTA_CREDITO') ? -1 : 1;
-    const neto = signo * tc * (n(c.total) - n(c.iva21) - n(c.iva105) - n(c.iva27)
-      - n(c.percepcionesIva) - n(c.percepcionesIibb) - n(c.otrosTributos));
+    const neto = signo * tc * netoDe(c)!;
     // Sin contraparte (todavía sin validar): por CUIT del documento, para no
     // mezclar a todos los proveedores pendientes en una sola fila.
     const cuit = c.contraparteId ? null : c.cuitEmisor || null;

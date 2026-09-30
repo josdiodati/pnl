@@ -3,6 +3,7 @@ import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { ErrorBanner, OkBanner, AvisoBanner } from '@/components/error-banner';
 import { ArcaBadge } from '@/components/badges';
 import { formatMoney, formatFecha } from '@/lib/format';
+import { netoDe } from '@/lib/movimientos/neto';
 import { nombreContraparte, esVenta } from '@/lib/movimientos/nombre-contraparte';
 
 export default async function AsignacionPage({
@@ -36,6 +37,7 @@ export default async function AsignacionPage({
               <th>Tipo</th>
               <th>Comprobante</th>
               <th>Fecha</th>
+              <th className="text-right" title="Sin IVA, percepciones ni otros tributos">Neto</th>
               <th className="text-right">Total</th>
               <th>ARCA</th>
               <th></th>
@@ -63,7 +65,8 @@ export default async function AsignacionPage({
                   {m.tipoComprobante?.replace(/_/g, ' ') ?? '—'} {m.puntoVenta ? `${m.puntoVenta}-` : ''}{m.numero ?? ''}
                 </td>
                 <td className="whitespace-nowrap">{formatFecha(m.fechaDevengamiento)}</td>
-                <td className="num">{formatMoney(m.total ? Number(m.total) : null)}</td>
+                <td className="num">{formatMoney(netoDe(m))}</td>
+                <td className="num">{formatMoney(m.total ? Number(m.total) : null)}{m.moneda !== 'ARS' && <span className="ml-1 text-[10px] text-slate-400">{m.moneda}</span>}</td>
                 <td className="whitespace-nowrap"><ArcaBadge estado={m.arcaEstado} /></td>
                 <td className="text-right">
                   <Link href={`/${params.empresaSlug}/asignacion/${m.id}`} className="btn-primary text-xs">
@@ -75,7 +78,7 @@ export default async function AsignacionPage({
             })}
             {movimientos.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center text-slate-400 py-8">
+                <td colSpan={8} className="text-center text-slate-400 py-8">
                   No hay comprobantes validados pendientes de asignación.
                 </td>
               </tr>

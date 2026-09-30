@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { netoDe } from '@/lib/movimientos/neto';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isForbidden } from '@/lib/errors';
 import { rolAlcanza } from '@/lib/roles';
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
   const encabezados = [
     'fecha_emision', 'lado', 'tipo_comprobante', 'punto_venta', 'numero', 'cuit_contraparte', 'contraparte', 'categoria', 'estado',
     'moneda', 'tipo_cambio', 'neto_gravado', 'iva_105', 'iva_21', 'iva_27', 'percepciones_iva', 'percepciones_iibb',
-    'otros_tributos', 'no_gravado_exento', 'total', 'total_ars_firmado', 'cae', 'arca', 'vencimiento_pago', 'canal', 'archivo',
+    'otros_tributos', 'no_gravado_exento', 'total', 'neto', 'total_ars_firmado', 'neto_ars_firmado', 'cae', 'arca', 'vencimiento_pago', 'canal', 'archivo',
   ];
   const datos: CeldaXlsx[][] = filas.map((m) => {
     const tc = m.moneda === 'ARS' ? 1 : num(m.tipoCambio);
@@ -50,7 +51,9 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
       m.contraparte?.cuit ?? (compra ? m.cuitEmisor : null), razon, m.categoria?.nombre ?? null, m.estado,
       m.moneda, num(m.tipoCambio), num(m.netoGravado), num(m.iva105), num(m.iva21), num(m.iva27), num(m.percepcionesIva),
       num(m.percepcionesIibb), num(m.otrosTributos), num(m.noGravadoExento), num(m.total),
+      m.total != null ? Math.round(netoDe(m)! * 100) / 100 : null,
       m.total != null && tc ? Math.round(signo * Number(m.total) * tc * 100) / 100 : null,
+      m.total != null && tc ? Math.round(signo * netoDe(m)! * tc * 100) / 100 : null,
       m.cae, m.arcaEstado, m.fechaVencimientoPago?.toISOString().slice(0, 10) ?? null, m.canalIngreso, m.archivoNombre,
     ];
   });

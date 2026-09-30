@@ -4,6 +4,7 @@ import { rolAlcanza } from '@/lib/roles';
 import { buildWhereMovimientos, resumirMovimientos, totalFirmadoDe, tonoImporte, type FiltrosMovimientos } from '@/lib/movimientos/query';
 import { resumirCostosPersonal } from '@/lib/empleados/costos';
 import { formatMoney, formatMoneyFirmado, formatFecha } from '@/lib/format';
+import { netoDe, netoFirmadoDe } from '@/lib/movimientos/neto';
 import { CanalBadge } from '@/components/badges';
 import { OkBanner } from '@/components/error-banner';
 
@@ -113,6 +114,8 @@ export default async function MovimientosPage({
     { name: 'contraparteId', label: 'Contraparte', opciones: contrapartes.map((c) => ({ id: c.id, nombre: c.razonSocial })) },
   ];
 
+  // Neto de la selección (mismo signo y pesificación que el total de cada fila).
+  const netoSeleccion = movimientos.reduce((acc, m) => acc + (netoFirmadoDe(totalFirmadoDe(m as never), m) ?? 0), 0);
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -223,12 +226,15 @@ export default async function MovimientosPage({
               <th>Asignación</th>
               <th>Origen</th>
               <th>Canal</th>
-              <th className="text-right">Importe</th>
+              <th className="text-right" title="Sin IVA, percepciones ni otros tributos">Neto</th>
+              <th className="text-right">Total</th>
             </tr>
           </thead>
           <tbody>
             {movimientos.map((m) => {
               const firmado = totalFirmadoDe(m as never);
+              const netoFirmado = netoFirmadoDe(firmado, m);
+              const tono = { 'sin-signo': 'text-slate-400', egreso: 'text-red-700', ingreso: 'text-emerald-700' }[tonoImporte(firmado)];
               return (
                 <tr key={m.id} className="hover:bg-slate-50">
                   <td className="whitespace-nowrap">{formatFecha(m.fechaDevengamiento)}</td>
@@ -264,12 +270,11 @@ export default async function MovimientosPage({
                     {m.origen === 'COMPROBANTE' ? 'Comprobante' : m.origen === 'ASIENTO_MANUAL' ? 'Asiento' : 'Venta'}
                   </td>
                   <td><CanalBadge canal={m.canalIngreso} /></td>
+                  <td className={`num ${tono}`} title={firmado == null ? 'Sin categoría: el signo se define al imputarlo' : undefined}>
+                    {netoFirmado != null ? formatMoneyFirmado(netoFirmado) : formatMoney(netoDe(m))}
+                  </td>
                   <td
-                    className={`num font-medium ${
-                      { 'sin-signo': 'text-slate-400', egreso: 'text-red-700', ingreso: 'text-emerald-700' }[
-                        tonoImporte(firmado)
-                      ]
-                    }`}
+                    className={`num font-medium ${tono}`}
                     title={firmado == null ? 'Sin categoría: el signo se define al imputarlo' : undefined}
                   >
                     {firmado != null ? formatMoneyFirmado(firmado) : formatMoney(m.total ? Number(m.total) : null)}
@@ -285,13 +290,16 @@ export default async function MovimientosPage({
               );
             })}
             {movimientos.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-8">Sin movimientos para los filtros elegidos</td></tr>
+              <tr><td colSpan={9} className="text-center text-slate-400 py-8">Sin movimientos para los filtros elegidos</td></tr>
             )}
           </tbody>
           <tfoot>
             <tr className="bg-slate-50 font-medium">
               <td colSpan={7} className="text-right text-sm text-slate-500">
                 Total de la selección ({movimientos.length} mov.):
+              </td>
+              <td className={`num ${netoSeleccion < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                {formatMoneyFirmado(netoSeleccion)}
               </td>
               <td className={`num ${resumen.resultado < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
                 {formatMoneyFirmado(resumen.resultado)}

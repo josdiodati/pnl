@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/page-header';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { HistorialCobro } from '@/components/historial-cobro';
 import { formatMoney, formatFecha, formatFechaHora } from '@/lib/format';
+import { netoDe } from '@/lib/movimientos/neto';
 import { INSTRUMENTO_LABEL, ESTADO_COBRO_LABEL, ES_CHEQUE } from '@/lib/cobranzas/labels';
 import { etiquetaVenta, motivoSoloDatos } from '@/lib/cobranzas/service';
 import { eliminarCobroAction, acreditarChequeAction, rechazarChequeAction } from '../../../ventas/actions';
@@ -156,7 +157,7 @@ export default async function CobroPage({
       <section className="card overflow-x-auto mb-4">
         <h2 className="px-4 pt-4 font-display text-lg">Facturas que paga</h2>
         <table className="table-base mt-2">
-          <thead><tr><th>Factura</th><th>Emitida</th><th className="text-right">Aplicado</th><th>Ajuste de cambio</th></tr></thead>
+          <thead><tr><th>Factura</th><th>Emitida</th><th className="text-right" title="Sin IVA, percepciones ni otros tributos">Neto</th><th className="text-right">Total</th><th className="text-right">Aplicado</th><th>Ajuste de cambio</th></tr></thead>
           <tbody>
             {[...porVenta.entries()].map(([id, v]) => {
               const ajuste = v.ajusteId ? ajustePorId.get(v.ajusteId) : null;
@@ -166,6 +167,8 @@ export default async function CobroPage({
                     <Link href={`${base}/ventas/${id}/cobros?volver=${encodeURIComponent(volver)}`} className="underline underline-offset-2">{etiquetaVenta(v.mov)}</Link>
                   </td>
                   <td className="font-mono text-[12.5px]">{formatFecha(v.mov.fechaDevengamiento)}</td>
+                  <td className="num text-ink-mute">{formatMoney(netoDe(v.mov))}{monedaTxt(v.mov.moneda)}</td>
+                  <td className="num text-ink-mute">{formatMoney(v.mov.total != null ? Number(v.mov.total) : null)}{monedaTxt(v.mov.moneda)}</td>
                   <td className="num">{formatMoney(Math.round(v.importe * 100) / 100)}{monedaTxt(v.mov.moneda)}</td>
                   <td className="text-[12px] text-ink-mute">
                     {ajuste ? `${formatMoney(Number(ajuste.total))}${ajuste.estado === 'ANULADO' ? ' (anulado)' : ''}` : '—'}

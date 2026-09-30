@@ -4,6 +4,7 @@ import { isForbidden } from '@/lib/errors';
 import { buildWhereMovimientoConciliable } from '@/lib/resumenes/busqueda';
 import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 import { formatMoney, formatFecha } from '@/lib/format';
+import { netoDe } from '@/lib/movimientos/neto';
 
 // Autocompletado del buscador manual del panel de conciliación: texto libre
 // sobre los movimientos conciliables, los 20 más recientes. Los que ya están
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
         descripcion: m.descripcion ?? '',
         fecha: formatFecha(m.fechaDevengamiento ?? m.createdAt),
         monto: formatMoney(m.total != null ? Number(m.total) : null),
+        neto: m.total != null ? formatMoney(netoDe(m)) : null,
         vinculadoA: otra ? `línea «${otra.descriptor}» (${formatFecha(otra.fecha)}) del resumen ${otra.resumen.emisor}` : null,
       };
     }),

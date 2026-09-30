@@ -1,4 +1,5 @@
 import { signoMovimiento } from '@/lib/movimientos/signo';
+import { netoDe } from '@/lib/movimientos/neto';
 import { importesPorLinea } from '@/lib/movimientos/distribucion';
 
 // P&L por categoría × mes del ejercicio. SOLO los montos netos computan el
@@ -60,9 +61,7 @@ export function baseImponibleFirmada(mov: MovimientoPnl): number | null {
     if (!mov.tipoCambio || !(mov.tipoCambio > 0)) return null;
     tc = mov.tipoCambio;
   }
-  const neto =
-    mov.total - n(mov.iva21) - n(mov.iva105) - n(mov.iva27) - n(mov.percepcionesIva) - n(mov.percepcionesIibb) - n(mov.otrosTributos);
-  return signoMovimiento(mov.tipoCategoria, mov.tipoComprobante) * Math.round(neto * tc * 100);
+  return signoMovimiento(mov.tipoCategoria, mov.tipoComprobante) * Math.round(netoDe(mov)! * tc * 100);
 }
 
 /** Componente de impuesto firmado (mismo signo/TC que la base). */

@@ -1,5 +1,6 @@
 import type { EstadoMovimiento, Prisma } from '@prisma/client';
 import { signoMovimiento } from '@/lib/movimientos/signo';
+import { netoDe } from '@/lib/movimientos/neto';
 
 // Filtro y resumen compartidos por la vista de Ventas. El resumen es SIEMPRE
 // sobre lo que la tabla muestra: si el usuario filtra, la tarjeta filtra.
@@ -69,7 +70,6 @@ export type ResumenVentas = {
   sinTipoCambio: number;
 };
 
-const n = (v: unknown) => (v == null ? 0 : Number(v));
 
 /** Pesos por unidad de la moneda del comprobante; null si no es computable. */
 function tipoCambioDe(v: VentaResumible): number | null {
@@ -97,9 +97,7 @@ export function totalVentaCentavos(v: VentaResumible): number | null {
 export function netoVentaCentavos(v: VentaResumible): number | null {
   const tc = tipoCambioDe(v);
   if (v.total == null || tc == null) return null;
-  const neto =
-    Number(v.total) - n(v.iva21) - n(v.iva105) - n(v.iva27) - n(v.percepcionesIva) - n(v.percepcionesIibb) - n(v.otrosTributos);
-  return firmar(v, neto * tc);
+  return firmar(v, netoDe(v)! * tc);
 }
 
 /** Total de lo filtrado: las pendientes también cuentan; las anuladas no. */

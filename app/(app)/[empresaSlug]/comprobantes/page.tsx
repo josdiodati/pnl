@@ -4,6 +4,7 @@ import { rolAlcanza } from '@/lib/roles';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
 import { PageHeader } from '@/components/page-header';
 import { Icono } from '@/components/iconos';
+import { netoDe } from '@/lib/movimientos/neto';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { ESTADO_LABEL } from '@/lib/movimientos/estados';
 import {
@@ -266,7 +267,7 @@ export default async function ComprobantesPage({
               <th>Comprobante</th>
               <th>Categoría · asignación</th>
               <th>Estado</th>
-              <th className="text-right">Neto · IVA</th>
+              <th className="text-right" title="Neto: total sin IVA, percepciones ni otros tributos (debajo, el IVA)">Neto · IVA</th>
               <th className="text-right">Total</th>
               <th>Carga</th>
               <th></th>
@@ -326,7 +327,7 @@ export default async function ComprobantesPage({
                     </span>
                   </td>
                   <td className="num text-[12.5px]">
-                    {m.netoGravado != null ? `${formatMoney(Number(m.netoGravado))}${ext}` : '—'}
+                    {m.total != null ? `${formatMoney(netoDe(m))}${ext}` : '—'}
                     {iva > 0 && <span className="block text-[10.5px] text-ink-mute">IVA {formatMoney(iva)}</span>}
                   </td>
                   <td className="num font-medium">

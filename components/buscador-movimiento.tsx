@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-type Opcion = { id: string; nombre: string; descripcion: string; fecha: string; monto: string; vinculadoA: string | null };
+type Opcion = { id: string; nombre: string; descripcion: string; fecha: string; monto: string; neto: string | null; vinculadoA: string | null };
 
 // Buscador con autocompletado para el panel de conciliación: se escribe texto
 // (contraparte, descripción, número, CUIT) y se elige un movimiento de los
@@ -65,7 +65,9 @@ export function BuscadorMovimiento({
       {elegido ? (
         <div className="input flex items-center gap-2">
           <span className="flex-1 truncate">{elegido.nombre}</span>
-          <span className="text-xs text-slate-500 tabular-nums whitespace-nowrap">{elegido.monto}</span>
+          <span className="text-xs text-slate-500 tabular-nums whitespace-nowrap">
+            {elegido.neto && <span className="text-slate-400">neto {elegido.neto} · </span>}total {elegido.monto}
+          </span>
           <span className="text-xs text-slate-500 whitespace-nowrap">{elegido.fecha}</span>
           <button
             type="button"
@@ -109,7 +111,10 @@ export function BuscadorMovimiento({
                 </span>
                 {o.descripcion && <span className="block truncate text-xs text-slate-400">{o.descripcion}</span>}
               </span>
-              <span className="text-xs text-slate-500 tabular-nums whitespace-nowrap">{o.monto}</span>
+              <span className="text-xs text-slate-500 tabular-nums whitespace-nowrap text-right">
+                {o.monto}
+                {o.neto && <span className="block text-[10px] text-slate-400">neto {o.neto}</span>}
+              </span>
               <span className="text-xs text-slate-500 whitespace-nowrap">{o.fecha}</span>
             </button>
           ))}

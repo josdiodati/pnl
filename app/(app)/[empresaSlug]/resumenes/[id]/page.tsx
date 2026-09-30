@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { getFileStorage } from '@/lib/storage';
 import { MES_LABEL } from '@/lib/periodos';
+import { netoDe, textoNetoTotal } from '@/lib/movimientos/neto';
 import { formatMoney, formatFecha, fechaInputValue } from '@/lib/format';
 import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 import { DocViewer } from '@/components/doc-viewer';
@@ -299,8 +300,9 @@ export default async function ResumenDetallePage({
                       <span className="flex-1 truncate group-hover:underline text-sky-700">
                         {mov ? nombreContraparte(mov).nombre ?? 'Sin identificar' : c.movimientoId}
                       </span>
-                      <span className="text-xs text-slate-500 w-24 text-right tabular-nums">
+                      <span className="text-xs text-slate-500 w-28 text-right tabular-nums">
                         {mov?.total != null ? formatMoney(Number(mov.total)) : '—'}
+                        {mov?.total != null && <span className="block text-[10px] text-slate-400">neto {formatMoney(netoDe(mov))}</span>}
                       </span>
                       <span className="text-xs text-slate-500 w-20 whitespace-nowrap">
                         {mov ? formatFecha(mov.fechaDevengamiento ?? mov.createdAt) : ''}
@@ -335,7 +337,10 @@ export default async function ResumenDetallePage({
                     <span className="flex-1 truncate line-through">
                       {mov ? nombreContraparte(mov).nombre ?? 'Sin identificar' : c.movimientoId}
                     </span>
-                    <span className="w-24 text-right tabular-nums">{mov?.total != null ? formatMoney(Number(mov.total)) : '—'}</span>
+                    <span className="w-28 text-right tabular-nums">
+                      {mov?.total != null ? formatMoney(Number(mov.total)) : '—'}
+                      {mov?.total != null && <span className="block text-[10px] text-slate-400">neto {formatMoney(netoDe(mov))}</span>}
+                    </span>
                     <span className="rounded bg-slate-100 px-1.5 py-0.5 font-semibold">rechazada</span>
                   </div>
                 );
@@ -354,8 +359,9 @@ export default async function ResumenDetallePage({
                   <Link href={`/${params.empresaSlug}/validacion/${v.movimientoId}`} className="flex-1 truncate underline text-sky-700">
                     {nombreContraparte(v.movimiento).nombre ?? 'Sin identificar'}
                   </Link>
-                  <span className="text-xs text-slate-500 w-24 text-right tabular-nums">
+                  <span className="text-xs text-slate-500 w-28 text-right tabular-nums">
                     {v.movimiento.total != null ? `${v.movimiento.moneda !== 'ARS' ? `${v.movimiento.moneda} ` : ''}${formatMoney(Number(v.movimiento.total))}` : '—'}
+                    {v.movimiento?.total != null && <span className="block text-[10px] text-slate-400">neto {formatMoney(netoDe(v.movimiento))}</span>}
                   </span>
                   <span className="text-xs text-slate-500 w-20 whitespace-nowrap">
                     {formatFecha(v.movimiento.fechaDevengamiento ?? v.movimiento.createdAt)}
@@ -539,9 +545,7 @@ export default async function ResumenDetallePage({
                       {[mov.tipoComprobante, numeroComprobante].filter(Boolean).join(' ') || 'Sin datos de comprobante'} ·{' '}
                       {formatFecha(mov.fechaDevengamiento ?? mov.createdAt)}
                     </p>
-                    <p className="tabular-nums">
-                      {mov.total != null ? `${mov.moneda !== 'ARS' ? `${mov.moneda} ` : ''}${formatMoney(Number(mov.total))}` : '—'}
-                    </p>
+                    <p className="tabular-nums">{textoNetoTotal(mov)}</p>
                     <p className="text-xs text-slate-500">
                       {[mov.categoria?.nombre, mov.estado].filter(Boolean).join(' · ')}
                       {mov.descripcion ? ` · ${mov.descripcion}` : ''}

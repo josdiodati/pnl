@@ -9,6 +9,7 @@ type Opcion = {
   fecha: string;
   monto: string;
   neto: number | null;
+  netoTexto: string | null;
   periodo: string | null;
 };
 
@@ -65,7 +66,9 @@ export function BuscadorComprobanteEmpleado({ empresaSlug }: { empresaSlug: stri
         {elegido ? (
           <div className="input flex items-center gap-2 text-sm">
             <span className="flex-1 truncate">{elegido.nombre}</span>
-            <span className="text-xs text-slate-500 tabular-nums whitespace-nowrap">{elegido.monto}</span>
+            <span className="text-xs text-slate-500 tabular-nums whitespace-nowrap">
+              {elegido.netoTexto && <span className="text-slate-400">neto {elegido.netoTexto} · </span>}total {elegido.monto}
+            </span>
             <span className="text-xs text-slate-500 whitespace-nowrap">{elegido.fecha}</span>
             <button
               type="button"
@@ -103,7 +106,10 @@ export function BuscadorComprobanteEmpleado({ empresaSlug }: { empresaSlug: stri
                   <span className="block truncate">{o.nombre}</span>
                   {o.descripcion && <span className="block truncate text-xs text-slate-400">{o.descripcion}</span>}
                 </span>
-                <span className="text-xs text-slate-500 tabular-nums whitespace-nowrap">{o.monto}</span>
+                <span className="text-xs text-slate-500 tabular-nums whitespace-nowrap text-right">
+                  {o.monto}
+                  {o.netoTexto && <span className="block text-[10px] text-slate-400">neto {o.netoTexto}</span>}
+                </span>
                 <span className="text-xs text-slate-500 whitespace-nowrap">{o.fecha}</span>
               </button>
             ))}

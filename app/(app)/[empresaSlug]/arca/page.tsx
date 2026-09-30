@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
+import { textoNetoTotal } from '@/lib/movimientos/neto';
 import { formatMoney, formatFecha, formatFechaHora } from '@/lib/format';
 import { formatearCuit } from '@/lib/checks/cuit';
 import { rolAlcanza } from '@/lib/roles';
@@ -468,7 +469,7 @@ export default async function ArcaPage({
                     {nombreContraparte(m).nombre ?? 'Sin identificar'}
                   </Link>
                   <span className="text-xs text-slate-500 whitespace-nowrap">{[m.tipoComprobante, m.puntoVenta, m.numero].filter(Boolean).join(' ')}</span>
-                  <span className="num text-xs">{formatMoney(m.total != null ? Number(m.total) : null)}</span>
+                  <span className="num text-xs whitespace-nowrap">{textoNetoTotal(m)}</span>
                 </li>
               ))}
             </ul>

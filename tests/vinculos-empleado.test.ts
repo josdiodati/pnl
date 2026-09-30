@@ -10,10 +10,10 @@ import { guardarReglaDesdeAsignacion } from '@/lib/reglas/guardar-desde-asignaci
 // regla que recuerda el empleado.
 
 describe('montoVinculableDe', () => {
-  it('prefiere el neto gravado, después el no gravado/exento, después el total', () => {
-    expect(montoVinculableDe({ netoGravado: 1000, total: 1210 })).toBe(1000);
-    expect(montoVinculableDe({ netoGravado: null, noGravadoExento: 500, total: 500 })).toBe(500);
-    expect(montoVinculableDe({ netoGravado: 0, total: 800 })).toBe(800);
+  it('es el neto: total menos IVA, percepciones y otros tributos', () => {
+    expect(montoVinculableDe({ total: 1210, iva21: 210 })).toBe(1000);
+    expect(montoVinculableDe({ total: 1300, iva21: 210, percepcionesIibb: 30, otrosTributos: 60 })).toBe(1000);
+    expect(montoVinculableDe({ total: 800 })).toBe(800); // sin desglose (factura C): el total
     expect(montoVinculableDe({})).toBeNull();
   });
 });
@@ -23,6 +23,7 @@ describe('esCategoriaAdicionalesSalario', () => {
     expect(esCategoriaAdicionalesSalario('Adicionales Salarios')).toBe(true);
     expect(esCategoriaAdicionalesSalario('Adicionales de Salario')).toBe(true);
     expect(esCategoriaAdicionalesSalario('adicional salario')).toBe(true);
+    expect(esCategoriaAdicionalesSalario('Adicionales de Salário')).toBe(true);
     expect(esCategoriaAdicionalesSalario('Sueldos')).toBe(false);
     expect(esCategoriaAdicionalesSalario(null)).toBe(false);
   });
@@ -37,11 +38,11 @@ describe('vínculo por regla y regla con empleado (integración contra la base)'
   let centroId: string;
   let periodoId: string;
 
-  const movimiento = (datos: { netoGravado?: number; total: number }) =>
+  const movimiento = (datos: { netoGravado?: number; iva21?: number; total: number }) =>
     prisma.movimiento.create({
       data: {
         empresaId, periodoId, estado: 'ASIGNADO', origen: 'COMPROBANTE', moneda: 'ARS', creadoPorId: ctx.usuario.id,
-        categoriaId, netoGravado: datos.netoGravado, total: datos.total,
+        categoriaId, netoGravado: datos.netoGravado, iva21: datos.iva21, total: datos.total,
       } as never,
     });
 
@@ -76,7 +77,7 @@ describe('vínculo por regla y regla con empleado (integración contra la base)'
   });
 
   it('vincula por el neto gravado y no duplica', async () => {
-    const mov = await movimiento({ netoGravado: 1000, total: 1210 });
+    const mov = await movimiento({ netoGravado: 1000, iva21: 210, total: 1210 });
     expect(await vincularPorRegla(ctx.db, { movimientoId: mov.id, empleadoId, regla: 'r' })).toBe(true);
     expect(await vincularPorRegla(ctx.db, { movimientoId: mov.id, empleadoId, regla: 'r' })).toBe(false);
     const v = await prisma.movimientoEmpleado.findMany({ where: { movimientoId: mov.id } });
@@ -84,7 +85,7 @@ describe('vínculo por regla y regla con empleado (integración contra la base)'
   });
 
   it('nunca supera lo que queda del total', async () => {
-    const mov = await movimiento({ netoGravado: 1000, total: 1210 });
+    const mov = await movimiento({ netoGravado: 1000, iva21: 210, total: 1210 });
     const otro = (await prisma.empleado.create({ data: { empresaId, nombre: 'OTRO', cuil: '20347308618' } })).id;
     await prisma.movimientoEmpleado.create({ data: { movimientoId: mov.id, empleadoId: otro, monto: 900 } });
     expect(await vincularPorRegla(ctx.db, { movimientoId: mov.id, empleadoId, regla: 'r' })).toBe(true);

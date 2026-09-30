@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/page-header';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { CobroBadge } from '@/components/cobro-badge';
 import { FechaProbableInput } from '@/components/fecha-probable-input';
+import { netoDe } from '@/lib/movimientos/neto';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { mapaCobranza } from '@/lib/cobranzas/query';
 import { FUENTE_LABEL } from '@/lib/cobranzas/estado';
@@ -64,6 +65,7 @@ export default async function CobrosVentaPage({
         <div className="card p-4">
           <p className="label !mb-0.5">Total</p>
           <p className="font-mono text-xl tabular-nums">{formatMoney(venta.total ? Number(venta.total) : null)}{m}</p>
+          {venta.total != null && <p className="text-[12px] text-ink-mute tabular-nums">neto {formatMoney(netoDe(venta))}{m} · sin IVA</p>}
         </div>
         <div className="card p-4">
           <p className="label !mb-0.5">Cobrado</p>

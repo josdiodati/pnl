@@ -2,29 +2,25 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import type { ScopedDb } from '@/lib/empresa/scope';
 import { writeAudit } from '@/lib/audit';
+import { netoDe } from '@/lib/movimientos/neto';
 
 // Vínculos comprobante → empleado (adicionales de salario, prepagas…). El
 // período del vínculo es SIEMPRE el del comprobante (no se elige: evita
-// errores); el monto por defecto es el neto gravado, sin IVA ni percepciones.
+// errores); el monto por defecto es el neto, sin IVA ni percepciones.
 
-/** Monto a vincular por defecto: neto gravado; sin él (factura C, exento), el
- *  no gravado/exento; y si tampoco, el total. En pesos del comprobante. */
-export function montoVinculableDe(mov: {
-  netoGravado?: unknown;
-  noGravadoExento?: unknown;
-  total?: unknown;
-}): number | null {
-  for (const v of [mov.netoGravado, mov.noGravadoExento, mov.total]) {
-    if (v != null && Number(v) > 0) return Number(v);
-  }
-  return null;
+/** Monto a vincular por defecto: el neto del comprobante (sin IVA,
+ *  percepciones ni otros tributos; el mismo "Neto" de todas las vistas). En la
+ *  moneda del comprobante. */
+export function montoVinculableDe(mov: Parameters<typeof netoDe>[0]): number | null {
+  const neto = netoDe(mov);
+  return neto != null && neto > 0 ? Math.round(neto * 100) / 100 : null;
 }
 
 /** La categoría "Adicionales Salarios" (o "Adicionales de Salario") habilita
  *  elegir el empleado al asignar. Se reconoce por nombre: no hay otra marca. */
 export function esCategoriaAdicionalesSalario(nombre: string | null | undefined): boolean {
   if (!nombre) return false;
-  const n = nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const n = nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   return /adicional(es)?\s+(de\s+)?salario/.test(n);
 }
 

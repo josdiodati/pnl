@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { netoDe } from '@/lib/movimientos/neto';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isForbidden } from '@/lib/errors';
 import { rolAlcanza } from '@/lib/roles';
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
     'fecha', 'origen', 'estado', 'canal', 'contraparte', 'cuit', 'categoria', 'tipo_categoria',
     'tipo_comprobante', 'punto_venta', 'numero', 'descripcion', 'moneda', 'tipo_cambio',
     'neto_gravado', 'iva_105', 'iva_21', 'iva_27', 'percepciones_iva', 'percepciones_iibb',
-    'otros_tributos', 'no_gravado_exento', 'total_comprobante',
+    'otros_tributos', 'no_gravado_exento', 'total_comprobante', 'neto_comprobante',
     'centro_costo', 'cliente', 'proyecto', 'porcentaje', 'importe_linea', 'total_movimiento_firmado',
   ];
   const filas: CeldaXlsx[][] = [];
@@ -117,6 +118,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
       m.otrosTributos != null ? Number(m.otrosTributos) : null,
       m.noGravadoExento != null ? Number(m.noGravadoExento) : null,
       m.total != null ? Number(m.total) : null,
+      m.total != null ? Math.round(netoDe(m)! * 100) / 100 : null,
     ];
     if (m.lineas.length && firmado != null) {
       const lineas = m.lineas.map((l) => ({
@@ -151,7 +153,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
   filas.push([
     '', '', '', '', '', '', '', '', '', '', '',
     'Costos de personal (recibos + vinculados)',
-    '', null, null, null, null, null, null, null, null, null, null,
+    '', null, null, null, null, null, null, null, null, null, null, null,
     '', '', '', null,
     null,
     personalMostrado / 100,

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { MES_LABEL } from '@/lib/periodos';
+import { textoNetoTotal } from '@/lib/movimientos/neto';
 import { formatMoney, formatFecha } from '@/lib/format';
 import { formatearCuit } from '@/lib/checks/cuit';
 import { DistribucionEditor } from '@/components/distribucion-editor';
@@ -254,7 +255,7 @@ export default async function EmpleadoPage({
             <input type="hidden" name="empleadoId" value={empleado.id} />
             <input type="hidden" name="movimientoId" value={v.movimientoId} />
             <span className="grow">
-              {v.movimiento.contraparte?.razonSocial ?? v.movimiento.descripcion ?? v.movimientoId} · {formatFecha(v.movimiento.fechaDevengamiento)} · total {formatMoney(v.movimiento.total ? Number(v.movimiento.total) : null)}
+              {v.movimiento.contraparte?.razonSocial ?? v.movimiento.descripcion ?? v.movimientoId} · {formatFecha(v.movimiento.fechaDevengamiento)} · {textoNetoTotal(v.movimiento)}
               {v.movimiento.periodo && <span className="text-slate-500"> · período {MES_LABEL[v.movimiento.periodo.mes]} {v.movimiento.periodo.anio}</span>}
             </span>
             <span className="num font-medium">{formatMoney(Number(v.monto))}</span>

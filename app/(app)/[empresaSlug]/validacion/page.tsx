@@ -5,6 +5,7 @@ import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
 import { ErrorBanner, OkBanner, AvisoBanner } from '@/components/error-banner';
 import { formatMoney, formatFecha } from '@/lib/format';
+import { netoDe } from '@/lib/movimientos/neto';
 import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 import { originalDeDuplicado } from '@/lib/movimientos/service';
 import { rolAlcanza } from '@/lib/roles';
@@ -131,6 +132,7 @@ export default async function ValidacionPage({
               <th>Contraparte / emisor</th>
               <th>Comprobante</th>
               <th>Fecha</th>
+              <th className="text-right" title="Sin IVA, percepciones ni otros tributos">Neto</th>
               <th className="text-right">Total</th>
               <th>Alertas</th>
               <th>Canal</th>
@@ -161,7 +163,8 @@ export default async function ValidacionPage({
                     {m.tipoComprobante?.replace(/_/g, ' ') ?? '—'} {m.puntoVenta ? `${m.puntoVenta}-` : ''}{m.numero ?? ''}
                   </td>
                   <td className="whitespace-nowrap">{formatFecha(m.fechaDevengamiento)}</td>
-                  <td className="num">{formatMoney(m.total ? Number(m.total) : null)}</td>
+                  <td className="num">{formatMoney(netoDe(m))}</td>
+                  <td className="num">{formatMoney(m.total ? Number(m.total) : null)}{m.moneda !== 'ARS' && <span className="ml-1 text-[10px] text-slate-400">{m.moneda}</span>}</td>
                   <td className="space-x-1 whitespace-nowrap">
                     <EstadoBadge estado={m.estado} />
                     {m.cae && <ArcaBadge estado={m.arcaEstado} />}
@@ -214,7 +217,7 @@ export default async function ValidacionPage({
             })}
             {movimientos.length === 0 && (
               <tr>
-                <td colSpan={8} className="text-center text-slate-400 py-8">
+                <td colSpan={9} className="text-center text-slate-400 py-8">
                   Nada para revisar en este estado. 🎉
                 </td>
               </tr>

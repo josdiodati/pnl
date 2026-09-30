@@ -5,7 +5,8 @@ import { EstadoBadge } from '@/components/badges';
 import { PageHeader } from '@/components/page-header';
 import { Icono } from '@/components/iconos';
 import { formatMoney, formatMoneyFirmado, formatFecha } from '@/lib/format';
-import { buildWhereVentas, resumirVentas, netoVentaCentavos, type FiltrosVentas } from '@/lib/ventas/query';
+import { buildWhereVentas, resumirVentas, netoVentaCentavos, totalVentaCentavos, type FiltrosVentas } from '@/lib/ventas/query';
+import { netoDe } from '@/lib/movimientos/neto';
 import { mapaCobranza } from '@/lib/cobranzas/query';
 import { FUENTE_LABEL } from '@/lib/cobranzas/estado';
 import { CobroBadge } from '@/components/cobro-badge';
@@ -181,7 +182,8 @@ export default async function VentasPage({
               <th>Categoría · asignación</th>
               <th>Estado</th>
               <th>Cobro · fecha probable</th>
-              <th className="text-right">Neto</th>
+              <th className="text-right" title="Sin IVA, percepciones ni otros tributos">Neto</th>
+              <th className="text-right">Total</th>
               <th></th>
             </tr>
           </thead>
@@ -244,12 +246,18 @@ export default async function VentasPage({
                 <td className="num font-medium text-accent-strong">
                   {(() => {
                     const neto = netoVentaCentavos(v);
-                    return neto != null ? formatMoneyFirmado(neto) : formatMoney(v.total ? Number(v.total) : null);
+                    return neto != null ? formatMoneyFirmado(neto) : formatMoney(netoDe(v));
                   })()}
-                  {v.total != null && (
+                </td>
+                <td className="num">
+                  {(() => {
+                    const total = totalVentaCentavos(v);
+                    return total != null ? formatMoneyFirmado(total) : formatMoney(v.total ? Number(v.total) : null);
+                  })()}
+                  {v.total != null && v.moneda !== 'ARS' && (
                     <span className="block text-[10px] font-normal text-ink-mute">
-                      con IVA {formatMoney(Number(v.total))}
-                      {v.moneda !== 'ARS' && ` ${v.moneda}${v.tipoCambio != null ? ` · TC ${Number(v.tipoCambio).toLocaleString('es-AR')}` : ' · sin TC'}`}
+                      {v.moneda} {formatMoney(Number(v.total))}
+                      {v.tipoCambio != null ? ` · TC ${Number(v.tipoCambio).toLocaleString('es-AR')}` : ' · sin TC'}
                     </span>
                   )}
                 </td>
@@ -271,7 +279,7 @@ export default async function VentasPage({
             ))}
             {ventas.length === 0 && (
               <tr>
-                <td colSpan={esValidador ? 9 : 8} className="py-12 text-center text-ink-mute">
+                <td colSpan={esValidador ? 10 : 9} className="py-12 text-center text-ink-mute">
                   {hayFiltros ? (
                     <>Ninguna venta coincide con el filtro.</>
                   ) : (
@@ -287,7 +295,7 @@ export default async function VentasPage({
             )}
             {resumen.cantidad > ventas.length && (
               <tr>
-                <td colSpan={esValidador ? 9 : 8} className="py-3 text-center text-[12px] text-ink-mute">
+                <td colSpan={esValidador ? 10 : 9} className="py-3 text-center text-[12px] text-ink-mute">
                   Se muestran las {ventas.length} más recientes de {resumen.cantidad}; el neto de arriba las incluye a todas. Afiná el filtro para ver el resto.
                 </td>
               </tr>
