@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/db';
+import { getFileStorage } from '@/lib/storage';
+import { contarPaginasPdf } from './pdf';
 
 // Log de archivos de recibos subidos. No hay tabla propia: cada subida encola
 // un Job EXTRACCION_RECIBO por página (payload: archivoKey, archivoNombre,
@@ -23,7 +25,7 @@ export type ReciboDeArchivo = {
   mes: number;
 };
 
-export type EstadoPagina = 'CONFIRMADO' | 'PENDIENTE_REVISION' | 'ANULADO' | 'FALLIDA' | 'EN_COLA' | 'SIN_RECIBO';
+export type EstadoPagina = 'CONFIRMADO' | 'PENDIENTE_REVISION' | 'ANULADO' | 'FALLIDA' | 'EN_COLA' | 'SIN_RECIBO' | 'SIN_PROCESAR';
 
 export type PaginaArchivo = {
   pagina: number;
@@ -40,11 +42,19 @@ export type ArchivoRecibos = {
   paginas: PaginaArchivo[];
   conteo: Record<EstadoPagina, number>;
   periodos: { anio: number; mes: number; cantidad: number }[];
+  /** Páginas que tiene el PDF guardado (recontadas); null si no se pudo leer. */
+  paginasPdf: number | null;
+  /** Control: cada página del PDF tiene su recibo (del estado que sea). */
+  verificacion: { ok: boolean; conRecibo: number; faltantes: number[] };
 };
 
 type Payload = { archivoKey?: string; archivoNombre?: string; usuarioId?: string; pagina?: number };
 
-export function agruparArchivos(jobs: JobRecibo[], recibos: ReciboDeArchivo[]): ArchivoRecibos[] {
+export function agruparArchivos(
+  jobs: JobRecibo[],
+  recibos: ReciboDeArchivo[],
+  paginasPdf: Map<string, number | null> = new Map(),
+): ArchivoRecibos[] {
   const reciboPorPagina = new Map<string, ReciboDeArchivo>();
   for (const r of recibos) {
     if (r.archivoKey && r.pagina != null) reciboPorPagina.set(`${r.archivoKey}#${r.pagina}`, r);
@@ -62,8 +72,10 @@ export function agruparArchivos(jobs: JobRecibo[], recibos: ReciboDeArchivo[]): 
         subidoAt: j.createdAt,
         usuarioId: p.usuarioId ?? null,
         paginas: [],
-        conteo: { CONFIRMADO: 0, PENDIENTE_REVISION: 0, ANULADO: 0, FALLIDA: 0, EN_COLA: 0, SIN_RECIBO: 0 },
+        conteo: { CONFIRMADO: 0, PENDIENTE_REVISION: 0, ANULADO: 0, FALLIDA: 0, EN_COLA: 0, SIN_RECIBO: 0, SIN_PROCESAR: 0 },
         periodos: [],
+        paginasPdf: null,
+        verificacion: { ok: false, conRecibo: 0, faltantes: [] },
       };
       porArchivo.set(p.archivoKey, a);
     }
@@ -83,7 +95,22 @@ export function agruparArchivos(jobs: JobRecibo[], recibos: ReciboDeArchivo[]): 
 
   const archivos = [...porArchivo.values()];
   for (const a of archivos) {
+    // Páginas del PDF que nunca tuvieron job (la subida se cortó a mitad).
+    a.paginasPdf = paginasPdf.get(a.archivoKey) ?? null;
+    const conJob = new Set(a.paginas.map((p) => p.pagina));
+    for (let n = 1; n <= (a.paginasPdf ?? 0); n++) {
+      if (conJob.has(n)) continue;
+      a.paginas.push({ pagina: n, estado: 'SIN_PROCESAR', error: null, recibo: null });
+      a.conteo.SIN_PROCESAR++;
+    }
     a.paginas.sort((x, y) => x.pagina - y.pagina);
+    const faltantes = a.paginas.filter((p) => !p.recibo).map((p) => p.pagina);
+    const conRecibo = a.paginas.length - faltantes.length;
+    a.verificacion = {
+      ok: a.paginasPdf != null && faltantes.length === 0 && conRecibo === a.paginasPdf,
+      conRecibo,
+      faltantes,
+    };
     const periodos = new Map<string, { anio: number; mes: number; cantidad: number }>();
     for (const pg of a.paginas) {
       if (!pg.recibo || pg.recibo.estado === 'ANULADO') continue;
@@ -116,12 +143,25 @@ export async function listarArchivosRecibos(
         },
       })
     : [];
+  const storage = getFileStorage();
+  const paginasPdf = new Map<string, number | null>(
+    await Promise.all(
+      keys.map(async (k): Promise<[string, number | null]> => {
+        try {
+          return [k, await contarPaginasPdf(await storage.get(k))];
+        } catch {
+          return [k, null];
+        }
+      }),
+    ),
+  );
   const archivos = agruparArchivos(
     jobs,
     recibos.map((r) => ({
       id: r.id, archivoKey: r.archivoKey, pagina: r.pagina, estado: r.estado,
       empleadoNombre: r.empleado.nombre, anio: r.periodo.anio, mes: r.periodo.mes,
     })),
+    paginasPdf,
   );
   const usuarioIds = [...new Set(archivos.map((a) => a.usuarioId).filter((u): u is string => !!u))];
   const usuarios = usuarioIds.length

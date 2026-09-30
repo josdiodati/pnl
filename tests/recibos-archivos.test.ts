@@ -38,6 +38,32 @@ describe('agruparArchivos', () => {
     expect(a.periodos).toEqual([{ anio: 2026, mes: 9, cantidad: 1 }, { anio: 2026, mes: 8, cantidad: 1 }]);
   });
 
+  it('verificación: todas las páginas del PDF con recibo → ok', () => {
+    const [a] = agruparArchivos(
+      [job('a', 1, 'done', 1), job('a', 2, 'done', 1)],
+      [recibo('a', 1, 'CONFIRMADO'), recibo('a', 2, 'ANULADO')],
+      new Map([['a', 2]]),
+    );
+    expect(a.paginasPdf).toBe(2);
+    expect(a.verificacion).toEqual({ ok: true, conRecibo: 2, faltantes: [] });
+  });
+
+  it('verificación: páginas sin job ni recibo aparecen como sin procesar', () => {
+    const [a] = agruparArchivos(
+      [job('a', 1, 'done', 1), job('a', 2, 'failed', 1, { error: 'x' })],
+      [recibo('a', 1, 'CONFIRMADO')],
+      new Map([['a', 4]]),
+    );
+    expect(a.paginas.map((p) => p.estado)).toEqual(['CONFIRMADO', 'FALLIDA', 'SIN_PROCESAR', 'SIN_PROCESAR']);
+    expect(a.conteo.SIN_PROCESAR).toBe(2);
+    expect(a.verificacion).toEqual({ ok: false, conRecibo: 1, faltantes: [2, 3, 4] });
+  });
+
+  it('verificación: sin poder leer el PDF no se da por buena', () => {
+    const [a] = agruparArchivos([job('a', 1, 'done', 1)], [recibo('a', 1, 'CONFIRMADO')], new Map([['a', null]]));
+    expect(a.verificacion.ok).toBe(false);
+  });
+
   it('ignora jobs sin archivo o sin página', () => {
     expect(agruparArchivos([{ id: 'x', estado: 'done', error: null, createdAt: new Date(), payload: {} }], [])).toEqual([]);
   });
