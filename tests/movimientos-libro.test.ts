@@ -72,3 +72,54 @@ describe('color del importe en el libro', () => {
     expect(tonoImporte(0)).toBe('ingreso');
   });
 });
+
+// Los impuestos indirectos (categorías "es impuesto indirecto": IVA, IIBB,
+// Sircreb, Imp. Cheque…) sólo participan del P&L en el memo de impuestos: el
+// libro los oculta por defecto y su resumen no los suma como egresos.
+describe('buildWhereMovimientos — impuestos del memo', () => {
+  const excluye = { NOT: { categoria: { is: { esImpuestoIndirecto: true } } } };
+  const solo = { categoria: { is: { esImpuestoIndirecto: true } } };
+
+  it('por defecto oculta los movimientos de categorías de impuesto indirecto', () => {
+    expect(buildWhereMovimientos({}, opts).AND).toEqual([excluye]);
+  });
+
+  it("'incluir' no filtra por impuesto", () => {
+    expect(buildWhereMovimientos({ impuestos: 'incluir' }, opts).AND).toBeUndefined();
+  });
+
+  it("'solo' muestra únicamente los impuestos del memo", () => {
+    expect(buildWhereMovimientos({ impuestos: 'solo' }, opts).AND).toEqual([solo]);
+  });
+
+  it('elegir una categoría explícita no la oculta aunque sea de impuesto', () => {
+    const w = buildWhereMovimientos({ categoriaId: 'sircreb' }, opts);
+    expect(w.categoriaId).toBe('sircreb');
+    expect(w.AND).toBeUndefined();
+  });
+});
+
+describe('resumirMovimientos — impuestos del memo', () => {
+  it('no suma como egreso un movimiento de impuesto indirecto', () => {
+    const r = resumirMovimientos([
+      {
+        id: 'm1',
+        estado: 'ASIGNADO',
+        total: 605,
+        tipoComprobante: null,
+        categoria: { tipo: 'EGRESO', nombre: 'Sircreb', esImpuestoIndirecto: true },
+        lineas: [{ centroCostoId: 'cc1', clienteId: null, porcentaje: 100 }],
+      },
+      {
+        id: 'm2',
+        estado: 'ASIGNADO',
+        total: 100,
+        tipoComprobante: 'FACTURA_A',
+        categoria: { tipo: 'EGRESO', nombre: 'Servicios' },
+        lineas: [{ centroCostoId: 'cc1', clienteId: null, porcentaje: 100 }],
+      },
+    ]);
+    expect(r.egresos).toBe(-10_000);
+    expect(r.porCentroCosto.get('cc1')).toBe(-10_000);
+  });
+});

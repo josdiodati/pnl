@@ -207,6 +207,15 @@ export default async function MovimientosPage({
             <option value="COMPROBANTE">Comprobante</option>
             <option value="ASIENTO_MANUAL">Asiento manual</option>
             <option value="VENTA_MANUAL">Venta manual</option>
+            <option value="RESUMEN">Resumen bancario</option>
+          </select>
+        </div>
+        <div>
+          <label className="label" title="Movimientos de categorías marcadas «es impuesto indirecto» (IVA, IIBB, Sircreb, Imp. Cheque…): en el Reporte P&L van al memo de impuestos, no al resultado">Impuestos (memo)</label>
+          <select name="impuestos" defaultValue={searchParams.impuestos ?? ''} className="input text-xs">
+            <option value="">Ocultar</option>
+            <option value="incluir">Incluir</option>
+            <option value="solo">Sólo impuestos</option>
           </select>
         </div>
         <div className="flex gap-1">
@@ -267,7 +276,7 @@ export default async function MovimientosPage({
                     ))}
                   </td>
                   <td className="text-xs text-slate-500 whitespace-nowrap">
-                    {m.origen === 'COMPROBANTE' ? 'Comprobante' : m.origen === 'ASIENTO_MANUAL' ? 'Asiento' : 'Venta'}
+                    {m.origen === 'COMPROBANTE' ? 'Comprobante' : m.origen === 'ASIENTO_MANUAL' ? 'Asiento' : m.origen === 'RESUMEN' ? 'Resumen' : 'Venta'}
                   </td>
                   <td><CanalBadge canal={m.canalIngreso} /></td>
                   <td className={`num ${tono}`} title={firmado == null ? 'Sin categoría: el signo se define al imputarlo' : undefined}>

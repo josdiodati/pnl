@@ -16,6 +16,9 @@ export type FiltrosMovimientos = {
   estado?: string;
   canal?: string;
   q?: string; // búsqueda libre: contraparte, descripción, número, CUIT, archivo
+  /** Impuestos del memo (categorías "es impuesto indirecto"): por defecto se
+   *  ocultan; 'incluir' los suma a la vista, 'solo' muestra únicamente esos. */
+  impuestos?: string;
 };
 
 // Movimientos es el libro: muestra SÓLO los movimientos asignados, que son
@@ -42,6 +45,12 @@ export function buildWhereMovimientos(
     };
   }
   if (f.categoriaId) where.categoriaId = f.categoriaId;
+  // IVA, IIBB, Sircreb, Imp. Cheque…: en el P&L sólo van al memo de impuestos,
+  // no al resultado, así que el libro los oculta salvo que se pidan (o se elija
+  // explícitamente su categoría).
+  const esImpuesto = { categoria: { is: { esImpuestoIndirecto: true } } };
+  if (f.impuestos === 'solo') where.AND = [esImpuesto];
+  else if (f.impuestos !== 'incluir' && !f.categoriaId) where.AND = [{ NOT: esImpuesto }];
   if (f.contraparteId) where.contraparteId = f.contraparteId;
   if (f.origen) where.origen = f.origen as never;
   // El estado no es filtrable: el libro ES los asignados. Un `estado` que llegue
@@ -77,7 +86,7 @@ export type MovimientoConRelaciones = {
   estado: string;
   total: unknown;
   tipoComprobante: string | null;
-  categoria: { tipo: 'INGRESO' | 'EGRESO'; nombre: string; esCostoPersonal?: boolean } | null;
+  categoria: { tipo: 'INGRESO' | 'EGRESO'; nombre: string; esCostoPersonal?: boolean; esImpuestoIndirecto?: boolean } | null;
   lineas: { centroCostoId: string; clienteId: string | null; proyectoId?: string | null; porcentaje: unknown }[];
   /** Vínculos comprobante→empleado: su monto se descuenta del libro y computa en Costos de personal. */
   vinculosEmpleados?: { monto: unknown }[];
@@ -139,6 +148,8 @@ export function resumirMovimientos(movs: MovimientoConRelaciones[]): ResumenMovi
     // Las categorías "de costo de personal" (ej. Prepagas) computan en el
     // bloque Costos de personal, no en el resumen general — sin doble conteo.
     if (mov.categoria?.esCostoPersonal) continue;
+    // Los impuestos indirectos van al memo del P&L, no al resultado.
+    if (mov.categoria?.esImpuestoIndirecto) continue;
     const firmadoBruto = totalFirmadoDe(mov);
     if (firmadoBruto == null) continue;
     // Sin doble conteo: la porción vinculada a empleados sale del libro general
