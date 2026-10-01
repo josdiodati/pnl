@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { MES_LABEL, periodoDeFecha, ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
-import { armarPnl, type MovimientoPnl, type FiltroPnl } from '@/lib/reportes/pnl';
-import { calcularProrrateos, facturacionPorCentro, headcountPorCentro, CRITERIO_LABEL, type CriterioProrrateo } from '@/lib/reportes/prorrateo';
+import { armarPnl, type FiltroPnl } from '@/lib/reportes/pnl';
+import { CRITERIO_LABEL, type CriterioProrrateo } from '@/lib/reportes/prorrateo';
+import { cargarDatosPnl, prorrateosDelPnl } from '@/lib/reportes/datos-pnl';
 import { PageHeader } from '@/components/page-header';
 
 // Reporte P&L: categorías (eje Y) × meses del ejercicio (eje X), en pesos.
@@ -38,65 +39,14 @@ export default async function ReportesPage({
     if (campo && valor) filtro = { campo, valor: valor === 'sin' ? null : valor };
   }
 
-  const periodos = await ctx.db.periodo.findMany({
-    where: { OR: meses.map((m) => ({ anio: m.anio, mes: m.mes })) },
-  });
-  const periodoIds = periodos.map((p) => p.id);
-  const periodoPorId = new Map(periodos.map((p) => [p.id, p]));
-
-  const [movimientos, recibos, categorias, proyectos, centros, clientes] = await Promise.all([
-    ctx.db.movimiento.findMany({
-      where: { estado: 'ASIGNADO', periodoId: { in: periodoIds } },
-      include: { categoria: true, lineas: true },
-    }),
-    ctx.db.reciboSueldo.findMany({
-      where: { estado: 'CONFIRMADO', periodoId: { in: periodoIds } },
-      include: { periodo: true, lineas: true },
-    }),
+  const [datos, categorias, proyectos, centros, clientes] = await Promise.all([
+    cargarDatosPnl(ctx.db, meses),
     ctx.db.categoria.findMany({ orderBy: { nombre: 'asc' } }),
     ctx.db.proyecto.findMany({ orderBy: { nombre: 'asc' } }),
     ctx.db.centroCosto.findMany({ orderBy: { nombre: 'asc' } }),
     ctx.db.cliente.findMany({ orderBy: { nombre: 'asc' } }),
   ]);
-
-  const movimientosPnl = movimientos.map((m): MovimientoPnl => {
-    const p = periodoPorId.get(m.periodoId!)!;
-    return {
-      anio: p.anio,
-      mes: p.mes,
-      categoriaId: m.categoriaId,
-      tipoCategoria: (m.categoria?.tipo ?? 'EGRESO') as 'INGRESO' | 'EGRESO',
-      esCostoPersonal: m.categoria?.esCostoPersonal ?? false,
-      esImpuestoIndirecto: m.categoria?.esImpuestoIndirecto ?? false,
-      tipoComprobante: m.tipoComprobante,
-      moneda: m.moneda,
-      tipoCambio: m.tipoCambio != null ? Number(m.tipoCambio) : null,
-      total: m.total != null ? Number(m.total) : null,
-      iva21: m.iva21 != null ? Number(m.iva21) : null,
-      iva105: m.iva105 != null ? Number(m.iva105) : null,
-      iva27: m.iva27 != null ? Number(m.iva27) : null,
-      percepcionesIva: m.percepcionesIva != null ? Number(m.percepcionesIva) : null,
-      percepcionesIibb: m.percepcionesIibb != null ? Number(m.percepcionesIibb) : null,
-      otrosTributos: m.otrosTributos != null ? Number(m.otrosTributos) : null,
-      lineas: m.lineas.map((l) => ({
-        centroCostoId: l.centroCostoId,
-        clienteId: l.clienteId ?? null,
-        proyectoId: l.proyectoId ?? null,
-        porcentaje: Number(l.porcentaje),
-      })),
-    };
-  });
-  const recibosPnl = recibos.map((r) => ({
-    anio: r.periodo.anio,
-    mes: r.periodo.mes,
-    costoTotalEmpleador: r.costoTotalEmpleador != null ? Number(r.costoTotalEmpleador) : null,
-    lineas: r.lineas.map((l) => ({
-      centroCostoId: l.centroCostoId,
-      clienteId: l.clienteId ?? null,
-      proyectoId: l.proyectoId ?? null,
-      porcentaje: Number(l.porcentaje),
-    })),
-  }));
+  const { movimientosPnl, recibosPnl } = datos;
   const pnl = armarPnl({ meses, movimientos: movimientosPnl, recibos: recibosPnl, filtro });
 
   // Prorrateos (sólo vista por un centro de costo): los centros prorrateables
@@ -104,46 +54,10 @@ export default async function ReportesPage({
   // (método directo, lib/reportes/prorrateo.ts).
   const prorrateables = centros.filter((c) => c.prorrateo);
   const vistaCentroId = filtro?.campo === 'centroCostoId' ? filtro.valor : null;
-  let prorrateo: ReturnType<typeof calcularProrrateos> | null = null;
-  if (vistaCentroId && prorrateables.length) {
-    const usa = (k: CriterioProrrateo) => prorrateables.some((c) => c.prorrateo === k);
-    const empleados = usa('HEADCOUNT')
-      ? await ctx.db.empleado.findMany({ include: { distribucion: true } })
-      : [];
-    prorrateo = calcularProrrateos({
-      meses,
-      centros: centros.map((c) => ({ id: c.id, prorrateo: c.prorrateo })),
-      resultadoEmisor: new Map(
-        prorrateables.map((c) => [
-          c.id,
-          armarPnl({ meses, movimientos: movimientosPnl, recibos: recibosPnl, filtro: { campo: 'centroCostoId', valor: c.id } }).resultado,
-        ]),
-      ),
-      drivers: {
-        HEADCOUNT: usa('HEADCOUNT')
-          ? headcountPorCentro({
-              meses,
-              recibos: recibos
-                .filter((r) => r.tipo === 'MENSUAL')
-                .map((r) => ({
-                  empleadoId: r.empleadoId,
-                  anio: r.periodo.anio,
-                  mes: r.periodo.mes,
-                  lineas: r.lineas.map((l) => ({ centroCostoId: l.centroCostoId, porcentaje: Number(l.porcentaje) })),
-                })),
-              empleados: empleados.map((e) => ({
-                id: e.id,
-                activo: e.activo,
-                fechaIngreso: e.fechaIngreso,
-                fechaEgreso: e.fechaEgreso,
-                ficha: e.distribucion.map((l) => ({ centroCostoId: l.centroCostoId, porcentaje: Number(l.porcentaje) })),
-              })),
-            })
-          : new Map(),
-        FACTURACION: usa('FACTURACION') ? facturacionPorCentro({ meses, movimientos: movimientosPnl }) : new Map(),
-      },
-    });
-  }
+  const prorrateo =
+    vistaCentroId && prorrateables.length
+      ? (await prorrateosDelPnl(ctx.db, meses, centros.map((c) => ({ id: c.id, prorrateo: c.prorrateo })), datos))?.prorrateos ?? null
+      : null;
   const recibidosVista = (vistaCentroId && prorrateo?.recibidos.get(vistaCentroId)) || new Map<string, number[]>();
   const repartidoVista = (vistaCentroId && prorrateo?.repartido.get(vistaCentroId)) || null;
   const sinBaseVista = (vistaCentroId && prorrateo?.sinBase.get(vistaCentroId)) || null;
