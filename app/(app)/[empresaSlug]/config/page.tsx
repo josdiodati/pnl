@@ -4,6 +4,7 @@ import { ROL_LABEL, rolAlcanza } from '@/lib/roles';
 import { CATALOGO } from '@/lib/reportes-personalizados/catalogo';
 import { MES_LABEL } from '@/lib/periodos';
 import { resendHabilitado } from '@/lib/canales/resend';
+import { enlaceInvitacion } from '@/lib/invitaciones';
 import { telegramHabilitado } from '@/lib/canales/telegram';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { formatFechaHora } from '@/lib/format';
@@ -11,6 +12,7 @@ import { cifradoConfigurado } from '@/lib/arca/mis-comprobantes/cifrado';
 import {
   editarEmpresaAction,
   invitarUsuarioAction,
+  reenviarInvitacionAction,
   cambiarRolAction,
   restablecerPasswordAction,
   agregarCasillaAction,
@@ -179,14 +181,23 @@ export default async function ConfigPage({
               <option value="ADMINISTRADOR">Administrador</option>
             </select>
           </div>
-          <button className="btn-primary">Crear invitación</button>
+          <button className="btn-primary">{resendHabilitado() ? 'Invitar y mandar mail' : 'Crear invitación'}</button>
         </form>
         {invitaciones.length > 0 && (
           <ul className="space-y-1 text-sm">
             {invitaciones.map((i) => (
-              <li key={i.id} className="text-slate-600">
-                {i.email} ({ROL_LABEL[i.rol]}) — enlace:{' '}
-                <code className="bg-slate-100 px-1 rounded text-xs break-all">/invitacion/{i.token}</code>
+              <li key={i.id} className="text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>
+                  {i.email} ({ROL_LABEL[i.rol]}) — enlace:{' '}
+                  <code className="bg-slate-100 px-1 rounded text-xs break-all">{enlaceInvitacion(i.token)}</code>
+                </span>
+                {resendHabilitado() && (
+                  <form action={reenviarInvitacionAction}>
+                    <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                    <input type="hidden" name="invitacionId" value={i.id} />
+                    <button className="text-xs underline text-ink-mute hover:text-ink">Reenviar mail</button>
+                  </form>
+                )}
               </li>
             ))}
           </ul>
