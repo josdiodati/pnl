@@ -94,6 +94,26 @@ export default async function MovimientosPage({
         : resumenPersonal.total;
   const sinFiltroDePersonal = !searchParams.centroCostoId && !searchParams.clienteId && !searchParams.proyectoId;
 
+  const egresosConPersonal = resumen.egresos + personalMostrado;
+  const resultadoConPersonal = resumen.resultado + personalMostrado;
+  // Resultado por centro con su costo de personal. Con filtro de cliente o
+  // proyecto el personal no se puede abrir por centro: no se muestra el detalle.
+  const porCentroConPersonal = new Map(resumen.porCentroCosto);
+  if (sinFiltroDePersonal) {
+    for (const [ccId, total] of resumenPersonal.porCentroCosto) {
+      porCentroConPersonal.set(ccId, (porCentroConPersonal.get(ccId) ?? 0) + total);
+    }
+  } else if (searchParams.centroCostoId) {
+    porCentroConPersonal.set(
+      searchParams.centroCostoId,
+      (porCentroConPersonal.get(searchParams.centroCostoId) ?? 0) + personalMostrado,
+    );
+  }
+  const resultadoPorCentro =
+    sinFiltroDePersonal || searchParams.centroCostoId
+      ? [...porCentroConPersonal.entries()].sort((a, b) => b[1] - a[1])
+      : [];
+
   const qs = new URLSearchParams(
     Object.entries(searchParams).filter(([k, v]) => v && k !== 'ok') as [string, string][],
   ).toString();
@@ -129,43 +149,33 @@ export default async function MovimientosPage({
       </div>
       <OkBanner mensaje={searchParams.ok} />
 
-      {/* Mini-summary over the validated movements of the selection */}
-      <div className="grid sm:grid-cols-4 gap-3">
-        <div className="card p-3">
+      {/* Mini-summary over the validated movements of the selection, con los costos de personal incluidos */}
+      <div className="grid sm:grid-cols-3 gap-3">
+        <div className="card p-3 min-w-0">
           <p className="text-xs text-slate-500">Ingresos (asignados)</p>
           <p className="text-xl font-semibold tabular-nums text-emerald-700">{formatMoneyFirmado(resumen.ingresos)}</p>
         </div>
-        <div className="card p-3">
-          <p className="text-xs text-slate-500">Egresos (asignados)</p>
-          <p className="text-xl font-semibold tabular-nums text-red-700">{formatMoneyFirmado(resumen.egresos)}</p>
-        </div>
-        <div className="card p-3">
-          <p className="text-xs text-slate-500">Resultado</p>
-          <p className={`text-xl font-semibold tabular-nums ${resumen.resultado >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-            {formatMoneyFirmado(resumen.resultado)}
-          </p>
+        <div className="card p-3 min-w-0">
+          <p className="text-xs text-slate-500">Egresos (asignados + personal)</p>
+          <p className="text-xl font-semibold tabular-nums text-red-700">{formatMoneyFirmado(egresosConPersonal)}</p>
           <p className="text-[11px] text-slate-500 mt-1">
-            Resultado con personal: <span className="tabular-nums">{formatMoneyFirmado(resumen.resultado + personalMostrado)}</span>
-          </p>
-          <p className="text-[11px] text-slate-500 mt-1 space-x-2">
-            {[...resumen.porCentroCosto.entries()].map(([ccId, total]) => (
-              <span key={ccId} className="whitespace-nowrap">
-                {centros.find((c) => c.id === ccId)?.nombre ?? '?'}: <span className="tabular-nums">{formatMoneyFirmado(total)}</span>
-              </span>
-            ))}
+            Incluye costos de personal: <span className="tabular-nums">{formatMoneyFirmado(personalMostrado)}</span>
           </p>
         </div>
-        <div className="card p-3">
-          <p className="text-xs text-slate-500">Costos de personal</p>
-          <p className="text-xl font-semibold tabular-nums text-red-700">{formatMoneyFirmado(personalMostrado)}</p>
-          {sinFiltroDePersonal && (
-            <p className="text-[11px] text-slate-500 mt-1 space-x-2">
-              {[...resumenPersonal.porCentroCosto.entries()].map(([ccId, total]) => (
-                <span key={ccId} className="whitespace-nowrap">
-                  {centros.find((c) => c.id === ccId)?.nombre ?? '?'}: <span className="tabular-nums">{formatMoneyFirmado(total)}</span>
-                </span>
+        <div className="card p-3 min-w-0">
+          <p className="text-xs text-slate-500">Resultado</p>
+          <p className={`text-xl font-semibold tabular-nums ${resultadoConPersonal >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+            {formatMoneyFirmado(resultadoConPersonal)}
+          </p>
+          {resultadoPorCentro.length > 0 && (
+            <ul className="text-[11px] text-slate-500 mt-1 space-y-0.5">
+              {resultadoPorCentro.map(([ccId, total]) => (
+                <li key={ccId} className="flex justify-between gap-2">
+                  <span className="truncate">{centros.find((c) => c.id === ccId)?.nombre ?? '?'}</span>
+                  <span className="tabular-nums whitespace-nowrap">{formatMoneyFirmado(total)}</span>
+                </li>
               ))}
-            </p>
+            </ul>
           )}
         </div>
       </div>
