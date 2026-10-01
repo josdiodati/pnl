@@ -26,6 +26,13 @@ export const CATALOGO: ReportePersonalizado[] = [
     rolMinimo: 'VALIDADOR',
     pedidoPor: 'Ejemplo inicial',
   },
+  {
+    id: 'desglose-shared-services',
+    titulo: 'Desglose Shared Services',
+    descripcion:
+      'El detalle detrás del P&L de un centro de costo: cada comprobante y recibo que lo compone, con su porcentaje cuando está repartido entre centros, y los prorrateos recibidos en una línea.',
+    rolMinimo: 'VALIDADOR',
+  },
 ];
 
 export function reporteDelCatalogo(id: string): ReportePersonalizado | undefined {
