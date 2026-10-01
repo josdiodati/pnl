@@ -5,7 +5,7 @@ import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea, rechazarCand
 import { rematchearResumen } from '@/lib/resumenes/ingesta';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import { DomainError } from '@/lib/errors';
-import { MOTIVOS_IGNORO_RAPIDO, MOTIVOS_IGNORO_PNL } from '@/lib/resumenes/motivos';
+import { MOTIVOS_IGNORO_RAPIDO, MOTIVOS_CARGO } from '@/lib/resumenes/motivos';
 
 // Conciliación de líneas: conciliar NO crea gasto (anti-duplicados), imputar
 // crea un Movimiento origen RESUMEN que nace ASIGNADO, ignorar aparta con
@@ -97,10 +97,10 @@ describe('conciliación de líneas de resumen (integración)', () => {
     expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
   });
 
-  it('los motivos rápidos que NO computan al P&L se ignoran sin centro de costo', async () => {
+  it('los motivos rápidos que no son cargo se ignoran sin centro de costo', async () => {
     for (const motivo of ['Cobro anterior al sistema', 'Rendimientos', 'Pagos ARCA']) {
       expect(MOTIVOS_IGNORO_RAPIDO as readonly string[]).toContain(motivo);
-      expect(MOTIVOS_IGNORO_PNL as readonly string[]).not.toContain(motivo);
+      expect(MOTIVOS_CARGO as readonly string[]).not.toContain(motivo);
       const l = await linea();
       await ignorarLinea(ctx, { lineaId: l.id, motivo });
       const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
@@ -110,21 +110,57 @@ describe('conciliación de líneas de resumen (integración)', () => {
     }
   });
 
-  it('ignorar con motivo que computa al P&L exige centro de costo y lo guarda; deshacer lo limpia', async () => {
-    const l = await linea();
+  // Seguros / Comisiones / Consumo sin comprobante son gasto real: no ignoran
+  // la línea, crean el movimiento (aparece en Movimientos y computa en el P&L
+  // por su categoría).
+  it('un motivo de cargo exige centro de costo e imputa la línea con la categoría del motivo', async () => {
+    const l = await linea({ descriptor: 'Seg negocio prot zurich', monto: -175358.43 });
     await expect(ignorarLinea(ctx, { lineaId: l.id, motivo: 'Seguros' })).rejects.toThrow(/centro de costo/i);
     await expect(ignorarLinea(ctx, { lineaId: l.id, motivo: 'Seguros', centroCostoId: 'inexistente' })).rejects.toThrow(DomainError);
     await ignorarLinea(ctx, { lineaId: l.id, motivo: 'Seguros', centroCostoId: centroId });
-    const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
-    expect(actual!.estado).toBe('IGNORADA');
-    expect(actual!.centroCostoId).toBe(centroId);
+    const actual = await prisma.resumenLinea.findUnique({
+      where: { id: l.id },
+      include: { vinculos: { include: { movimiento: { include: { categoria: true, lineas: true } } } } },
+    });
+    expect(actual!.estado).toBe('IMPUTADA');
+    expect(actual!.motivoIgnorada).toBeNull();
+    const mov = actual!.vinculos[0].movimiento;
+    expect(mov.origen).toBe('RESUMEN');
+    expect(mov.estado).toBe('ASIGNADO');
+    expect(Number(mov.total)).toBeCloseTo(175358.43, 2);
+    expect(mov.categoria!.nombre).toBe('Seguros');
+    expect(mov.categoria!.tipo).toBe('EGRESO');
+    expect(mov.lineas.map((x) => [x.centroCostoId, Number(x.porcentaje)])).toEqual([[centroId, 100]]);
+
+    // Deshacer anula el movimiento y deja la línea pendiente.
     await deshacerLinea(ctx, { lineaId: l.id });
-    const deshecha = await prisma.resumenLinea.findUnique({ where: { id: l.id } });
-    expect(deshecha!.estado).toBe('PENDIENTE');
-    expect(deshecha!.centroCostoId).toBeNull();
+    expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
+    expect((await prisma.movimiento.findUnique({ where: { id: mov.id } }))!.estado).toBe('ANULADO');
   });
 
-  it('un motivo que no computa al P&L no exige centro y no lo guarda', async () => {
+  it('la categoría del motivo se reutiliza, Comisiones va a Gastos Bancarios y se puede elegir otra', async () => {
+    const segunda = await linea();
+    await ignorarLinea(ctx, { lineaId: segunda.id, motivo: 'Seguros', centroCostoId: centroId });
+    expect(await prisma.categoria.count({ where: { empresaId, nombre: 'Seguros' } })).toBe(1);
+
+    const comision = await linea({ descriptor: 'COMI.MANT.MENSUAL CUENTA' });
+    await ignorarLinea(ctx, { lineaId: comision.id, motivo: 'Comisiones', centroCostoId: centroId });
+    const movComision = await prisma.resumenLineaVinculo.findFirst({ where: { lineaId: comision.id }, include: { movimiento: { include: { categoria: true } } } });
+    expect(movComision!.movimiento.categoria!.nombre).toBe('Gastos Bancarios');
+
+    const consumo = await linea({ descriptor: 'RAPPI' });
+    await ignorarLinea(ctx, { lineaId: consumo.id, motivo: 'Consumo sin comprobante', centroCostoId: centroId, categoriaId });
+    const movConsumo = await prisma.resumenLineaVinculo.findFirst({ where: { lineaId: consumo.id }, include: { movimiento: true } });
+    expect(movConsumo!.movimiento.categoriaId).toBe(categoriaId);
+  });
+
+  it('un cargo sin importe en pesos pide usar Imputar con el monto', async () => {
+    const l = await linea({ monto: null, moneda: 'USD', montoOrigen: -26.25 });
+    await expect(ignorarLinea(ctx, { lineaId: l.id, motivo: 'Consumo sin comprobante', centroCostoId: centroId })).rejects.toThrow(/pesos/);
+    expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
+  });
+
+  it('un motivo que no es cargo no exige centro y no lo guarda', async () => {
     const l = await linea();
     await ignorarLinea(ctx, { lineaId: l.id, motivo: 'Movimiento sin consumo' });
     const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id } });

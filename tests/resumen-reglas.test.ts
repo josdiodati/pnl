@@ -157,6 +157,26 @@ describe('aplicación de reglas de resumen (integración)', () => {
     expect((await prisma.resumenLinea.findUnique({ where: { id: lUsd.id } }))!.estado).toBe('PENDIENTE');
   });
 
+  it('IGNORAR con motivo de cargo crea el movimiento (salvo sugerencias) y crearReglaDesdeLinea guarda el centro', async () => {
+    await prisma.reglaResumen.create({
+      data: { empresaId, nombre: 'Seguro zurich', descriptorContiene: 'ZURICH', accion: 'IGNORAR', motivoIgnorar: 'Seguros', centroCostoId: centroId } as never,
+    });
+    const lPend = await linea({ descriptor: 'SEG NEGOCIO ZURICH', monto: -175358.43 });
+    const lSug = await linea({ descriptor: 'SEG ZURICH OTRO', estado: 'SUGERIDA', candidatos: [] });
+
+    const r = await aplicarReglasResumen(ctx.db, resumenId, usuarioId);
+    expect(r.imputadas).toBe(1);
+    const pend = await prisma.resumenLinea.findUnique({ where: { id: lPend.id }, include: { vinculos: { include: { movimiento: { include: { categoria: true } } } } } });
+    expect(pend!.estado).toBe('IMPUTADA');
+    expect(pend!.reglaAplicada).toBe('Seguro zurich');
+    expect(pend!.vinculos[0].movimiento.categoria!.nombre).toBe('Seguros');
+    expect((await prisma.resumenLinea.findUnique({ where: { id: lSug.id } }))!.estado).toBe('SUGERIDA');
+
+    const l = await linea({ descriptor: 'SEGURO INTEGRAL COMERCIO' });
+    const nueva = await crearReglaDesdeLinea(ctx.db, { lineaId: l.id, accion: 'IGNORAR', motivo: 'Seguros', centroCostoId: centroId });
+    expect((await prisma.reglaResumen.findFirst({ where: { empresaId, nombre: nueva.nombre } }))!.centroCostoId).toBe(centroId);
+  });
+
   it('sin usuario no aplica nada (no hay autor para el movimiento/auditoría)', async () => {
     const l = await linea({ descriptor: 'SU PAGO SIN USUARIO' });
     const r = await aplicarReglasResumen(ctx.db, resumenId, null);

@@ -6,7 +6,7 @@ import { validarPertenenciaLineas } from '@/lib/movimientos/service';
 import { getOrCreatePeriodo } from '@/lib/periodos';
 import { assertTransicion } from '@/lib/movimientos/estados';
 import { normalizarDescriptor } from './matching';
-import { MOTIVOS_IGNORO_PNL } from './motivos';
+import { CATEGORIA_DE_CARGO, esMotivoCargo, type MotivoCargo } from './motivos';
 import { rematchearResumen } from './ingesta';
 import { confirmarCobroRegistrado, sincronizarCobrosDeLinea } from '@/lib/cobranzas/conciliacion';
 
@@ -265,31 +265,64 @@ export async function rechazarCandidato(ctx: EmpresaContext, params: { lineaId: 
 
 export async function ignorarLinea(
   ctx: EmpresaContext,
-  params: { lineaId: string; motivo: string; centroCostoId?: string | null },
+  params: { lineaId: string; motivo: string; centroCostoId?: string | null; categoriaId?: string | null },
 ): Promise<void> {
+  const motivo = params.motivo.trim();
+  // Seguros, comisiones, consumos sin comprobante: son gasto real, no se
+  // ignoran — se imputan (crean movimiento) para que estén en el libro.
+  if (esMotivoCargo(motivo)) {
+    await imputarCargo(ctx, { lineaId: params.lineaId, motivo, centroCostoId: params.centroCostoId, categoriaId: params.categoriaId });
+    return;
+  }
   const linea = await lineaOrThrow(ctx, params.lineaId);
   assertTitularVerificado(linea.resumen);
   if (linea.estado !== 'PENDIENTE' && linea.estado !== 'SUGERIDA') throw new DomainError('La línea ya está resuelta: deshacela primero.');
-  const motivo = params.motivo.trim();
   if (!motivo) throw new DomainError('Indicá el motivo para ignorar la línea.');
-  // Los motivos que computan al P&L son un cargo real: exigen centro de costo
-  // (único, 100%) para que la vista por centro pueda atribuirlos.
-  const computaPnl = (MOTIVOS_IGNORO_PNL as readonly string[]).includes(motivo);
-  let centroCostoId: string | null = null;
-  if (computaPnl) {
-    if (!params.centroCostoId) throw new DomainError(`El motivo «${motivo}» computa en el P&L: elegí el centro de costo.`);
-    const centro = await ctx.db.centroCosto.findFirst({ where: { id: params.centroCostoId } });
-    if (!centro) throw new DomainError('Centro de costo inexistente.');
-    centroCostoId = centro.id;
-  }
-  await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'IGNORADA', motivoIgnorada: motivo, centroCostoId } });
+  await ctx.db.resumenLinea.update({ where: { id: linea.id }, data: { estado: 'IGNORADA', motivoIgnorada: motivo, centroCostoId: null } });
   await writeAudit(ctx.db, {
     usuarioId: ctx.usuario.id,
     entidad: 'Resumen',
     entidadId: linea.resumenId,
     accion: 'RESUMEN_IGNORAR',
-    despues: { lineaId: linea.id, descriptor: linea.descriptor, motivo, ...(centroCostoId ? { centroCostoId } : {}) },
+    despues: { lineaId: linea.id, descriptor: linea.descriptor, motivo },
   });
+}
+
+/**
+ * Cargo sin comprobante (chips Seguros / Comisiones / Consumo sin comprobante):
+ * imputa la línea 100% al centro de costo elegido, con la categoría del motivo
+ * (CATEGORIA_DE_CARGO, se crea si la empresa no la tiene) o la que se elija.
+ */
+export async function imputarCargo(
+  ctx: EmpresaContext,
+  params: { lineaId: string; motivo: MotivoCargo; centroCostoId?: string | null; categoriaId?: string | null },
+): Promise<void> {
+  if (!params.centroCostoId) throw new DomainError(`«${params.motivo}» crea un movimiento: elegí el centro de costo.`);
+  const linea = await lineaOrThrow(ctx, params.lineaId);
+  if (linea.monto == null) {
+    throw new DomainError('La línea no tiene importe en pesos: usá Imputar e ingresá el monto final en pesos.');
+  }
+  const categoriaId = params.categoriaId || (await categoriaDeCargo(ctx, params.motivo));
+  await imputarLinea(ctx, { lineaId: params.lineaId, categoriaId, lineas: [{ centroCostoId: params.centroCostoId, porcentaje: 100 }] });
+}
+
+/** Categoría de egreso del motivo de cargo; si no existe (o está inactiva) se crea/reactiva. */
+export async function categoriaDeCargo(ctx: EmpresaContext, motivo: MotivoCargo): Promise<string> {
+  const nombre = CATEGORIA_DE_CARGO[motivo];
+  const existente = await ctx.db.categoria.findFirst({ where: { nombre: { equals: nombre, mode: 'insensitive' } } });
+  if (existente) {
+    if (!existente.activa) await ctx.db.categoria.update({ where: { id: existente.id }, data: { activa: true } });
+    return existente.id;
+  }
+  const nueva = await ctx.db.categoria.create({ data: { nombre, tipo: 'EGRESO' } as never });
+  await writeAudit(ctx.db, {
+    usuarioId: ctx.usuario.id,
+    entidad: 'Categoria',
+    entidadId: nueva.id,
+    accion: 'CREAR',
+    despues: { nombre, tipo: 'EGRESO', motivo: `Cargo de resumen «${motivo}»` },
+  });
+  return nueva.id;
 }
 
 export async function deshacerLinea(ctx: EmpresaContext, params: { lineaId: string }): Promise<void> {

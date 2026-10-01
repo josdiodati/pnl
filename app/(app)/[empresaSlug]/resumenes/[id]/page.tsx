@@ -14,7 +14,7 @@ import { HistorialComprobante } from '@/components/historial-comprobante';
 import { BuscadorMovimiento } from '@/components/buscador-movimiento';
 import { EliminarResumen } from '@/components/eliminar-resumen';
 import { MenuRapido } from '@/components/menu-rapido';
-import { MOTIVOS_IGNORO_RAPIDO, MOTIVOS_IGNORO_PNL } from '@/lib/resumenes/motivos';
+import { MOTIVOS_IGNORO_RAPIDO, MOTIVOS_CARGO, CATEGORIA_DE_CARGO } from '@/lib/resumenes/motivos';
 import { CobroFacturasSelector, type FacturaCobrable } from '@/components/cobro-facturas-selector';
 import { cargarVentasConCobros, calcularInfoCobros, hoyUtc } from '@/lib/cobranzas/query';
 import { identificarCliente, sugerirCombinacion } from '@/lib/cobranzas/sugerencia';
@@ -451,7 +451,51 @@ export default async function ResumenDetallePage({
                 <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
                 <input type="hidden" name="resumenId" value={resumen.id} />
                 <input type="hidden" name="lineaId" value={linea.id} />
-                <p className="text-xs font-semibold text-slate-500">Ignorar (no requiere imputación)</p>
+                <p className="text-xs font-semibold text-slate-500">Cargo sin comprobante (crea el movimiento, 100% al centro de costo)</p>
+                <div className="flex gap-2 flex-wrap">
+                  <div className="w-56">
+                    <label className="label">Centro de costo</label>
+                    <select name="centroCostoId" className="input text-xs" defaultValue="">
+                      <option value="">Centro de costo…</option>
+                      {centros.map((c) => (
+                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="w-56">
+                    <label className="label">Categoría (opcional)</label>
+                    <select name="categoriaId" className="input text-xs" defaultValue="">
+                      <option value="">La del motivo</option>
+                      {categorias.filter((c) => c.tipo === 'EGRESO').map((c) => (
+                        <option key={c.id} value={c.id}>{c.padreId ? '· ' : ''}{c.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {MOTIVOS_CARGO.map((m) => (
+                    <button
+                      key={m}
+                      name="motivoRapido"
+                      value={m}
+                      className="rounded-full border border-slate-300 px-2.5 py-0.5 text-xs text-slate-600 hover:bg-slate-100"
+                      title={`Crea un movimiento con categoría «${CATEGORIA_DE_CARGO[m]}» (o la elegida)`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-600">
+                  <input type="checkbox" name="crearRegla" value="1" />
+                  Crear regla: resolver así automáticamente las líneas con este descriptor en futuros resúmenes
+                </label>
+              </form>
+
+              <form action={ignorarAction} className="space-y-2 border-t border-slate-100 pt-3">
+                <input type="hidden" name="empresaSlug" value={params.empresaSlug} />
+                <input type="hidden" name="resumenId" value={resumen.id} />
+                <input type="hidden" name="lineaId" value={linea.id} />
+                <p className="text-xs font-semibold text-slate-500">Ignorar (no es gasto)</p>
                 <div className="flex items-center gap-2 flex-wrap">
                   {MOTIVOS_IGNORO_RAPIDO.map((m) => (
                     <button
@@ -459,21 +503,10 @@ export default async function ResumenDetallePage({
                       name="motivoRapido"
                       value={m}
                       className="rounded-full border border-slate-300 px-2.5 py-0.5 text-xs text-slate-600 hover:bg-slate-100"
-                      title={(MOTIVOS_IGNORO_PNL as readonly string[]).includes(m) ? 'Computa en el Reporte P&L: requiere centro de costo' : undefined}
                     >
                       {m}
-                      {(MOTIVOS_IGNORO_PNL as readonly string[]).includes(m) && <span className="ml-1 text-[10px] text-slate-400">· P&L</span>}
                     </button>
                   ))}
-                </div>
-                <div className="w-64">
-                  <label className="label">Centro de costo (para los motivos que computan al P&L)</label>
-                  <select name="centroCostoId" className="input text-xs" defaultValue="">
-                    <option value="">Centro de costo…</option>
-                    {centros.map((c) => (
-                      <option key={c.id} value={c.id}>{c.nombre}</option>
-                    ))}
-                  </select>
                 </div>
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
@@ -771,7 +804,7 @@ export default async function ResumenDetallePage({
                 )}
 
                 {l.estado === 'PENDIENTE' && (
-                  <MenuRapido etiqueta="⚡" titulo="Acciones rápidas: ignorar con motivo">
+                  <MenuRapido etiqueta="⚡" titulo="Acciones rápidas: cargo sin comprobante o ignorar con motivo">
                     <form
                       action={ignorarAction}
                       className="absolute z-20 mt-1 w-56 rounded border border-slate-200 bg-white shadow-lg py-1"
@@ -788,7 +821,7 @@ export default async function ResumenDetallePage({
                         </Link>
                       )}
                       <p className="px-3 py-1 text-[11px] font-semibold text-slate-400">Ignorar como…</p>
-                      {MOTIVOS_IGNORO_RAPIDO.filter((m) => !(MOTIVOS_IGNORO_PNL as readonly string[]).includes(m)).map((m) => (
+                      {MOTIVOS_IGNORO_RAPIDO.map((m) => (
                         <button
                           key={m}
                           name="motivoRapido"
@@ -799,7 +832,7 @@ export default async function ResumenDetallePage({
                         </button>
                       ))}
                       <p className="px-3 pt-2 pb-1 text-[11px] font-semibold text-slate-400 border-t border-slate-100 mt-1">
-                        Computan al P&L — elegí centro de costo
+                        Cargo sin comprobante — crea movimiento
                       </p>
                       <div className="px-3 pb-1">
                         <select name="centroCostoId" className="input text-xs w-full" defaultValue="">
@@ -809,15 +842,15 @@ export default async function ResumenDetallePage({
                           ))}
                         </select>
                       </div>
-                      {MOTIVOS_IGNORO_PNL.map((m) => (
+                      {MOTIVOS_CARGO.map((m) => (
                         <button
                           key={m}
                           name="motivoRapido"
                           value={m}
                           className="block w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-amber-50"
-                          title="Computa en el Reporte P&L con el centro de costo elegido"
+                          title={`Crea un movimiento «${CATEGORIA_DE_CARGO[m]}» 100% al centro de costo elegido`}
                         >
-                          {m} <span className="text-[10px] text-slate-400">· P&L</span>
+                          {m} <span className="text-[10px] text-slate-400">· {CATEGORIA_DE_CARGO[m]}</span>
                         </button>
                       ))}
                     </form>

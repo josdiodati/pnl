@@ -40,12 +40,6 @@ export type MovimientoPnl = {
 
 export type ReciboPnl = { anio: number; mes: number; costoTotalEmpleador: number | null; lineas?: LineaPnl[] };
 
-// Cargo de resumen: línea IGNORADA cuyo motivo afecta el P&L (consumo sin
-// comprobante, seguros, comisiones). Monto en pesos FIRMADO tal como vino del
-// resumen (débitos negativos). El centro de costo (único, 100%) permite
-// atribuirlo en la vista por centro; no tiene proyecto ni cliente.
-export type CargoResumenPnl = { anio: number; mes: number; motivo: string; monto: number; centroCostoId?: string | null };
-
 export type CampoPnl = 'proyectoId' | 'centroCostoId' | 'clienteId';
 // valor null = líneas sin ese dato (para centroCostoId, siempre presente en la
 // línea, junta sólo lo no distribuible).
@@ -94,11 +88,9 @@ export type Pnl = {
   sueldos: number[]; // recibos confirmados (costo total empleador), negativo
   sinCategoria: number[]; // asignados sin categoría computable (no debería haber)
   sinDistribucion: number[]; // sólo en la vista "sin <dimensión>": líneas ausentes/inconsistentes (revisar)
-  cargos: Map<string, number[]>; // cargos de resúmenes por motivo (sin distribución: enteros a la vista "sin")
   subtotalIngresos: number[];
   subtotalEgresos: number[];
   subtotalPersonal: number[];
-  subtotalCargos: number[];
   resultado: number[];
   memo: MemoImpuestos;
   totalEjercicio: { resultado: number };
@@ -123,7 +115,6 @@ export function armarPnl(input: {
   meses: MesPnl[];
   movimientos: MovimientoPnl[];
   recibos: ReciboPnl[];
-  cargos?: CargoResumenPnl[];
   filtro?: FiltroPnl;
 }): Pnl {
   const N = input.meses.length;
@@ -139,11 +130,9 @@ export function armarPnl(input: {
     sueldos: ceros(),
     sinCategoria: ceros(),
     sinDistribucion: ceros(),
-    cargos: new Map(),
     subtotalIngresos: ceros(),
     subtotalEgresos: ceros(),
     subtotalPersonal: ceros(),
-    subtotalCargos: ceros(),
     resultado: ceros(),
     memo: {
       ivaDebito: ceros(),
@@ -229,30 +218,12 @@ export function armarPnl(input: {
     }
   }
 
-  // Cargos de resúmenes: centro de costo único (100%), sin proyecto/cliente.
-  // En la vista por centro se atribuyen a su centro (sin centro → "sin"); en
-  // las vistas por proyecto o cliente van enteros a la "sin <dimensión>" (como
-  // los recibos sin líneas) — la suma por valores sigue cerrando.
-  for (const cargo of input.cargos ?? []) {
-    const c = col.get(`${cargo.anio}-${cargo.mes}`);
-    if (c == null) continue;
-    if (filtro) {
-      if (filtro.campo === 'centroCostoId') {
-        if ((cargo.centroCostoId ?? null) !== filtro.valor) continue;
-      } else if (filtro.valor !== null) {
-        continue;
-      }
-    }
-    sumarEn(pnl.cargos, cargo.motivo, c, Math.round(cargo.monto * 100));
-  }
-
   for (let c = 0; c < N; c++) {
     pnl.subtotalIngresos[c] = [...pnl.ingresos.values()].reduce((a, v) => a + v[c], 0);
     pnl.subtotalEgresos[c] = [...pnl.egresos.values()].reduce((a, v) => a + v[c], 0);
     pnl.subtotalPersonal[c] = [...pnl.personal.values()].reduce((a, v) => a + v[c], 0) + pnl.sueldos[c];
-    pnl.subtotalCargos[c] = [...pnl.cargos.values()].reduce((a, v) => a + v[c], 0);
     pnl.resultado[c] =
-      pnl.subtotalIngresos[c] + pnl.subtotalEgresos[c] + pnl.subtotalPersonal[c] + pnl.subtotalCargos[c] +
+      pnl.subtotalIngresos[c] + pnl.subtotalEgresos[c] + pnl.subtotalPersonal[c] +
       pnl.sinCategoria[c] + pnl.sinDistribucion[c];
     pnl.memo.posicionIva[c] = pnl.memo.ivaDebito[c] + pnl.memo.ivaCredito[c];
   }

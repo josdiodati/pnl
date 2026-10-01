@@ -3,7 +3,8 @@ import type { ScopedDb } from '@/lib/empresa/scope';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { normalizarDescriptor } from './matching';
-import { ignorarLinea, imputarLinea } from './service';
+import { ignorarLinea, imputarCargo, imputarLinea } from './service';
+import { esMotivoCargo } from './motivos';
 
 // Reglas de auto-resolución de líneas de resumen. La primera vez el usuario
 // ignora/imputa una línea a mano (con "crear regla"); los resúmenes siguientes
@@ -78,15 +79,17 @@ export async function aplicarReglasResumen(
     const regla = reglas.find((r) => reglaResumenMatchea(r, linea, resumen));
     if (!regla) continue;
     try {
-      if (regla.accion === 'IGNORAR') {
-        // Si el motivo computa al P&L, el centro viene de la regla (copiado de
-        // la línea original al crearla); sin centro, ignorarLinea la rechaza y
-        // la línea queda pendiente para resolverla a mano.
-        await ignorarLinea(ctx, {
-          lineaId: linea.id,
-          motivo: regla.motivoIgnorar?.trim() || `Regla: ${regla.nombre}`,
-          centroCostoId: regla.centroCostoId,
-        });
+      const motivo = regla.motivoIgnorar?.trim() || `Regla: ${regla.nombre}`;
+      if (regla.accion === 'IGNORAR' && esMotivoCargo(motivo)) {
+        // Motivo de cargo (Seguros, Comisiones…): crea movimiento, así que
+        // rigen los guardas de IMPUTAR. El centro viene de la regla (copiado
+        // de la línea original); sin centro imputarCargo la rechaza y la
+        // línea queda pendiente para resolverla a mano.
+        if (linea.estado === 'SUGERIDA') continue;
+        await imputarCargo(ctx, { lineaId: linea.id, motivo, centroCostoId: regla.centroCostoId });
+        imputadas++;
+      } else if (regla.accion === 'IGNORAR') {
+        await ignorarLinea(ctx, { lineaId: linea.id, motivo });
         ignoradas++;
       } else {
         if (linea.estado === 'SUGERIDA') continue; // la sugerencia de conciliación gana
@@ -114,7 +117,7 @@ export async function aplicarReglasResumen(
 export async function crearReglaDesdeLinea(
   db: ScopedDb,
   params:
-    | { lineaId: string; accion: 'IGNORAR'; motivo: string }
+    | { lineaId: string; accion: 'IGNORAR'; motivo: string; centroCostoId?: string | null }
     | { lineaId: string; accion: 'IMPUTAR'; categoriaId: string; centroCostoId: string; clienteId: string | null; proyectoId: string | null },
 ): Promise<{ creada: boolean; nombre: string }> {
   const linea = await db.resumenLinea.findFirst({ where: { id: params.lineaId } });
@@ -129,9 +132,9 @@ export async function crearReglaDesdeLinea(
       accion: params.accion,
       motivoIgnorar: params.accion === 'IGNORAR' ? params.motivo : null,
       categoriaId: params.accion === 'IMPUTAR' ? params.categoriaId : null,
-      // IGNORAR con motivo que computa al P&L: hereda el centro que se eligió
-      // al ignorar la línea original, así la regla puede auto-resolver.
-      centroCostoId: params.accion === 'IMPUTAR' ? params.centroCostoId : linea.centroCostoId ?? null,
+      // IGNORAR con motivo de cargo (crea movimiento): hereda el centro que se
+      // eligió en la línea original, así la regla puede auto-resolver.
+      centroCostoId: params.centroCostoId ?? null,
       clienteId: params.accion === 'IMPUTAR' ? params.clienteId : null,
       proyectoId: params.accion === 'IMPUTAR' ? params.proyectoId : null,
     } as never,
