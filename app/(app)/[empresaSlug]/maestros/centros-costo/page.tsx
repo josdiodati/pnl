@@ -34,6 +34,16 @@ export default async function CentrosCostoPage({
               <option value="SOPORTE">Soporte</option>
             </select>
           </div>
+          <div>
+            <label className="label" title="El resultado del centro se reparte en el Reporte P&L (vista por centro) a los centros no prorrateables, según el driver elegido. Los centros prorrateables no reciben prorrateos ni cuentan en el denominador.">
+              Prorrateable
+            </label>
+            <select name="prorrateo" className="input" defaultValue={editando?.prorrateo ?? ''}>
+              <option value="">No</option>
+              <option value="HEADCOUNT">Por headcount</option>
+              <option value="FACTURACION">Por facturación</option>
+            </select>
+          </div>
           <button className="btn-primary">{editando ? 'Guardar cambios' : 'Crear'}</button>
           {editando && (
             <Link href={`/${params.empresaSlug}/maestros/centros-costo`} className="btn-secondary">Cancelar</Link>
@@ -50,7 +60,14 @@ export default async function CentrosCostoPage({
             {centros.map((c) => (
               <tr key={c.id} className={!c.activo ? 'opacity-50' : ''}>
                 <td className="font-medium">{c.nombre}</td>
-                <td>{c.tipo === 'NEGOCIO' ? 'Negocio' : 'Soporte'}</td>
+                <td>
+                  {c.tipo === 'NEGOCIO' ? 'Negocio' : 'Soporte'}
+                  {c.prorrateo && (
+                    <span className="ml-1.5 inline-block rounded bg-violet-50 text-violet-700 px-1.5 py-0.5 text-[10px]">
+                      prorratea por {c.prorrateo === 'HEADCOUNT' ? 'headcount' : 'facturación'}
+                    </span>
+                  )}
+                </td>
                 <td>{c.activo ? 'Activo' : 'Inactivo'}</td>
                 <td className="text-right whitespace-nowrap">
                   <Link href={`?editar=${c.id}`} className="text-sm underline text-slate-600 mr-3">Editar</Link>

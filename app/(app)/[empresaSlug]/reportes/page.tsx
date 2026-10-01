@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { MES_LABEL, periodoDeFecha, ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
 import { armarPnl, type MovimientoPnl, type FiltroPnl } from '@/lib/reportes/pnl';
+import { calcularProrrateos, facturacionPorCentro, headcountPorCentro, CRITERIO_LABEL, type CriterioProrrateo } from '@/lib/reportes/prorrateo';
 import { PageHeader } from '@/components/page-header';
 
 // Reporte P&L: categorías (eje Y) × meses del ejercicio (eje X), en pesos.
@@ -58,48 +59,103 @@ export default async function ReportesPage({
     ctx.db.cliente.findMany({ orderBy: { nombre: 'asc' } }),
   ]);
 
-  const pnl = armarPnl({
-    meses,
-    movimientos: movimientos.map((m): MovimientoPnl => {
-      const p = periodoPorId.get(m.periodoId!)!;
-      return {
-        anio: p.anio,
-        mes: p.mes,
-        categoriaId: m.categoriaId,
-        tipoCategoria: (m.categoria?.tipo ?? 'EGRESO') as 'INGRESO' | 'EGRESO',
-        esCostoPersonal: m.categoria?.esCostoPersonal ?? false,
-        esImpuestoIndirecto: m.categoria?.esImpuestoIndirecto ?? false,
-        tipoComprobante: m.tipoComprobante,
-        moneda: m.moneda,
-        tipoCambio: m.tipoCambio != null ? Number(m.tipoCambio) : null,
-        total: m.total != null ? Number(m.total) : null,
-        iva21: m.iva21 != null ? Number(m.iva21) : null,
-        iva105: m.iva105 != null ? Number(m.iva105) : null,
-        iva27: m.iva27 != null ? Number(m.iva27) : null,
-        percepcionesIva: m.percepcionesIva != null ? Number(m.percepcionesIva) : null,
-        percepcionesIibb: m.percepcionesIibb != null ? Number(m.percepcionesIibb) : null,
-        otrosTributos: m.otrosTributos != null ? Number(m.otrosTributos) : null,
-        lineas: m.lineas.map((l) => ({
-          centroCostoId: l.centroCostoId,
-          clienteId: l.clienteId ?? null,
-          proyectoId: l.proyectoId ?? null,
-          porcentaje: Number(l.porcentaje),
-        })),
-      };
-    }),
-    recibos: recibos.map((r) => ({
-      anio: r.periodo.anio,
-      mes: r.periodo.mes,
-      costoTotalEmpleador: r.costoTotalEmpleador != null ? Number(r.costoTotalEmpleador) : null,
-      lineas: r.lineas.map((l) => ({
+  const movimientosPnl = movimientos.map((m): MovimientoPnl => {
+    const p = periodoPorId.get(m.periodoId!)!;
+    return {
+      anio: p.anio,
+      mes: p.mes,
+      categoriaId: m.categoriaId,
+      tipoCategoria: (m.categoria?.tipo ?? 'EGRESO') as 'INGRESO' | 'EGRESO',
+      esCostoPersonal: m.categoria?.esCostoPersonal ?? false,
+      esImpuestoIndirecto: m.categoria?.esImpuestoIndirecto ?? false,
+      tipoComprobante: m.tipoComprobante,
+      moneda: m.moneda,
+      tipoCambio: m.tipoCambio != null ? Number(m.tipoCambio) : null,
+      total: m.total != null ? Number(m.total) : null,
+      iva21: m.iva21 != null ? Number(m.iva21) : null,
+      iva105: m.iva105 != null ? Number(m.iva105) : null,
+      iva27: m.iva27 != null ? Number(m.iva27) : null,
+      percepcionesIva: m.percepcionesIva != null ? Number(m.percepcionesIva) : null,
+      percepcionesIibb: m.percepcionesIibb != null ? Number(m.percepcionesIibb) : null,
+      otrosTributos: m.otrosTributos != null ? Number(m.otrosTributos) : null,
+      lineas: m.lineas.map((l) => ({
         centroCostoId: l.centroCostoId,
         clienteId: l.clienteId ?? null,
         proyectoId: l.proyectoId ?? null,
         porcentaje: Number(l.porcentaje),
       })),
-    })),
-    filtro,
+    };
   });
+  const recibosPnl = recibos.map((r) => ({
+    anio: r.periodo.anio,
+    mes: r.periodo.mes,
+    costoTotalEmpleador: r.costoTotalEmpleador != null ? Number(r.costoTotalEmpleador) : null,
+    lineas: r.lineas.map((l) => ({
+      centroCostoId: l.centroCostoId,
+      clienteId: l.clienteId ?? null,
+      proyectoId: l.proyectoId ?? null,
+      porcentaje: Number(l.porcentaje),
+    })),
+  }));
+  const pnl = armarPnl({ meses, movimientos: movimientosPnl, recibos: recibosPnl, filtro });
+
+  // Prorrateos (sólo vista por un centro de costo): los centros prorrateables
+  // reparten su resultado a los no prorrateables por headcount o facturación
+  // (método directo, lib/reportes/prorrateo.ts).
+  const prorrateables = centros.filter((c) => c.prorrateo);
+  const vistaCentroId = filtro?.campo === 'centroCostoId' ? filtro.valor : null;
+  let prorrateo: ReturnType<typeof calcularProrrateos> | null = null;
+  if (vistaCentroId && prorrateables.length) {
+    const usa = (k: CriterioProrrateo) => prorrateables.some((c) => c.prorrateo === k);
+    const empleados = usa('HEADCOUNT')
+      ? await ctx.db.empleado.findMany({ include: { distribucion: true } })
+      : [];
+    prorrateo = calcularProrrateos({
+      meses,
+      centros: centros.map((c) => ({ id: c.id, prorrateo: c.prorrateo })),
+      resultadoEmisor: new Map(
+        prorrateables.map((c) => [
+          c.id,
+          armarPnl({ meses, movimientos: movimientosPnl, recibos: recibosPnl, filtro: { campo: 'centroCostoId', valor: c.id } }).resultado,
+        ]),
+      ),
+      drivers: {
+        HEADCOUNT: usa('HEADCOUNT')
+          ? headcountPorCentro({
+              meses,
+              recibos: recibos
+                .filter((r) => r.tipo === 'MENSUAL')
+                .map((r) => ({
+                  empleadoId: r.empleadoId,
+                  anio: r.periodo.anio,
+                  mes: r.periodo.mes,
+                  lineas: r.lineas.map((l) => ({ centroCostoId: l.centroCostoId, porcentaje: Number(l.porcentaje) })),
+                })),
+              empleados: empleados.map((e) => ({
+                id: e.id,
+                activo: e.activo,
+                fechaIngreso: e.fechaIngreso,
+                fechaEgreso: e.fechaEgreso,
+                ficha: e.distribucion.map((l) => ({ centroCostoId: l.centroCostoId, porcentaje: Number(l.porcentaje) })),
+              })),
+            })
+          : new Map(),
+        FACTURACION: usa('FACTURACION') ? facturacionPorCentro({ meses, movimientos: movimientosPnl }) : new Map(),
+      },
+    });
+  }
+  const recibidosVista = (vistaCentroId && prorrateo?.recibidos.get(vistaCentroId)) || new Map<string, number[]>();
+  const repartidoVista = (vistaCentroId && prorrateo?.repartido.get(vistaCentroId)) || null;
+  const sinBaseVista = (vistaCentroId && prorrateo?.sinBase.get(vistaCentroId)) || null;
+  const conProrrateos =
+    [...recibidosVista.values()].some((v) => v.some((x) => x !== 0)) ||
+    Boolean(repartidoVista?.some((x) => x !== 0)) ||
+    Boolean(sinBaseVista?.some(Boolean));
+  const resultadoDespues = pnl.resultado.map(
+    (v, c) => v + [...recibidosVista.values()].reduce((a, r) => a + r[c], 0) + (repartidoVista?.[c] ?? 0),
+  );
+  const centroVista = vistaCentroId ? centros.find((c) => c.id === vistaCentroId) : undefined;
+  const fmtDriver = (v: number) => v.toLocaleString('es-AR', { maximumFractionDigits: 2 });
 
   // Orden de filas por sección: categorías padre y sus hijas indentadas.
   const nombreCat = new Map(categorias.map((c) => [c.id, c.nombre]));
@@ -278,7 +334,7 @@ export default async function ReportesPage({
             )}
 
             <tr className="border-t-2 border-slate-300 bg-slate-100">
-              <td className="sticky left-0 bg-slate-100 font-semibold">RESULTADO DEL PERÍODO</td>
+              <td className="sticky left-0 bg-slate-100 font-semibold">{conProrrateos ? 'RESULTADO ANTES DE PRORRATEOS' : 'RESULTADO DEL PERÍODO'}</td>
               <Celdas valores={pnl.resultado} negrita />
             </tr>
             <tr className="text-slate-500">
@@ -294,6 +350,71 @@ export default async function ReportesPage({
                   : '—'}
               </td>
             </tr>
+
+            {conProrrateos && (<>
+              <FilaSeccion titulo={centroVista?.prorrateo ? 'Prorrateo de este centro' : 'Prorrateos recibidos'} />
+              {[...recibidosVista.entries()].map(([emisorId, valores]) => {
+                const emisor = centros.find((c) => c.id === emisorId);
+                const baseEmisor = prorrateo!.base.get(emisorId);
+                const criterio = emisor?.prorrateo as CriterioProrrateo;
+                return (
+                  <tr key={emisorId} className="hover:bg-slate-50">
+                    <td className="sticky left-0 bg-white pl-6 whitespace-nowrap">
+                      {emisor?.nombre ?? '?'} <span className="text-slate-400">· por {CRITERIO_LABEL[criterio]}</span>
+                    </td>
+                    {valores.map((v, c) => {
+                      const d = baseEmisor?.porReceptor.get(vistaCentroId!)?.[c] ?? 0;
+                      const t = baseEmisor?.total[c] ?? 0;
+                      const titulo = t > 0
+                        ? criterio === 'HEADCOUNT'
+                          ? `${fmtDriver(d)} / ${fmtDriver(t)} de headcount`
+                          : `${((d / t) * 100).toFixed(1)}% de la facturación`
+                        : undefined;
+                      return (
+                        <td key={c} className={`text-right tabular-nums whitespace-nowrap ${v < 0 ? 'text-red-700' : ''}`} title={titulo}>
+                          {v !== 0 ? (
+                            <Link href={`${base}/reportes?ejercicio=${ejercicio}&vista=cc:${emisorId}`} className="hover:underline">{fmt(v)}</Link>
+                          ) : fmt(v)}
+                        </td>
+                      );
+                    })}
+                    <td className={`text-right tabular-nums whitespace-nowrap border-l border-slate-200 ${total(valores) < 0 ? 'text-red-700' : ''}`}>{fmt(total(valores))}</td>
+                  </tr>
+                );
+              })}
+              {repartidoVista && centroVista?.prorrateo && (
+                <tr className="hover:bg-slate-50">
+                  <td className="sticky left-0 bg-white pl-6 whitespace-nowrap">
+                    Repartido a otros centros <span className="text-slate-400">· por {CRITERIO_LABEL[centroVista.prorrateo as CriterioProrrateo]}</span>
+                  </td>
+                  {repartidoVista.map((v, c) => (
+                    <td key={c} className={`text-right tabular-nums whitespace-nowrap ${v < 0 ? 'text-red-700' : ''}`}>
+                      {sinBaseVista?.[c] ? (
+                        <span className="text-amber-700" title="Sin base de prorrateo: ningún centro receptor tiene driver este mes; el resultado queda en este centro">sin base</span>
+                      ) : fmt(v)}
+                    </td>
+                  ))}
+                  <td className={`text-right tabular-nums whitespace-nowrap border-l border-slate-200 ${total(repartidoVista) < 0 ? 'text-red-700' : ''}`}>{fmt(total(repartidoVista))}</td>
+                </tr>
+              )}
+              <tr className="border-t-2 border-slate-300 bg-slate-100">
+                <td className="sticky left-0 bg-slate-100 font-semibold">RESULTADO DESPUÉS DE PRORRATEOS</td>
+                <Celdas valores={resultadoDespues} negrita />
+              </tr>
+              <tr className="text-slate-500">
+                <td className="sticky left-0 bg-white pl-6">% margen sobre ingresos</td>
+                {resultadoDespues.map((v, i) => (
+                  <td key={i} className="text-right tabular-nums">
+                    {pnl.subtotalIngresos[i] > 0 ? `${((v / pnl.subtotalIngresos[i]) * 100).toFixed(1)}%` : '—'}
+                  </td>
+                ))}
+                <td className="text-right tabular-nums border-l border-slate-200">
+                  {total(pnl.subtotalIngresos) > 0
+                    ? `${((total(resultadoDespues) / total(pnl.subtotalIngresos)) * 100).toFixed(1)}%`
+                    : '—'}
+                </td>
+              </tr>
+            </>)}
 
             {!filtro && (<>
             <FilaSeccion titulo="Memo: impuestos indirectos (no integran el resultado)" />
@@ -326,6 +447,8 @@ export default async function ReportesPage({
           tributos) y en pesos (moneda extranjera × tipo de cambio; sin TC no computa). Las prepagas figuran por su
           neto dentro de Costos de personal. Los cargos sin comprobante de los resúmenes (seguros, comisiones, consumos) son
           movimientos imputados desde la conciliación y computan por su categoría.
+          {prorrateables.length > 0 &&
+            ` Centros prorrateables (${prorrateables.map((c) => `${c.nombre} por ${CRITERIO_LABEL[c.prorrateo as CriterioProrrateo]}`).join(', ')}): en la vista por centro de costo su resultado se reparte a los demás centros (método directo: los prorrateables no reciben ni cuentan en la base; headcount de recibos confirmados o, si falta, de la ficha).`}
           {filtro &&
             ' La porción sale de las líneas de asignación (reparto al centavo): la suma de todos los valores de la dimensión más su "sin" reproduce el total. El IVA es del comprobante, por eso el memo de impuestos no aplica en esta vista.'}
         </p>

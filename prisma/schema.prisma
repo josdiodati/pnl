@@ -150,11 +150,20 @@ enum TipoCentroCosto {
   SOPORTE
 }
 
+// Centro prorrateable (costos indirectos): en el Reporte P&L por centro su
+// resultado se reparte a los centros no prorrateables según este driver
+// (método directo — lib/reportes/prorrateo.ts).
+enum CriterioProrrateo {
+  HEADCOUNT
+  FACTURACION
+}
+
 model CentroCosto {
   id              String                       @id @default(cuid())
   empresaId       String
   nombre          String
   tipo            TipoCentroCosto
+  prorrateo       CriterioProrrateo? // null = no prorrateable
   activo          Boolean                      @default(true)
   clientesHijos   Cliente[]                    @relation("clientesDelCentro")
   empresa         Empresa                      @relation(fields: [empresaId], references: [id])

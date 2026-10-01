@@ -87,15 +87,18 @@ export async function guardarCentroCosto(formData: FormData): Promise<void> {
     const id = String(formData.get('id') ?? '');
     const nombre = String(formData.get('nombre') ?? '').trim();
     const tipo = String(formData.get('tipo')) as 'NEGOCIO' | 'SOPORTE';
+    // Prorrateable: su resultado se reparte en el P&L por centro (método directo).
+    const prorrateoRaw = String(formData.get('prorrateo') ?? '');
+    const prorrateo = prorrateoRaw === 'HEADCOUNT' || prorrateoRaw === 'FACTURACION' ? prorrateoRaw : null;
     if (!nombre) throw new DomainError('El nombre es obligatorio.');
     if (id) {
       const antes = await ctx.db.centroCosto.findFirst({ where: { id } });
       if (!antes) throw new DomainError('Centro de costo inexistente.');
-      await ctx.db.centroCosto.update({ where: { id }, data: { nombre, tipo } });
-      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'CentroCosto', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, tipo } });
+      await ctx.db.centroCosto.update({ where: { id }, data: { nombre, tipo, prorrateo } });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'CentroCosto', entidadId: id, accion: 'EDITAR', antes, despues: { nombre, tipo, prorrateo } });
     } else {
-      const nuevo = await ctx.db.centroCosto.create({ data: { nombre, tipo } as never });
-      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'CentroCosto', entidadId: nuevo.id, accion: 'CREAR', despues: { nombre, tipo } });
+      const nuevo = await ctx.db.centroCosto.create({ data: { nombre, tipo, prorrateo } as never });
+      await writeAudit(ctx.db, { usuarioId: ctx.usuario.id, entidad: 'CentroCosto', entidadId: nuevo.id, accion: 'CREAR', despues: { nombre, tipo, prorrateo } });
     }
   } catch (err) {
     volver(slug, 'centros-costo', mensaje(err));
