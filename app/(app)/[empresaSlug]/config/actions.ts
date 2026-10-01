@@ -13,6 +13,7 @@ import { guardarCredencialArca, probarCredencialArca, borrarCredencialArca, camb
 import { restablecerPassword } from '@/lib/usuarios/password';
 import { agregarCasilla, quitarCasilla } from '@/lib/usuarios/casillas';
 import { rolAlcanza } from '@/lib/roles';
+import { enviarInvitacion } from '@/lib/invitaciones';
 import { reporteDelCatalogo } from '@/lib/reportes-personalizados/catalogo';
 import { diffHabilitaciones, parsearGrilla, type Par } from '@/lib/reportes-personalizados/habilitaciones';
 import type { Rol } from '@prisma/client';
@@ -61,6 +62,7 @@ export async function editarEmpresaAction(formData: FormData): Promise<void> {
 
 export async function invitarUsuarioAction(formData: FormData): Promise<void> {
   const slug = String(formData.get('empresaSlug'));
+  let mensaje = '';
   try {
     const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
     const email = String(formData.get('email') ?? '').toLowerCase().trim();
@@ -82,10 +84,44 @@ export async function invitarUsuarioAction(formData: FormData): Promise<void> {
       accion: 'CREAR',
       despues: { email, rol },
     });
+    mensaje = await mandarInvitacion(ctx, { email, rol, token }, 'Invitación creada');
   } catch (err) {
     volver(slug, err);
   }
-  volver(slug, undefined, 'Invitación creada: copiá el enlace y enviáselo');
+  volver(slug, undefined, mensaje);
+}
+
+export async function reenviarInvitacionAction(formData: FormData): Promise<void> {
+  const slug = String(formData.get('empresaSlug'));
+  let mensaje = '';
+  try {
+    const ctx = await requireEmpresa(slug, 'ADMINISTRADOR');
+    const invitacion = await ctx.db.invitacion.findFirst({
+      where: { id: String(formData.get('invitacionId')), aceptada: false },
+    });
+    if (!invitacion) throw new DomainError('La invitación no existe o ya fue aceptada.');
+    mensaje = await mandarInvitacion(ctx, invitacion, 'Invitación pendiente');
+  } catch (err) {
+    volver(slug, err);
+  }
+  volver(slug, undefined, mensaje);
+}
+
+async function mandarInvitacion(
+  ctx: Awaited<ReturnType<typeof requireEmpresa>>,
+  inv: { email: string; rol: Rol; token: string },
+  prefijo: string,
+): Promise<string> {
+  const cuentaExistente = Boolean(await prisma.usuario.findUnique({ where: { email: inv.email }, select: { id: true } }));
+  const r = await enviarInvitacion({
+    ...inv,
+    empresa: ctx.empresa.razonSocial,
+    invitadoPor: ctx.usuario.nombre || ctx.usuario.email,
+    cuentaExistente,
+  });
+  return r.enviado
+    ? `${prefijo}: se mandó el mail a ${inv.email}`
+    : `${prefijo}, pero no se pudo mandar el mail (${r.motivo}): copiá el enlace y enviáselo`;
 }
 
 export async function cambiarRolAction(formData: FormData): Promise<void> {
