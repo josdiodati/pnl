@@ -54,17 +54,30 @@ describe('filasExportDetalle', () => {
     criterioCentro: null,
   };
 
-  it('replica secciones, categorías, ítems y resultado, en pesos y sin el "resto"', () => {
+  it('sólo registros: sin filas de sección, subtotal ni resultado; Tipo = categoría; período AAAAMM; sin el "resto"', () => {
     const filas = filasExportDetalle(d, agruparDesglose(d.filas), textos);
-    expect(filas.map((f) => f.nivel)).toEqual(['seccion', 'categoria', 'item', 'item', 'resultado']);
-    expect(filas[0]).toMatchObject({ documento: 'Egresos operativos', importe: -1500 });
-    expect(filas[1]).toMatchObject({ documento: 'Hosting', concepto: '2 ítems', importe: -1500 });
-    const repartido = filas.find((f) => f.documento === 'FACTURA A m1')!;
-    expect(repartido).toEqual({
-      nivel: 'item', mes: 'sep 26', documento: 'FACTURA A m1', concepto: 'Proveedor X', detalle: '',
-      neto: -1000, porcentaje: 50, importe: -500,
+    expect(filas).toHaveLength(2);
+    expect(filas.find((f) => f.documento === 'FACTURA A m1')).toEqual({
+      periodo: 202609, seccion: 'Egresos operativos', tipo: 'Hosting', documento: 'FACTURA A m1',
+      concepto: 'Proveedor X', detalle: '', neto: -1000, porcentaje: 50, importe: -500,
     });
-    expect(JSON.stringify(filas)).not.toMatch(/resto|bpo/i);
-    expect(filas[4]).toMatchObject({ documento: 'Resultado del período', importe: -1500 });
+    expect(JSON.stringify(filas)).not.toMatch(/resto|bpo|Resultado|ítems/i);
+  });
+
+  it('sueldos y prorrateos también van como registros', () => {
+    const recibos = [{ id: 'r1', ...sep, costoTotalEmpleador: 2000, lineas: [{ centroCostoId: 'shared', porcentaje: 100 }] }];
+    const dd = desglosarCentro({ meses, centroId: 'shared', movimientos: [], recibos });
+    dd.recibidos.push({ emisorId: 'seat', mes: sep, resultadoEmisor: -120000, driver: 3, totalDriver: 12, importe: -30000 });
+    const filas = filasExportDetalle(dd, agruparDesglose(dd.filas), {
+      ...textos,
+      describir: () => ({ documento: 'Recibo de sueldo', concepto: 'Pérez' }),
+      nombreCentro: () => 'Seat Cost',
+      criterioDe: () => 'HEADCOUNT',
+    });
+    expect(filas.map((f) => [f.seccion, f.tipo, f.importe])).toEqual([
+      ['Costos de personal', 'Sueldos y cargas', -2000],
+      ['Prorrateos', 'Prorrateo Seat Cost', -300],
+    ]);
+    expect(filas[1]).toMatchObject({ periodo: 202609, porcentaje: 25, neto: -1200, detalle: '3 de 12 cabezas' });
   });
 });

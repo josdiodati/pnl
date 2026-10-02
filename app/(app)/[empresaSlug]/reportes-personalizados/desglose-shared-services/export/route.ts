@@ -7,8 +7,9 @@ import { cargarDetalleCc } from '@/lib/reportes-personalizados/detalle-cc-datos'
 import { filasExportDetalle } from '@/lib/reportes-personalizados/detalle-cc';
 import { slugify } from '@/lib/format';
 
-// XLSX de "Detalle CC": lo mismo que la pantalla (mismos filtros), con las
-// secciones, subtotales y resultados en negrita. Importes como números.
+// XLSX de "Detalle CC": los registros de la pantalla (mismos filtros), uno
+// por fila — sin subtotales ni resultados; la agrupación va en las columnas
+// Sección y Tipo (categoría). Período AAAAMM e importes como números.
 
 const ID = 'desglose-shared-services';
 
@@ -31,26 +32,26 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
   const titulo = reporteDelCatalogo(ID)!.titulo;
   const wb = new ExcelJS.Workbook();
   const hoja = wb.addWorksheet(titulo);
-  hoja.addRow([`${titulo} — ${r.centro.nombre}`]).font = { bold: true, size: 13 };
-  hoja.addRow([`${ctx.empresa.razonSocial} · ${r.rango.desde} a ${r.rango.hasta} · montos netos en $`]);
-  hoja.addRow([]);
-  hoja.addRow(['Mes', 'Documento', 'Concepto', 'Detalle', 'Neto documento', '% aplicado', 'Importe al centro']).font = { bold: true };
+  hoja.addRow(['Periodo', 'Sección', 'Tipo', 'Documento', 'Concepto', 'Detalle', 'Neto documento', '% aplicado', 'Importe al centro']).font = { bold: true };
   for (const f of filasExportDetalle(r.desglose, r.secciones, r.textos)) {
-    const fila = hoja.addRow([
-      f.mes,
-      f.nivel === 'categoria' ? `  ${f.documento}` : f.documento,
+    hoja.addRow([
+      f.periodo,
+      f.seccion,
+      f.tipo,
+      f.documento,
       f.concepto,
       f.detalle,
       f.neto,
       f.porcentaje != null ? f.porcentaje / 100 : null,
       f.importe,
     ]);
-    if (f.nivel !== 'item' && f.nivel !== 'prorrateo') fila.font = { bold: true };
   }
-  hoja.getColumn(5).numFmt = '#,##0.00';
-  hoja.getColumn(6).numFmt = '0.00##%';
   hoja.getColumn(7).numFmt = '#,##0.00';
-  [8, 26, 34, 30, 16, 11, 16].forEach((w, i) => (hoja.getColumn(i + 1).width = w));
+  hoja.getColumn(8).numFmt = '0.00##%';
+  hoja.getColumn(9).numFmt = '#,##0.00';
+  [9, 20, 26, 26, 34, 30, 16, 11, 16].forEach((w, i) => (hoja.getColumn(i + 1).width = w));
+  hoja.views = [{ state: 'frozen', ySplit: 1 }];
+  hoja.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 9 } };
 
   const buffer = Buffer.from(await wb.xlsx.writeBuffer());
   const nombre = `detalle-cc-${slugify(r.centro.nombre)}-${r.rango.desde}-a-${r.rango.hasta}.xlsx`;

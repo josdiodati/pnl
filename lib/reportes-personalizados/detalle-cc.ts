@@ -56,16 +56,20 @@ export type TextosDetalle = {
   criterioCentro: CriterioProrrateo | null;
 };
 
+/** Un registro de la planilla (sólo registros: sin subtotales ni resultados). */
 export type FilaExport = {
-  nivel: 'seccion' | 'categoria' | 'item' | 'resultado' | 'prorrateo';
-  mes: string;
+  /** AAAAMM */
+  periodo: number;
+  seccion: string;
+  /** Categoría (o "Sueldos y cargas", "Prorrateo <centro>"). */
+  tipo: string;
   documento: string;
   concepto: string;
   detalle: string;
   /** Pesos (no centavos), firmados. */
   neto: number | null;
   porcentaje: number | null;
-  importe: number | null;
+  importe: number;
 };
 
 const pesos = (c: number) => c / 100;
@@ -78,29 +82,25 @@ export function textoDriver(criterio: CriterioProrrateo | null, driver: number, 
 }
 export const fraccionPct = (driver: number, total: number) => (total > 0 ? Math.round((driver / total) * 1000000) / 10000 : 0);
 
+const aaaamm = (m: MesPnl) => m.anio * 100 + m.mes;
+
 /**
- * Filas de la planilla, en el orden de la pantalla: sección (total),
- * categoría (subtotal), ítems, resultado y prorrateos. En los ítems
- * repartidos va sólo el % asignado a este centro, sin el resto.
+ * Registros de la planilla, en el orden de la pantalla: ítems de cada
+ * sección/categoría y después los prorrateos. La agrupación va como columnas
+ * (Sección, Tipo), no como filas. En los ítems repartidos va sólo el %
+ * asignado a este centro, sin el resto.
  */
 export function filasExportDetalle(d: Desglose, secciones: SeccionAgrupada[], t: TextosDetalle): FilaExport[] {
-  const vacia = { mes: '', documento: '', concepto: '', detalle: '', neto: null, porcentaje: null };
   const filas: FilaExport[] = [];
   for (const s of secciones) {
-    filas.push({ ...vacia, nivel: 'seccion', documento: SECCION_LABEL[s.seccion], importe: pesos(s.total) });
     for (const g of s.grupos) {
-      filas.push({
-        ...vacia,
-        nivel: 'categoria',
-        documento: g.categoriaId ? t.nombreCategoria(g.categoriaId) : 'Sueldos y cargas (recibos)',
-        concepto: `${g.filas.length} ${g.filas.length === 1 ? 'ítem' : 'ítems'}`,
-        importe: pesos(g.subtotal),
-      });
+      const tipo = g.categoriaId ? t.nombreCategoria(g.categoriaId) : 'Sueldos y cargas';
       for (const f of g.filas) {
         const x = t.describir(f);
         filas.push({
-          nivel: 'item',
-          mes: mesCorto(f.mes),
+          periodo: aaaamm(f.mes),
+          seccion: SECCION_LABEL[s.seccion],
+          tipo,
           documento: x.documento,
           concepto: x.concepto,
           detalle: x.detalle ?? '',
@@ -111,23 +111,14 @@ export function filasExportDetalle(d: Desglose, secciones: SeccionAgrupada[], t:
       }
     }
   }
-  const suma = (v: number[]) => v.reduce((a, x) => a + x, 0);
-  const conProrrateos = d.recibidos.length > 0 || d.repartido.length > 0;
-  filas.push({
-    ...vacia,
-    nivel: 'resultado',
-    documento: conProrrateos ? 'Resultado antes de prorrateos' : 'Resultado del período',
-    importe: pesos(suma(d.resultadoAntes)),
-  });
-  if (!conProrrateos) return filas;
-
-  filas.push({ ...vacia, nivel: 'seccion', documento: t.criterioCentro ? 'Prorrateo de este centro' : 'Prorrateos recibidos', importe: null });
   for (const r of d.recibidos) {
     const criterio = t.criterioDe(r.emisorId);
+    const emisor = t.nombreCentro(r.emisorId);
     filas.push({
-      nivel: 'prorrateo',
-      mes: mesCorto(r.mes),
-      documento: t.nombreCentro(r.emisorId),
+      periodo: aaaamm(r.mes),
+      seccion: 'Prorrateos',
+      tipo: `Prorrateo ${emisor}`,
+      documento: emisor,
       concepto: `Prorrateo por ${criterio ? CRITERIO_LABEL[criterio] : '?'}`,
       detalle: textoDriver(criterio, r.driver, r.totalDriver),
       neto: pesos(r.resultadoEmisor),
@@ -137,15 +128,16 @@ export function filasExportDetalle(d: Desglose, secciones: SeccionAgrupada[], t:
   }
   for (const r of d.repartido) {
     filas.push({
-      ...vacia,
-      nivel: 'prorrateo',
-      mes: mesCorto(r.mes),
-      documento: 'Repartido a otros centros',
-      concepto: t.criterioCentro ? `por ${CRITERIO_LABEL[t.criterioCentro]}` : '',
+      periodo: aaaamm(r.mes),
+      seccion: 'Prorrateos',
+      tipo: 'Repartido a otros centros',
+      documento: '',
+      concepto: t.criterioCentro ? `Repartido por ${CRITERIO_LABEL[t.criterioCentro]}` : 'Repartido',
       detalle: r.sinBase ? 'Sin base de prorrateo: el resultado queda en este centro' : '',
+      neto: null,
+      porcentaje: null,
       importe: pesos(r.importe),
     });
   }
-  filas.push({ ...vacia, nivel: 'resultado', documento: 'Resultado después de prorrateos', importe: pesos(suma(d.resultadoDespues)) });
   return filas;
 }
