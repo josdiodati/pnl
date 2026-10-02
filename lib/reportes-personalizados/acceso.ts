@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
-import { requireEmpresaPage, type EmpresaContext } from '@/lib/empresa/require-empresa';
+import { requireEmpresa, requireEmpresaPage, type EmpresaContext } from '@/lib/empresa/require-empresa';
+import { ForbiddenError } from '@/lib/errors';
 import { CATALOGO, type ReportePersonalizado } from './catalogo';
 import { puedeVerReporte } from './habilitaciones';
 
@@ -24,5 +25,12 @@ export async function reportesVisibles(ctx: EmpresaContext): Promise<ReportePers
 export async function requireReportePage(empresaSlug: string, reporteId: string): Promise<EmpresaContext> {
   const ctx = await requireEmpresaPage(empresaSlug);
   if (!puedeVerReporte(reporteId, ctx.rol, await habilitadosDe(ctx))) redirect('/403');
+  return ctx;
+}
+
+/** Guard de route handler (exportables): igual que la página, pero tira ForbiddenError (HTTP 403). */
+export async function requireReporte(empresaSlug: string, reporteId: string): Promise<EmpresaContext> {
+  const ctx = await requireEmpresa(empresaSlug);
+  if (!puedeVerReporte(reporteId, ctx.rol, await habilitadosDe(ctx))) throw new ForbiddenError();
   return ctx;
 }

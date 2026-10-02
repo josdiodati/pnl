@@ -28,9 +28,9 @@ export const CATALOGO: ReportePersonalizado[] = [
   },
   {
     id: 'desglose-shared-services',
-    titulo: 'Desglose Shared Services',
+    titulo: 'Detalle CC', // nació como "Desglose Shared Services"; el id no cambia (está en la base)
     descripcion:
-      'El detalle detrás del P&L de un centro de costo: cada comprobante y recibo que lo compone, con su porcentaje cuando está repartido entre centros, y los prorrateos recibidos en una línea.',
+      'El detalle detrás del P&L de un centro de costo entre dos meses: cada comprobante y recibo que lo compone, con su porcentaje cuando está repartido entre centros, y los prorrateos recibidos en una línea. Exportable a Excel.',
     rolMinimo: 'VALIDADOR',
   },
 ];
