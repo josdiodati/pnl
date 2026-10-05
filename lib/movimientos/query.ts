@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { signoMovimiento } from './signo';
 import { importesPorLinea } from './distribucion';
+import { ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
 
 // Shared filter/summary logic for the Movimientos table and its XLSX export.
 
@@ -19,7 +20,38 @@ export type FiltrosMovimientos = {
   /** Impuestos del memo (categorías "es impuesto indirecto"): por defecto se
    *  ocultan; 'incluir' los suma a la vista, 'solo' muestra únicamente esos. */
   impuestos?: string;
+  /** Año de inicio del ejercicio a mostrar, o 'todos'. Sin valor: el ejercicio
+   *  corriente, salvo que lleguen fechas sueltas (drill-down de reportes). */
+  ejercicio?: string;
 };
+
+/** Resuelve el filtro `ejercicio` a desde/hasta (intersectando con las fechas
+ *  que ya vengan). `inicioEjercicio` = Empresa.inicioEjercicioFiscal (1-12). */
+export function aplicarEjercicio(
+  f: FiltrosMovimientos,
+  inicioEjercicio: number,
+  hoy: Date = new Date(),
+): { filtros: FiltrosMovimientos; ejercicio: number | null; ejercicioCorriente: number } {
+  const ejercicioCorriente = ejercicioDeMes(hoy.getUTCFullYear(), hoy.getUTCMonth() + 1, inicioEjercicio);
+  let ejercicio: number | null;
+  if (f.ejercicio === 'todos') ejercicio = null;
+  else if (f.ejercicio && /^\d{4}$/.test(f.ejercicio)) ejercicio = Number(f.ejercicio);
+  else if (!f.ejercicio && (f.desde || f.hasta)) ejercicio = null;
+  else ejercicio = ejercicioCorriente;
+  if (ejercicio == null) return { filtros: f, ejercicio, ejercicioCorriente };
+
+  const meses = mesesDeEjercicio(ejercicio, inicioEjercicio);
+  const primero = meses[0];
+  const ultimo = meses[11];
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const inicio = `${primero.anio}-${pad(primero.mes)}-01`;
+  const finDia = new Date(Date.UTC(ultimo.anio, ultimo.mes, 0)).getUTCDate();
+  const fin = `${ultimo.anio}-${pad(ultimo.mes)}-${pad(finDia)}`;
+  // Fechas ISO (AAAA-MM-DD): el orden de strings es el cronológico.
+  const desde = f.desde && f.desde > inicio ? f.desde : inicio;
+  const hasta = f.hasta && f.hasta < fin ? f.hasta : fin;
+  return { filtros: { ...f, desde, hasta }, ejercicio, ejercicioCorriente };
+}
 
 // Movimientos es el libro: muestra SÓLO los movimientos asignados, que son
 // exactamente los que impactan el resultado (impactaResultado) y los únicos que

@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { rolAlcanza } from '@/lib/roles';
-import { buildWhereMovimientos, resumirMovimientos, totalFirmadoDe, tonoImporte, type FiltrosMovimientos } from '@/lib/movimientos/query';
+import { aplicarEjercicio, buildWhereMovimientos, resumirMovimientos, totalFirmadoDe, tonoImporte, type FiltrosMovimientos } from '@/lib/movimientos/query';
 import { resumirCostosPersonal } from '@/lib/empleados/costos';
 import { formatMoney, formatMoneyFirmado, formatFecha } from '@/lib/format';
 import { netoDe, netoFirmadoDe } from '@/lib/movimientos/neto';
 import { CanalBadge } from '@/components/badges';
 import { OkBanner } from '@/components/error-banner';
+import { ejercicioDeMes, periodoDeFecha, MES_LABEL } from '@/lib/periodos';
 
 // Minimal reporting view (doc 09): filterable table + selection totals +
 // mini-summary with cost-center breakdown + XLSX export. No formatted P&L.
@@ -20,8 +21,11 @@ export default async function MovimientosPage({
   const ctx = await requireEmpresaPage(params.empresaSlug, 'CARGADOR');
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
 
-  const where = buildWhereMovimientos(searchParams, { esValidador, usuarioId: ctx.usuario.id });
-  const [movimientos, categorias, centros, clientes, proyectos, contrapartes] = await Promise.all([
+  // Por defecto, el ejercicio corriente según el mes de inicio de la empresa.
+  const inicioEjercicio = ctx.empresa.inicioEjercicioFiscal;
+  const { filtros: f, ejercicio, ejercicioCorriente } = aplicarEjercicio(searchParams, inicioEjercicio);
+  const where = buildWhereMovimientos(f, { esValidador, usuarioId: ctx.usuario.id });
+  const [movimientos, categorias, centros, clientes, proyectos, contrapartes, primero] = await Promise.all([
     ctx.db.movimiento.findMany({
       where,
       include: { categoria: true, contraparte: true, lineas: true, vinculosEmpleados: { select: { monto: true } } },
@@ -33,7 +37,24 @@ export default async function MovimientosPage({
     ctx.db.cliente.findMany({ orderBy: { nombre: 'asc' } }),
     ctx.db.proyecto.findMany({ orderBy: { nombre: 'asc' } }),
     ctx.db.contraparte.findMany({ orderBy: { razonSocial: 'asc' } }),
+    ctx.db.movimiento.findFirst({
+      where: { fechaDevengamiento: { not: null } },
+      orderBy: { fechaDevengamiento: 'asc' },
+      select: { fechaDevengamiento: true },
+    }),
   ]);
+
+  // Opciones del selector: del ejercicio del primer movimiento al corriente.
+  const ejercicioMasViejo = primero?.fechaDevengamiento
+    ? (({ anio, mes }) => ejercicioDeMes(anio, mes, inicioEjercicio))(periodoDeFecha(primero.fechaDevengamiento))
+    : ejercicioCorriente;
+  const ejercicios = Array.from(
+    new Set([ejercicioCorriente, ...(ejercicio != null ? [ejercicio] : [])]),
+  );
+  for (let a = ejercicioCorriente - 1; a >= ejercicioMasViejo; a--) if (!ejercicios.includes(a)) ejercicios.push(a);
+  ejercicios.sort((a, b) => b - a);
+  const etiquetaEjercicio = (a: number) =>
+    inicioEjercicio === 1 ? String(a) : `${a}/${String(a + 1).slice(2)} (${MES_LABEL[inicioEjercicio].slice(0, 3).toLowerCase()} ${a})`;
 
   const resumen = resumirMovimientos(movimientos as never);
 
@@ -45,8 +66,8 @@ export default async function MovimientosPage({
   });
   const dentroDelRango = (anio: number, mes: number) => {
     const clave = anio * 100 + mes;
-    const desde = searchParams.desde ? Number(searchParams.desde.slice(0, 7).replace('-', '')) : null;
-    const hasta = searchParams.hasta ? Number(searchParams.hasta.slice(0, 7).replace('-', '')) : null;
+    const desde = f.desde ? Number(f.desde.slice(0, 7).replace('-', '')) : null;
+    const hasta = f.hasta ? Number(f.hasta.slice(0, 7).replace('-', '')) : null;
     return (desde == null || clave >= desde) && (hasta == null || clave <= hasta);
   };
   const vinculosDeSeleccion = await ctx.db.movimientoEmpleado.findMany({
@@ -190,6 +211,15 @@ export default async function MovimientosPage({
             className="input text-xs"
             placeholder="contraparte, descripción, número, CUIT, archivo…"
           />
+        </div>
+        <div>
+          <label className="label" title="Ejercicio fiscal según el mes de inicio de la empresa. Si además elegís fechas, se aplican dentro del ejercicio.">Ejercicio</label>
+          <select name="ejercicio" defaultValue={ejercicio != null ? String(ejercicio) : 'todos'} className="input text-xs">
+            {ejercicios.map((a) => (
+              <option key={a} value={a}>{etiquetaEjercicio(a)}{a === ejercicioCorriente ? ' · corriente' : ''}</option>
+            ))}
+            <option value="todos">Todos</option>
+          </select>
         </div>
         <div>
           <label className="label">Desde</label>

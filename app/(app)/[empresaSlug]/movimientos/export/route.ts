@@ -3,7 +3,7 @@ import { netoDe } from '@/lib/movimientos/neto';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isForbidden } from '@/lib/errors';
 import { rolAlcanza } from '@/lib/roles';
-import { buildWhereMovimientos, totalFirmadoDe, montoVinculadoCentavos, type FiltrosMovimientos } from '@/lib/movimientos/query';
+import { aplicarEjercicio, buildWhereMovimientos, totalFirmadoDe, montoVinculadoCentavos, type FiltrosMovimientos } from '@/lib/movimientos/query';
 import { importesPorLinea } from '@/lib/movimientos/distribucion';
 import { resumirCostosPersonal } from '@/lib/empleados/costos';
 import { generarXlsx, type CeldaXlsx } from '@/lib/movimientos/xlsx';
@@ -20,10 +20,12 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
   }
   const esValidador = rolAlcanza(ctx.rol, 'VALIDADOR');
   const sp = req.nextUrl.searchParams;
-  const filtros: FiltrosMovimientos = Object.fromEntries(
-    ['desde', 'hasta', 'categoriaId', 'centroCostoId', 'clienteId', 'proyectoId', 'contraparteId', 'origen', 'estado', 'canal', 'q', 'impuestos']
+  const pedidos: FiltrosMovimientos = Object.fromEntries(
+    ['desde', 'hasta', 'categoriaId', 'centroCostoId', 'clienteId', 'proyectoId', 'contraparteId', 'origen', 'estado', 'canal', 'q', 'impuestos', 'ejercicio']
       .map((k) => [k, sp.get(k) ?? undefined]),
   );
+  // Mismo default que la pantalla: ejercicio corriente de la empresa.
+  const { filtros } = aplicarEjercicio(pedidos, ctx.empresa.inicioEjercicioFiscal);
 
   const movimientos = await ctx.db.movimiento.findMany({
     where: buildWhereMovimientos(filtros, { esValidador, usuarioId: ctx.usuario.id }),
