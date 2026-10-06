@@ -62,25 +62,11 @@ export default async function NeteoSociosPage({
     );
   }
 
-  // Saldo anterior: el neteo de todos los meses previos al ejercicio, desde el
-  // primer período cargado. Una sola carga de datos para todo el rango.
-  const primero = await ctx.db.periodo.findFirst({ orderBy: [{ anio: 'asc' }, { mes: 'asc' }] });
-  const previos: MesPnl[] = [];
-  if (primero) {
-    let { anio, mes } = primero;
-    while (anio * 100 + mes < meses[0].anio * 100 + meses[0].mes) {
-      previos.push({ anio, mes });
-      [anio, mes] = mes === 12 ? [anio + 1, 1] : [anio, mes + 1];
-    }
-  }
-  const todos = [...previos, ...meses];
-  const datos = await cargarDatosPnl(ctx.db, todos);
+  // Cada ejercicio arranca en cero: al cierre se netea todo (pedido de José).
+  const datos = await cargarDatosPnl(ctx.db, meses);
   const resultado = (proyectoId: string) =>
-    armarPnl({ meses: todos, movimientos: datos.movimientosPnl, recibos: datos.recibosPnl, filtro: { campo: 'proyectoId', valor: proyectoId } }).resultado;
-  const resA = resultado(a.id);
-  const resB = resultado(b.id);
-  const previo = calcularNeteoSocios(resA.slice(0, previos.length), resB.slice(0, previos.length));
-  const r = calcularNeteoSocios(resA.slice(previos.length), resB.slice(previos.length), previo.total.saldoFinal);
+    armarPnl({ meses, movimientos: datos.movimientosPnl, recibos: datos.recibosPnl, filtro: { campo: 'proyectoId', valor: proyectoId } }).resultado;
+  const r = calcularNeteoSocios(resultado(a.id), resultado(b.id));
 
   const linkEjercicio = (e: number) => `${base}/reportes-personalizados/${ID}?ejercicio=${e}&a=${a.id}&b=${b.id}`;
   // Detalle de una celda: Movimientos de ese proyecto en ese mes (o el ejercicio).
@@ -153,11 +139,6 @@ export default async function NeteoSociosPage({
             <tr className="bg-slate-100 font-semibold">
               <td className="sticky left-0 bg-slate-100 pl-4 whitespace-nowrap">
                 Saldo acumulado
-                {r.saldoAnterior !== 0 && (
-                  <span className="block text-[11px] font-normal text-ink-mute">
-                    incluye saldo anterior {fmt(r.saldoAnterior)}
-                  </span>
-                )}
               </td>
               <td className={`text-right tabular-nums whitespace-nowrap border-r border-slate-200 ${tono(r.total.saldoFinal)}`}>{fmt(r.total.saldoFinal)}</td>
               {r.acumulado.map((v, i) => (
@@ -171,8 +152,8 @@ export default async function NeteoSociosPage({
       <p className="mt-3 text-xs text-ink-mute">
         Neteo = gastos {a.nombre} − gastos {b.nombre}. <span className="text-emerald-700 font-medium">Positivo: netea {b.nombre}</span>{' '}
         ({a.nombre} gastó más; {b.nombre} puede consumir esa diferencia) ·{' '}
-        <span className="text-red-700 font-medium">Negativo: netea {a.nombre}</span>. El saldo acumulado arrastra lo
-        de ejercicios anteriores. Click en un gasto abre sus movimientos.
+        <span className="text-red-700 font-medium">Negativo: netea {a.nombre}</span>. El saldo acumulado arranca en cero
+        con cada ejercicio. Click en un gasto abre sus movimientos.
       </p>
     </div>
   );
