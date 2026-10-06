@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { signoMovimiento } from './signo';
 import { importesPorLinea } from './distribucion';
+import { netoFirmadoDe } from './neto';
 import { ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
 
 // Shared filter/summary logic for the Movimientos table and its XLSX export.
@@ -125,6 +126,13 @@ export type MovimientoConRelaciones = {
   /** Moneda del comprobante y TC (pesos por unidad): el libro unifica en ARS. */
   moneda?: string;
   tipoCambio?: unknown;
+  /** Desglose impositivo: el resumen trabaja a valores netos, como el P&L. */
+  iva21?: unknown;
+  iva105?: unknown;
+  iva27?: unknown;
+  percepcionesIva?: unknown;
+  percepcionesIibb?: unknown;
+  otrosTributos?: unknown;
 };
 
 /** Signed total in cents; null when not computable (no category/total yet). */
@@ -182,7 +190,9 @@ export function resumirMovimientos(movs: MovimientoConRelaciones[]): ResumenMovi
     if (mov.categoria?.esCostoPersonal) continue;
     // Los impuestos indirectos van al memo del P&L, no al resultado.
     if (mov.categoria?.esImpuestoIndirecto) continue;
-    const firmadoBruto = totalFirmadoDe(mov);
+    // A valores netos (sin IVA, percepciones ni otros tributos), igual que el
+    // Reporte P&L: con el total el resultado incluía el IVA débito/crédito.
+    const firmadoBruto = netoFirmadoDe(totalFirmadoDe(mov), mov);
     if (firmadoBruto == null) continue;
     // Sin doble conteo: la porción vinculada a empleados sale del libro general
     // y entra por resumirCostosPersonal según la distribución del empleado.

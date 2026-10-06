@@ -123,3 +123,34 @@ describe('resumirMovimientos — impuestos del memo', () => {
     expect(r.porCentroCosto.get('cc1')).toBe(-10_000);
   });
 });
+
+// El resultado del libro tiene que coincidir con el Reporte P&L: ambos a
+// valores netos (sin IVA, percepciones ni otros tributos, que van al memo).
+describe('resumirMovimientos — a valores netos', () => {
+  it('suma el neto, no el total con impuestos', () => {
+    const r = resumirMovimientos([
+      {
+        id: 'venta',
+        estado: 'ASIGNADO',
+        total: 1210,
+        iva21: 210,
+        tipoComprobante: 'FACTURA_A',
+        categoria: { tipo: 'INGRESO', nombre: 'Ventas' },
+        lineas: [{ centroCostoId: 'cc1', clienteId: null, porcentaje: 100 }],
+      },
+      {
+        id: 'compra',
+        estado: 'ASIGNADO',
+        total: 242,
+        iva21: 42,
+        tipoComprobante: 'FACTURA_A',
+        categoria: { tipo: 'EGRESO', nombre: 'Servicios' },
+        lineas: [{ centroCostoId: 'cc1', clienteId: null, porcentaje: 100 }],
+      },
+    ] as never);
+    expect(r.ingresos).toBe(100_000);
+    expect(r.egresos).toBe(-20_000);
+    expect(r.resultado).toBe(80_000);
+    expect(r.porCentroCosto.get('cc1')).toBe(80_000);
+  });
+});

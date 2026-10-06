@@ -91,7 +91,8 @@ export default async function MovimientosPage({
     movimientos
       .filter((m) => idsPersonal.has(m.id))
       .map((m) => ({
-        firmadoCentavos: totalFirmadoDe(m as never) ?? 0,
+        // Neto, como el resto del resumen y el Reporte P&L.
+        firmadoCentavos: netoFirmadoDe(totalFirmadoDe(m as never), m) ?? 0,
         lineas: m.lineas.map((l) => ({
           centroCostoId: l.centroCostoId,
           clienteId: l.clienteId ?? null,
@@ -155,14 +156,17 @@ export default async function MovimientosPage({
     { name: 'contraparteId', label: 'Contraparte', opciones: contrapartes.map((c) => ({ id: c.id, nombre: c.razonSocial })) },
   ];
 
-  // Neto de la selección (mismo signo y pesificación que el total de cada fila).
+  // Pie de la tabla: suma de las columnas Neto y Total de las filas (mismo
+  // signo y pesificación que cada fila). Las tarjetas son el resultado.
   const netoSeleccion = movimientos.reduce((acc, m) => acc + (netoFirmadoDe(totalFirmadoDe(m as never), m) ?? 0), 0);
+  const totalSeleccion = movimientos.reduce((acc, m) => acc + (totalFirmadoDe(m as never) ?? 0), 0);
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-lg font-semibold">Movimientos</h1>
           <p className="text-xs text-slate-500">Libro de movimientos asignados: lo que impacta el resultado. Lo validado sin imputar está en la cola de Asignación.</p>
+          <p className="text-xs text-slate-500">Ingresos, egresos y resultado a valores netos (sin IVA, percepciones ni otros tributos), igual que el Reporte P&amp;L.</p>
         </div>
         <a href={`/${params.empresaSlug}/movimientos/export${qs ? `?${qs}` : ''}`} className="btn-secondary text-sm">
           Exportar Excel
@@ -173,11 +177,11 @@ export default async function MovimientosPage({
       {/* Mini-summary over the validated movements of the selection, con los costos de personal incluidos */}
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="card p-3 min-w-0">
-          <p className="text-xs text-slate-500">Ingresos (asignados)</p>
+          <p className="text-xs text-slate-500">Ingresos netos</p>
           <p className="text-xl font-semibold tabular-nums text-emerald-700">{formatMoneyFirmado(resumen.ingresos)}</p>
         </div>
         <div className="card p-3 min-w-0">
-          <p className="text-xs text-slate-500">Egresos (asignados + personal)</p>
+          <p className="text-xs text-slate-500">Egresos netos (+ personal)</p>
           <p className="text-xl font-semibold tabular-nums text-red-700">{formatMoneyFirmado(egresosConPersonal)}</p>
           <p className="text-[11px] text-slate-500 mt-1">
             Incluye costos de personal: <span className="tabular-nums">{formatMoneyFirmado(personalMostrado)}</span>
@@ -350,8 +354,8 @@ export default async function MovimientosPage({
               <td className={`num ${netoSeleccion < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
                 {formatMoneyFirmado(netoSeleccion)}
               </td>
-              <td className={`num ${resumen.resultado < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
-                {formatMoneyFirmado(resumen.resultado)}
+              <td className={`num ${totalSeleccion < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                {formatMoneyFirmado(totalSeleccion)}
               </td>
             </tr>
           </tfoot>

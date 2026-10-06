@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { netoDe } from '@/lib/movimientos/neto';
+import { netoDe, netoFirmadoDe } from '@/lib/movimientos/neto';
 import { requireEmpresa } from '@/lib/empresa/require-empresa';
 import { isForbidden } from '@/lib/errors';
 import { rolAlcanza } from '@/lib/roles';
@@ -80,6 +80,9 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
     'neto_gravado', 'iva_105', 'iva_21', 'iva_27', 'percepciones_iva', 'percepciones_iibb',
     'otros_tributos', 'no_gravado_exento', 'total_comprobante', 'neto_comprobante',
     'centro_costo', 'cliente', 'proyecto', 'porcentaje', 'importe_linea', 'total_movimiento_firmado',
+    // A valores netos, como el resultado de la pantalla y el Reporte P&L. Van
+    // al final para no correr las columnas de planillas existentes.
+    'importe_linea_neto', 'neto_movimiento_firmado',
   ];
   const filas: CeldaXlsx[][] = [];
 
@@ -91,11 +94,10 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
     // de "Costos de personal" dé el resultado correcto, sin doble conteo.
     const firmadoBruto = totalFirmadoDe(m as never);
     const vinculado = montoVinculadoCentavos(m as never);
-    const firmado = firmadoBruto == null
-      ? null
-      : firmadoBruto < 0
-        ? Math.min(firmadoBruto + vinculado, 0)
-        : Math.max(firmadoBruto - vinculado, 0);
+    const sinVinculado = (bruto: number | null) =>
+      bruto == null ? null : bruto < 0 ? Math.min(bruto + vinculado, 0) : Math.max(bruto - vinculado, 0);
+    const firmado = sinVinculado(firmadoBruto);
+    const netoFirmado = sinVinculado(netoFirmadoDe(firmadoBruto, m));
     const base: CeldaXlsx[] = [
       m.fechaDevengamiento?.toISOString().slice(0, 10) ?? '',
       m.origen,
@@ -128,12 +130,15 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
         clienteId: l.clienteId,
         porcentaje: Number(l.porcentaje),
       }));
-      let importes: number[] | null = null;
-      try {
-        importes = importesPorLinea(firmado, lineas);
-      } catch {
-        importes = null;
-      }
+      const repartir = (importe: number) => {
+        try {
+          return importesPorLinea(importe, lineas);
+        } catch {
+          return null;
+        }
+      };
+      const importes = repartir(firmado);
+      const importesNetos = netoFirmado != null ? repartir(netoFirmado) : null;
       m.lineas.forEach((l, i) => {
         filas.push([
           ...base,
@@ -143,10 +148,15 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
           Number(l.porcentaje),
           importes ? importes[i] / 100 : null,
           firmado / 100,
+          importesNetos ? importesNetos[i] / 100 : null,
+          netoFirmado != null ? netoFirmado / 100 : null,
         ]);
       });
     } else {
-      filas.push([...base, '', '', '', null, null, firmado != null ? firmado / 100 : null]);
+      filas.push([
+        ...base, '', '', '', null, null, firmado != null ? firmado / 100 : null,
+        null, netoFirmado != null ? netoFirmado / 100 : null,
+      ]);
     }
   }
 
@@ -157,6 +167,8 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
     'Costos de personal (recibos + vinculados)',
     '', null, null, null, null, null, null, null, null, null, null, null,
     '', '', '', null,
+    null,
+    personalMostrado / 100,
     null,
     personalMostrado / 100,
   ]);
