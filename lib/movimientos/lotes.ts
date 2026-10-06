@@ -2,7 +2,14 @@
 // proceso y cómo terminaron los demás. Puro: recibe los movimientos del lote
 // y devuelve los buckets en orden estable de render.
 
-export type MovimientoDeLote = { estado: string; flags: unknown };
+export type MovimientoDeLote = {
+  estado: string;
+  flags: unknown;
+  /** Acción automática que registró el pipeline (AuditLog AUTO_VALIDAR /
+   *  AUTO_ASIGNAR). null = no hubo: lo validó/asignó una persona. Sin el campo
+   *  (undefined) se asume automático, como antes de distinguirlo. */
+  auto?: 'AUTO_VALIDAR' | 'AUTO_ASIGNAR' | null;
+};
 
 export type ResumenLote = {
   total: number;
@@ -14,6 +21,8 @@ export type ClaveResultado =
   | 'pendientes'
   | 'auto-validados'
   | 'auto-asignados'
+  | 'validados'
+  | 'asignados'
   | 'observados'
   | 'retenidos'
   | 'archivo-duplicado'
@@ -26,6 +35,8 @@ export const RESULTADO_LABEL: Record<ClaveResultado, string> = {
   pendientes: 'pendientes de validación',
   'auto-validados': 'auto-validados',
   'auto-asignados': 'auto-asignados',
+  validados: 'validados a mano',
+  asignados: 'asignados a mano',
   observados: 'observados',
   retenidos: 'retenidos',
   'archivo-duplicado': 'archivo duplicado',
@@ -39,6 +50,8 @@ const ORDEN: ClaveResultado[] = [
   'pendientes',
   'auto-validados',
   'auto-asignados',
+  'validados',
+  'asignados',
   'observados',
   'retenidos',
   'archivo-duplicado',
@@ -53,9 +66,11 @@ function claveDe(mov: MovimientoDeLote): ClaveResultado | null {
     case 'PENDIENTE_VALIDACION':
       return 'pendientes';
     case 'VALIDADO':
-      return 'auto-validados';
+      return mov.auto === null ? 'validados' : 'auto-validados';
     case 'ASIGNADO':
-      return 'auto-asignados';
+      // Auto-validado por el pipeline pero imputado después por una persona:
+      // la asignación fue manual.
+      return mov.auto === undefined || mov.auto === 'AUTO_ASIGNAR' ? 'auto-asignados' : 'asignados';
     case 'OBSERVADO':
       return 'observados';
     case 'RETENIDO':
@@ -90,6 +105,15 @@ export function resumirLote(movs: MovimientoDeLote[]): ResumenLote {
     enProceso,
     resultados: ORDEN.filter((c) => cantidades.has(c)).map((c) => ({ clave: c, cantidad: cantidades.get(c)! })),
   };
+}
+
+/** Comprobantes del lote con su resultado, en el orden de los chips; lo que
+ *  sigue en proceso (clave null) va al final. Orden estable dentro de cada grupo. */
+export function detalleLote<M extends MovimientoDeLote>(movs: M[]): { mov: M; clave: ClaveResultado | null }[] {
+  const pos = (c: ClaveResultado | null) => (c == null ? ORDEN.length : ORDEN.indexOf(c));
+  return movs
+    .map((mov) => ({ mov, clave: claveDe(mov) }))
+    .sort((a, b) => pos(a.clave) - pos(b.clave));
 }
 
 // Estado de la tarjeta del lote en /carga. Un drop crea el lote con la primera

@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
 import { rolAlcanza } from '@/lib/roles';
-import { resumirLote, estadoLote, RESULTADO_LABEL } from '@/lib/movimientos/lotes';
-import { formatFechaHora } from '@/lib/format';
+import { resumirLote, estadoLote, detalleLote, RESULTADO_LABEL } from '@/lib/movimientos/lotes';
+import { formatFechaHora, formatMoney } from '@/lib/format';
 import { UploadZone } from '@/components/upload-zone';
 import { PageHeader } from '@/components/page-header';
 import { CanalBadge } from '@/components/badges';
@@ -40,15 +40,53 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
     where: esValidador ? {} : { creadoPorId: ctx.usuario.id },
     include: {
       creadoPor: { select: { nombre: true } },
-      movimientos: { select: { estado: true, flags: true } },
+      // Lo necesario para el desplegable: qué comprobante es y a dónde fue.
+      movimientos: {
+        select: {
+          id: true,
+          estado: true,
+          flags: true,
+          archivoNombre: true,
+          descripcion: true,
+          tipoComprobante: true,
+          puntoVenta: true,
+          numero: true,
+          total: true,
+          moneda: true,
+          contraparte: { select: { razonSocial: true } },
+          categoria: { select: { nombre: true } },
+          lineas: {
+            select: {
+              id: true,
+              porcentaje: true,
+              centroCosto: { select: { nombre: true } },
+              cliente: { select: { nombre: true } },
+              proyecto: { select: { nombre: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      },
     },
     orderBy: { createdAt: 'desc' },
     take: 20,
   });
+  // Qué hizo el pipeline solo (AUTO_VALIDAR / AUTO_ASIGNAR en la auditoría)
+  // vs. lo que después validó o asignó una persona.
+  const autos = await ctx.db.auditLog.findMany({
+    where: {
+      entidad: 'Movimiento',
+      accion: { in: ['AUTO_VALIDAR', 'AUTO_ASIGNAR'] },
+      entidadId: { in: lotes.flatMap((l) => l.movimientos.map((m) => m.id)) },
+    },
+    select: { entidadId: true, accion: true },
+  });
+  const autoDe = new Map(autos.map((a) => [a.entidadId, a.accion as 'AUTO_VALIDAR' | 'AUTO_ASIGNAR']));
   const ahora = Date.now();
   const conResumen = lotes.map((l) => {
-    const resumen = resumirLote(l.movimientos);
-    return { lote: l, resumen, ...estadoLote(l, resumen, ahora) };
+    const movimientos = l.movimientos.map((m) => ({ ...m, auto: autoDe.get(m.id) ?? null }));
+    const resumen = resumirLote(movimientos);
+    return { lote: { ...l, movimientos }, resumen, ...estadoLote(l, resumen, ahora) };
   });
   const hayEnCurso = conResumen.some((x) => x.enCurso);
 
@@ -103,8 +141,10 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
               const completados = resumen.total - resumen.enProceso;
               const pct = Math.round((completados / esperado) * 100);
               return (
-                <div key={lote.id} className="px-4 py-3">
+                <details key={lote.id} className="group px-4 py-3">
+                  <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    <span className="text-ink-mute text-xs transition-transform group-open:rotate-90" aria-hidden>▸</span>
                     <span className="whitespace-nowrap text-ink-mute">{formatFechaHora(lote.createdAt)}</span>
                     <CanalBadge canal={lote.canal} />
                     <span className="text-ink-mute text-xs">
@@ -143,7 +183,15 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
                       {resumen.total === 0 && <span className="text-xs text-ink-mute">sin comprobantes ingresados</span>}
                     </div>
                   )}
-                </div>
+                  </summary>
+                  {lote.movimientos.length > 0 && (
+                    <DetalleLote
+                      movimientos={lote.movimientos}
+                      empresaSlug={params.empresaSlug}
+                      conLink={esValidador}
+                    />
+                  )}
+                </details>
               );
             })}
           </div>
@@ -153,11 +201,136 @@ export default async function CargaPage({ params }: { params: { empresaSlug: str
   );
 }
 
+type MovimientoDetalle = {
+  id: string;
+  estado: string;
+  flags: unknown;
+  archivoNombre: string | null;
+  descripcion: string | null;
+  tipoComprobante: string | null;
+  puntoVenta: string | null;
+  numero: string | null;
+  total: unknown;
+  moneda: string;
+  auto: 'AUTO_VALIDAR' | 'AUTO_ASIGNAR' | null;
+  contraparte: { razonSocial: string } | null;
+  categoria: { nombre: string } | null;
+  lineas: {
+    id: string;
+    porcentaje: unknown;
+    centroCosto: { nombre: string };
+    cliente: { nombre: string } | null;
+    proyecto: { nombre: string } | null;
+  }[];
+};
+
+// Desplegable de un lote: cada comprobante con su resultado y, si quedó
+// asignado, a qué centro / cliente / proyecto (y categoría) fue. Clickeable
+// para validadores (el detalle pide ese rol).
+function DetalleLote({
+  movimientos,
+  empresaSlug,
+  conLink,
+}: {
+  movimientos: MovimientoDetalle[];
+  empresaSlug: string;
+  conLink: boolean;
+}) {
+  return (
+    <div className="mt-3 overflow-x-auto">
+      <table className="w-full text-[12.5px]">
+        <thead>
+          <tr className="text-left text-[11px] text-ink-mute">
+            <th className="py-1 pr-3 font-normal">Comprobante</th>
+            <th className="py-1 pr-3 font-normal">Resultado</th>
+            <th className="py-1 pr-3 font-normal">Categoría</th>
+            <th className="py-1 pr-3 font-normal">Asignado a</th>
+            <th className="py-1 font-normal text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line/40">
+          {detalleLote(movimientos).map(({ mov: m, clave }) => {
+            const nombre = m.contraparte?.razonSocial ?? m.descripcion ?? m.archivoNombre ?? 'Sin datos';
+            const numero = m.numero
+              ? `${m.tipoComprobante?.replace(/_/g, ' ') ?? ''} ${m.puntoVenta ? `${m.puntoVenta}-` : ''}${m.numero}`.trim()
+              : null;
+            return (
+              <tr key={m.id} className="align-top">
+                <td className="py-1.5 pr-3">
+                  {conLink ? (
+                    <Link href={`/${empresaSlug}/validacion/${m.id}`} className="font-medium underline-offset-2 hover:underline">
+                      {nombre}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{nombre}</span>
+                  )}
+                  {numero && <span className="block font-mono text-[11.5px] text-ink-mute">{numero}</span>}
+                </td>
+                <td className="py-1.5 pr-3 whitespace-nowrap">
+                  {clave ? (
+                    <span className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${CHIP_CLASES[clave] ?? 'bg-line/50 text-ink-mute'}`}>
+                      {RESULTADO_SINGULAR[clave] ?? RESULTADO_LABEL[clave]}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-sky-700">procesando…</span>
+                  )}
+                  {clave === 'asignados' && m.auto === 'AUTO_VALIDAR' && (
+                    <span className="block text-[10.5px] text-ink-mute">auto-validado</span>
+                  )}
+                </td>
+                <td className="py-1.5 pr-3 text-ink-mute">{m.categoria?.nombre ?? '—'}</td>
+                <td className="py-1.5 pr-3 text-ink-mute">
+                  {m.lineas.length === 0
+                    ? '—'
+                    : m.lineas.map((l) => (
+                        <span key={l.id} className="block">
+                          {l.centroCosto.nombre}
+                          {l.cliente ? ` / ${l.cliente.nombre}` : ''}
+                          {l.proyecto ? ` / ${l.proyecto.nombre}` : ''}
+                          {Number(l.porcentaje) !== 100 && (
+                            <span className="tabular-nums"> · {Number(l.porcentaje).toLocaleString('es-AR')}%</span>
+                          )}
+                        </span>
+                      ))}
+                </td>
+                <td className="py-1.5 text-right tabular-nums whitespace-nowrap">
+                  {m.total == null
+                    ? '—'
+                    : m.moneda !== 'ARS'
+                      ? `${m.moneda} ${formatMoney(Number(m.total)).replace('$ ', '')}`
+                      : formatMoney(Number(m.total))}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Etiqueta de un único comprobante (los chips del resumen van en plural).
+const RESULTADO_SINGULAR: Record<string, string> = {
+  pendientes: 'pendiente de validación',
+  'auto-validados': 'auto-validado',
+  'auto-asignados': 'auto-asignado',
+  validados: 'validado a mano',
+  asignados: 'asignado a mano',
+  observados: 'observado',
+  retenidos: 'retenido',
+  duplicados: 'duplicado',
+  errores: 'error',
+  'no-comprobantes': 'no es comprobante',
+  anulados: 'anulado',
+};
+
 // Colores de los chips de resultado, alineados con los acentos de las tarjetas.
 const CHIP_CLASES: Record<string, string> = {
   pendientes: 'bg-amber-100 text-amber-800',
   'auto-validados': 'bg-emerald-100 text-emerald-800',
   'auto-asignados': 'bg-emerald-200 text-emerald-900',
+  validados: 'bg-sky-100 text-sky-800',
+  asignados: 'bg-sky-200 text-sky-900',
   observados: 'bg-violet-100 text-violet-800',
   retenidos: 'bg-orange-100 text-orange-800',
   'archivo-duplicado': 'bg-slate-200 text-slate-700',
