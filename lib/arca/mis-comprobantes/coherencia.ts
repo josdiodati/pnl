@@ -16,6 +16,22 @@ export function normalizarMonedaArca(moneda: string | null | undefined): string 
   return MONEDA_ARCA[m] ?? m;
 }
 
+/**
+ * Sin ARCA a mano: un QR en moneda extranjera cuyo importe ≈ total del
+ * documento × cotización tiene el importe en PESOS (el emisor lo armó mal; ej.
+ * TangoID: DOL, importe 1.607.727 = USD 1.040,60 × 1.545). Devuelve el aviso o null.
+ */
+export function alertaImporteQrEnPesos(
+  qr: { moneda: string | null | undefined; ctz: number | null | undefined; importe: number | null | undefined },
+  totalDocumento: number | null | undefined,
+): string | null {
+  if (!qr.moneda || normalizarMonedaArca(qr.moneda) === 'ARS') return null;
+  if (!qr.ctz || qr.ctz <= 1 || !qr.importe || !totalDocumento || totalDocumento <= 0) return null;
+  const enPesos = totalDocumento * qr.ctz;
+  if (Math.abs(qr.importe - enPesos) / enPesos > 0.005) return null;
+  return `el QR dice ${normalizarMonedaArca(qr.moneda)} pero su importe (${fmt(qr.importe)}) es el total del documento (${fmt(totalDocumento)}) × TC ${fmt(qr.ctz)}: parece estar en pesos`;
+}
+
 const fmt = (v: number) => v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
 export function diferenciasConArca(

@@ -53,8 +53,39 @@ FROM "Contraparte" c
 WHERE m.id = 'cmuwrp5g9002dlpy3k9gd1hhl' AND m."contraparteId" IS NULL
   AND c."empresaId" = m."empresaId" AND c.cuit = '30516314466';
 
+-- 3) TANGOID S.R.L. (Kawellu, 29-sep, cmuokmw1l000le5ttdy1b9gjr): el QR decía
+--    DOL con el importe en PESOS (1.607.727 = USD 1.040,60 × 1.545). ARCA y el
+--    OCR coinciden: USD 1.040,60 (neto 860 + IVA 21 % 180,60), TC 1.545.
+INSERT INTO "AuditLog" (id, "empresaId", "usuarioId", entidad, "entidadId", accion, antes, despues)
+SELECT 'aud_tangoid_arca_20261006', m."empresaId", 'cmqqigtr30000wq7vssd8a4n3', 'Movimiento', m.id, 'CORREGIR_DESDE_ARCA',
+       jsonb_build_object('total', m.total, 'netoGravado', m."netoGravado", 'iva21', m.iva21),
+       jsonb_build_object('total', 1040.60, 'netoGravado', 860.00, 'iva21', 180.60,
+         'cambios', jsonb_build_array('Total: USD 1.607.727 (importe en pesos del QR) → USD 1.040,60', 'Neto gravado: 1.328.700 → 860,00', 'IVA 21 %: 279.027 → 180,60'))
+FROM "Movimiento" m
+WHERE m.id = 'cmuokmw1l000le5ttdy1b9gjr' AND m.total = 1607727
+ON CONFLICT (id) DO NOTHING;
+
+UPDATE "Movimiento"
+SET total = 1040.60, "netoGravado" = 860.00, iva21 = 180.60, "updatedAt" = now()
+WHERE id = 'cmuokmw1l000le5ttdy1b9gjr' AND total = 1607727;
+
+-- 4) DEHEZA (Kawellu, 2 de julio): el QR traía moneda 'ARS' (no estándar) y
+--    quedaron como moneda OTRA con TC 1. Son pesos: importes sin cambios.
+INSERT INTO "AuditLog" (id, "empresaId", "usuarioId", entidad, "entidadId", accion, antes, despues)
+SELECT 'aud_deheza_arca_' || m.id, m."empresaId", 'cmqqigtr30000wq7vssd8a4n3', 'Movimiento', m.id, 'CORREGIR_DESDE_ARCA',
+       jsonb_build_object('moneda', m.moneda, 'tipoCambio', m."tipoCambio"),
+       jsonb_build_object('moneda', 'ARS', 'tipoCambio', null, 'cambios', jsonb_build_array('Moneda: OTRA (TC 1) → ARS'))
+FROM "Movimiento" m
+WHERE m.id IN ('cmuh52aut002e13e6cqwwevf9', 'cmuh52ads001k13e6m25ebsxp') AND m.moneda = 'OTRA'
+ON CONFLICT (id) DO NOTHING;
+
+UPDATE "Movimiento"
+SET moneda = 'ARS', "tipoCambio" = NULL, "updatedAt" = now()
+WHERE id IN ('cmuh52aut002e13e6cqwwevf9', 'cmuh52ads001k13e6m25ebsxp') AND moneda = 'OTRA';
+
 -- Control: cómo quedaron.
-SELECT id, moneda, "tipoCambio", iva21, iva105, "contraparteId", "extraccionRaw"->>'razonSocialEmisor' AS emisor, estado
-FROM "Movimiento" WHERE id IN ('cmuwrp570001ylpy3crhqnwhd', 'cmuwrp5g9002dlpy3k9gd1hhl');
+SELECT id, moneda, "tipoCambio", total, "netoGravado", iva21, iva105, "contraparteId", "extraccionRaw"->>'razonSocialEmisor' AS emisor, estado
+FROM "Movimiento"
+WHERE id IN ('cmuwrp570001ylpy3crhqnwhd', 'cmuwrp5g9002dlpy3k9gd1hhl', 'cmuokmw1l000le5ttdy1b9gjr', 'cmuh52aut002e13e6cqwwevf9', 'cmuh52ads001k13e6m25ebsxp');
 
 COMMIT;

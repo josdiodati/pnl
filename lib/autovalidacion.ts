@@ -21,6 +21,8 @@ export type EntradaAutoval = {
   /** Diferencias con la fila de Mis Comprobantes de ARCA (moneda, TC, importe).
    *  undefined = no hay fila de ARCA todavía (no opina). */
   diferenciasArca?: string[];
+  /** El QR parece traer el importe en pesos con moneda extranjera (ver alertaImporteQrEnPesos). */
+  alertaMonedaQr?: string | null;
 };
 
 const COMPONENTES = [
@@ -54,6 +56,7 @@ export function evaluarAutovalidacion(e: EntradaAutoval): { apto: boolean; motiv
       `difiere de ARCA: ${e.diferenciasArca.join('; ')}`,
     );
   }
+  if (e.alertaMonedaQr) motivos.push(e.alertaMonedaQr);
   if (e.tieneContraparte !== undefined) {
     chequeo(e.tieneContraparte, 'contraparte en el maestro', 'sin contraparte en el maestro');
   }

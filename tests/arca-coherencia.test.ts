@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { diferenciasConArca, normalizarMonedaArca } from '@/lib/arca/mis-comprobantes/coherencia';
+import { alertaImporteQrEnPesos, diferenciasConArca, normalizarMonedaArca } from '@/lib/arca/mis-comprobantes/coherencia';
 import { evaluarAutovalidacion } from '@/lib/autovalidacion';
 
 describe('diferenciasConArca', () => {
@@ -30,6 +30,17 @@ describe('diferenciasConArca', () => {
     expect(normalizarMonedaArca('$')).toBe('ARS');
     expect(normalizarMonedaArca('DOL')).toBe('USD');
     expect(normalizarMonedaArca(null)).toBeNull();
+  });
+});
+
+describe('alertaImporteQrEnPesos', () => {
+  it('detecta el importe del QR en pesos con moneda DOL (caso TangoID)', () => {
+    expect(alertaImporteQrEnPesos({ moneda: 'DOL', ctz: 1545, importe: 1607727 }, 1040.6)).toMatch(/parece estar en pesos/);
+  });
+  it('no alerta si el QR es coherente, en pesos o sin datos', () => {
+    expect(alertaImporteQrEnPesos({ moneda: 'DOL', ctz: 1545, importe: 1040.6 }, 1040.6)).toBeNull();
+    expect(alertaImporteQrEnPesos({ moneda: 'PES', ctz: 1, importe: 89990 }, 89990)).toBeNull();
+    expect(alertaImporteQrEnPesos({ moneda: 'DOL', ctz: 1545, importe: 2313462.3 }, null)).toBeNull();
   });
 });
 

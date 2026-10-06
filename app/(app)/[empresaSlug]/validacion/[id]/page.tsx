@@ -252,6 +252,12 @@ export default async function ValidacionDetallePage({
           <p className="mt-0.5">ARCA es el registro fiscal: corregí el comprobante con esos datos (no se autovalida mientras difiera).</p>
         </div>
       )}
+      {Boolean(flags.alertaMonedaQr) && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p className="font-semibold">Moneda o importe dudosos en el QR</p>
+          <p className="mt-0.5">Ojo: {String(flags.alertaMonedaQr)}. No se autovalidó: confirmá la moneda y el importe contra el original.</p>
+        </div>
+      )}
       {Boolean(flags.notaObservacion) && mov.estado === 'OBSERVADO' && (
         <div className="rounded-md border border-purple-300 bg-purple-50 px-3 py-2 text-sm text-purple-800">
           Observado: {String(flags.notaObservacion)}

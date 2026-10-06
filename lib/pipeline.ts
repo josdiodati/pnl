@@ -4,7 +4,7 @@ import { scopedDb } from '@/lib/empresa/scope';
 import { getFileStorage } from '@/lib/storage';
 import { getExtractor } from '@/lib/extractor';
 import { cruzarMovimientoConArca } from '@/lib/arca/mis-comprobantes/service';
-import { diferenciasConArca } from '@/lib/arca/mis-comprobantes/coherencia';
+import { alertaImporteQrEnPesos, diferenciasConArca } from '@/lib/arca/mis-comprobantes/coherencia';
 import { evaluarCampos, buscarDuplicados, normalizarCuit } from '@/lib/checks';
 import { assertTransicion } from '@/lib/movimientos/estados';
 import { getOrCreatePeriodo } from '@/lib/periodos';
@@ -249,7 +249,8 @@ export async function procesarExtraccion(
   const puntoVentaFinal = qrAfip ? String(qrAfip.ptoVta).padStart(5, '0') : extraccion.puntoVenta;
   // Moneda y tipo de cambio: el QR es autoritativo (trae moneda y ctz oficial).
   // Sin QR, la moneda queda la del LLM y el TC lo pide la validación.
-  const MONEDA_QR: Record<string, 'ARS' | 'USD' | 'EUR'> = { PES: 'ARS', DOL: 'USD', '060': 'EUR' };
+  // 'ARS' no es el código AFIP (PES), pero hay emisores que lo ponen (Deheza).
+  const MONEDA_QR: Record<string, 'ARS' | 'USD' | 'EUR'> = { PES: 'ARS', ARS: 'ARS', DOL: 'USD', '060': 'EUR' };
   const monedaFinal = qrAfip?.moneda ? (MONEDA_QR[qrAfip.moneda] ?? 'OTRA') : extraccion.moneda;
   const tipoCambioFinal =
     monedaFinal !== 'ARS' && qrAfip && qrAfip.ctz > 0 ? qrAfip.ctz : null;
@@ -290,6 +291,16 @@ export async function procesarExtraccion(
         },
       )
     : undefined;
+  const alertaMonedaQr = qrAfip
+    ? alertaImporteQrEnPesos(
+        { moneda: qrAfip.moneda, ctz: qrAfip.ctz, importe: qrAfip.importe },
+        extraccion.total != null ? Number(extraccion.total) : null,
+      )
+    : null;
+  if (alertaMonedaQr) {
+    camposRevisar.moneda = `Revisá moneda e importe: ${alertaMonedaQr}`;
+    flagsArca.alertaMonedaQr = alertaMonedaQr;
+  }
   if (diferenciasArca?.length) {
     camposRevisar.arca = `No coincide con Mis Comprobantes de ARCA: ${diferenciasArca.join('; ')}`;
     flagsArca.difiereArca = diferenciasArca;
@@ -401,6 +412,7 @@ export async function procesarExtraccion(
   // Reprocesar recalcula la coherencia con ARCA: no arrastrar la anterior.
   delete flags.difiereArca;
   delete flags.razonSocialOcr;
+  delete flags.alertaMonedaQr;
   Object.assign(flags, flagsArca);
 
   // --- Preasignación por reglas + autovalidación (QR + aritmética) ---
@@ -460,6 +472,7 @@ export async function procesarExtraccion(
     tieneContraparte: contraparte != null,
     instruccionesSospechosas: extraccion.instruccionesSospechosas ?? null,
     diferenciasArca,
+    alertaMonedaQr,
   });
   let observarPorRegla: ReglaInfo | null = null;
   if (estadoFinal !== 'RETENIDO') {
