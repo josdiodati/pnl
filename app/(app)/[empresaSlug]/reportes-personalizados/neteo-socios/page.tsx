@@ -150,10 +150,8 @@ export default async function NeteoSociosPage({
       </div>
 
       <p className="mt-3 text-xs text-ink-mute">
-        Neteo = gastos {a.nombre} − gastos {b.nombre}. <span className="text-emerald-700 font-medium">Positivo: netea {b.nombre}</span>{' '}
-        ({a.nombre} gastó más; {b.nombre} puede consumir esa diferencia) ·{' '}
-        <span className="text-red-700 font-medium">Negativo: netea {a.nombre}</span>. El saldo acumulado arranca en cero
-        con cada ejercicio. Click en un gasto abre sus movimientos.
+        <span className="text-emerald-700 font-medium">Positivo: netea {b.nombre}</span> -{' '}
+        <span className="text-red-700 font-medium">Negativo: netea {a.nombre}</span>
       </p>
     </div>
   );
