@@ -33,6 +33,13 @@ export const CATALOGO: ReportePersonalizado[] = [
       'El detalle detrás del P&L de un centro de costo entre dos meses: cada comprobante y recibo que lo compone, con su porcentaje cuando está repartido entre centros, y los prorrateos recibidos en una línea. Exportable a Excel.',
     rolMinimo: 'VALIDADOR',
   },
+  {
+    id: 'neteo-socios',
+    titulo: 'Neteo Particulares',
+    descripcion: 'Gastos de cuentas particulares, neteo y saldo',
+    rolMinimo: 'VALIDADOR',
+    pedidoPor: 'José Diodati',
+  },
 ];
 
 export function reporteDelCatalogo(id: string): ReportePersonalizado | undefined {
