@@ -21,7 +21,7 @@ export default async function NeteoSociosPage({
   searchParams,
 }: {
   params: { empresaSlug: string };
-  searchParams: { ejercicio?: string; a?: string; b?: string };
+  searchParams: { ejercicio?: string };
 }) {
   const ctx = await requireReportePage(params.empresaSlug, ID);
   const reporte = reporteDelCatalogo(ID)!;
@@ -31,33 +31,15 @@ export default async function NeteoSociosPage({
   const ejercicio = Number(searchParams.ejercicio ?? ejercicioDeMes(hoy.anio, hoy.mes, inicio));
   const meses = mesesDeEjercicio(ejercicio, inicio);
 
-  const proyectos = await ctx.db.proyecto.findMany({ orderBy: { nombre: 'asc' } });
-  const porNombre = (n: string) => proyectos.find((p) => p.nombre.trim().toUpperCase() === n);
-  const elegido = (id: string | undefined, nombre: string, i: number) =>
-    proyectos.find((p) => p.id === id) ?? porNombre(nombre) ?? proyectos[i];
-  const a = elegido(searchParams.a, 'GG', 0);
-  const b = elegido(searchParams.b, 'JD', 1);
-
-  const selector = (
-    <form method="get" className="flex items-center gap-1 flex-wrap">
-      <input type="hidden" name="ejercicio" value={ejercicio} />
-      <select key={`a-${a?.id}`} name="a" defaultValue={a?.id} className="input text-xs w-auto" aria-label="Socio A">
-        {proyectos.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-      </select>
-      <span className="text-xs text-ink-mute">vs</span>
-      <select key={`b-${b?.id}`} name="b" defaultValue={b?.id} className="input text-xs w-auto" aria-label="Socio B">
-        {proyectos.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-      </select>
-      <button className="btn-secondary text-xs">Ver</button>
-    </form>
-  );
-
-  if (!a || !b || a.id === b.id) {
+  // El neteo es siempre entre los socios: proyectos GG (Gastón) y JD (José).
+  const proyectos = await ctx.db.proyecto.findMany({ where: { nombre: { in: ['GG', 'JD'] } } });
+  const a = proyectos.find((p) => p.nombre === 'GG');
+  const b = proyectos.find((p) => p.nombre === 'JD');
+  if (!a || !b) {
     return (
       <div>
         <PageHeader titulo={reporte.titulo} descripcion={reporte.descripcion} />
-        <div className="mt-4">{selector}</div>
-        <p className="mt-4 text-sm text-ink-mute">Elegí dos proyectos distintos (uno por socio) para comparar.</p>
+        <p className="mt-4 text-sm text-ink-mute">Esta empresa no tiene los proyectos GG y JD de las cuentas particulares de los socios.</p>
       </div>
     );
   }
@@ -68,7 +50,7 @@ export default async function NeteoSociosPage({
     armarPnl({ meses, movimientos: datos.movimientosPnl, recibos: datos.recibosPnl, filtro: { campo: 'proyectoId', valor: proyectoId } }).resultado;
   const r = calcularNeteoSocios(resultado(a.id), resultado(b.id));
 
-  const linkEjercicio = (e: number) => `${base}/reportes-personalizados/${ID}?ejercicio=${e}&a=${a.id}&b=${b.id}`;
+  const linkEjercicio = (e: number) => `${base}/reportes-personalizados/${ID}?ejercicio=${e}`;
   // Detalle de una celda: Movimientos de ese proyecto en ese mes (o el ejercicio).
   const linkMovs = (proyectoId: string, desdeM: MesPnl, hastaM: MesPnl) => {
     const ultimo = new Date(Date.UTC(hastaM.anio, hastaM.mes, 0)).getUTCDate();
@@ -110,7 +92,6 @@ export default async function NeteoSociosPage({
           Ejercicio {ejercicio}/{ejercicio + 1} ({MES_LABEL[inicio]} {ejercicio} – {MES_LABEL[inicio === 1 ? 12 : inicio - 1]} {inicio === 1 ? ejercicio : ejercicio + 1})
         </span>
         <Link href={linkEjercicio(ejercicio + 1)} className="btn-secondary text-xs">→</Link>
-        <div className="ml-2">{selector}</div>
       </div>
 
       <div className="card overflow-x-auto mt-4">
