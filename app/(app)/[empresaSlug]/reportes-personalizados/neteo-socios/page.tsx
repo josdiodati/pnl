@@ -8,8 +8,8 @@ import { cargarDatosPnl } from '@/lib/reportes/datos-pnl';
 import { PageHeader } from '@/components/page-header';
 
 // Neteo Particulares: lo que cada socio cargó a su proyecto de cuentas
-// particulares (Kawellu: GG y JD), mes a mes, la diferencia y el saldo
-// acumulado. Montos = resultado del P&L filtrado por cada proyecto (netos, en
+// particulares (Kawellu: GG y JD) y el neteo de cada mes, autocontenido (el
+// neteo del año es la columna YTD). Montos = resultado del P&L filtrado por cada proyecto (netos, en
 // pesos), así cierra con la vista por proyecto del Reporte P&L.
 
 const ID = 'neteo-socios';
@@ -100,7 +100,7 @@ export default async function NeteoSociosPage({
     <div>
       <PageHeader
         titulo={reporte.titulo}
-        descripcion={`Gastos cargados a ${a.nombre} y a ${b.nombre} mes a mes, la diferencia y el saldo acumulado. Montos netos en pesos, como la vista por proyecto del Reporte P&L.`}
+        descripcion={`Gastos cargados a ${a.nombre} y a ${b.nombre} y el neteo de cada mes; el del año, en YTD. Montos netos en pesos, como la vista por proyecto del Reporte P&L.`}
         acciones={<Link href={`${base}/reportes-personalizados`} className="btn-secondary">Reportes Personales</Link>}
       />
 
@@ -133,15 +133,6 @@ export default async function NeteoSociosPage({
               <td className="sticky left-0 bg-slate-50 pl-4">Neteo del mes</td>
               <td className={`text-right tabular-nums whitespace-nowrap border-r border-slate-200 ${tono(r.total.neteo)}`}>{fmt(r.total.neteo)}</td>
               {r.neteo.map((v, i) => (
-                <td key={i} className={`text-right tabular-nums whitespace-nowrap ${tono(v)}`}>{fmt(v)}</td>
-              ))}
-            </tr>
-            <tr className="bg-slate-100 font-semibold">
-              <td className="sticky left-0 bg-slate-100 pl-4 whitespace-nowrap">
-                Saldo acumulado
-              </td>
-              <td className={`text-right tabular-nums whitespace-nowrap border-r border-slate-200 ${tono(r.total.saldoFinal)}`}>{fmt(r.total.saldoFinal)}</td>
-              {r.acumulado.map((v, i) => (
                 <td key={i} className={`text-right tabular-nums whitespace-nowrap ${tono(v)}`}>{fmt(v)}</td>
               ))}
             </tr>
