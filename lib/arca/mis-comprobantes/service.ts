@@ -1,4 +1,5 @@
 import type { ComprobanteArca, Empresa } from '@prisma/client';
+import { diferenciasConArca } from './coherencia';
 import { prisma } from '@/lib/db';
 import { scopedDb, type ScopedDb } from '@/lib/empresa/scope';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
@@ -220,7 +221,7 @@ function numero(s: string | null | undefined): number | null {
 
 const SELECT_MOV_CRUZABLE = {
   id: true, estado: true, origen: true, cuitEmisor: true, tipoComprobante: true, puntoVenta: true, numero: true, cae: true,
-  arcaEstado: true, arcaDetalle: true, flags: true,
+  arcaEstado: true, arcaDetalle: true, flags: true, moneda: true, tipoCambio: true, total: true,
 } as const;
 
 export type MovimientoCruzable = {
@@ -235,9 +236,14 @@ export type MovimientoCruzable = {
   arcaEstado: string;
   arcaDetalle: string | null;
   flags: unknown;
+  /** Para comparar con ARCA (opcionales: los tests de emparejamiento no los usan). */
+  moneda?: string | null;
+  tipoCambio?: unknown;
+  total?: unknown;
 };
 
-export type ComprobanteCruzable = Pick<ComprobanteArca, 'id' | 'origen' | 'fechaEmision' | 'tipoComprobante' | 'puntoVenta' | 'numeroDesde' | 'codigoAutorizacion' | 'nroDocContraparte'>;
+export type ComprobanteCruzable = Pick<ComprobanteArca, 'id' | 'origen' | 'fechaEmision' | 'tipoComprobante' | 'puntoVenta' | 'numeroDesde' | 'codigoAutorizacion' | 'nroDocContraparte'> &
+  Partial<Pick<ComprobanteArca, 'moneda' | 'tipoCambio' | 'importeTotal'>>;
 
 /**
  * Empareja (puro) comprobantes de ARCA con movimientos del libro: por código
@@ -287,12 +293,38 @@ function detalleMisComprobantes(c: Pick<ComprobanteArca, 'origen' | 'fechaEmisio
   return `Figura en Mis Comprobantes de ARCA (${c.origen === 'EMITIDO' ? 'emitido' : 'recibido'}, ${c.fechaEmision.toISOString().slice(0, 10)})`;
 }
 
+// Figura en ARCA (tag VALIDO), pero si moneda / TC / importe no coinciden
+// queda dicho en el detalle y en flags.difiereArca para que se corrija.
+type ComparableArca = Pick<ComprobanteCruzable, 'origen' | 'fechaEmision' | 'moneda' | 'tipoCambio' | 'importeTotal'>;
+type ComparableMov = { moneda?: string | null; tipoCambio?: unknown; total?: unknown };
+
+function coherenciaArca(c: ComparableArca, mov: ComparableMov): { detalle: string; diferencias: string[] } {
+  const num = (v: unknown) => (v == null ? null : Number(v));
+  const diferencias = diferenciasConArca(
+    { moneda: mov.moneda ?? null, tipoCambio: num(mov.tipoCambio), total: num(mov.total) },
+    { moneda: c.moneda ?? null, tipoCambio: num(c.tipoCambio), importeTotal: num(c.importeTotal) },
+  );
+  const base = detalleMisComprobantes(c);
+  return { detalle: diferencias.length ? `${base}, pero NO coincide: ${diferencias.join('; ')}` : base, diferencias };
+}
+
+async function guardarDiferenciasArca(db: ScopedDb, mov: { id: string; flags: unknown }, diferencias: string[]): Promise<void> {
+  const previos = (mov.flags as Record<string, unknown> | null) ?? {};
+  if (JSON.stringify(previos.difiereArca ?? []) === JSON.stringify(diferencias)) return;
+  const { difiereArca: _previa, ...resto } = previos;
+  await db.movimiento.update({
+    where: { id: mov.id },
+    data: { flags: (diferencias.length ? { ...resto, difiereArca: diferencias } : resto) as never },
+  });
+}
+
 /** Vincula la fila de ARCA al movimiento y marca el tag VALIDO (con auditoría). */
 async function vincular(db: ScopedDb, par: { comprobante: ComprobanteCruzable; movimiento: MovimientoCruzable }, usuarioId: string | null): Promise<void> {
   const { comprobante: c, movimiento: mov } = par;
   // Si estaba ignorado y al final apareció, deja de estarlo.
   await db.comprobanteArca.update({ where: { id: c.id }, data: { movimientoId: mov.id, ignoradoAt: null, ignoradoPorId: null, motivoIgnorado: null } });
-  const detalle = detalleMisComprobantes(c);
+  const { detalle, diferencias } = coherenciaArca(c, mov);
+  await guardarDiferenciasArca(db, mov, diferencias);
   if (mov.arcaEstado !== 'VALIDO' || mov.arcaDetalle !== detalle) {
     await db.movimiento.update({ where: { id: mov.id }, data: { arcaEstado: 'VALIDO', arcaDetalle: detalle, arcaConsultadoAt: new Date() } });
     if (mov.arcaEstado !== 'VALIDO') {
@@ -302,7 +334,7 @@ async function vincular(db: ScopedDb, par: { comprobante: ComprobanteCruzable; m
         entidadId: mov.id,
         accion: 'ARCA_CONSTATAR',
         antes: { arcaEstado: mov.arcaEstado },
-        despues: { arcaEstado: 'VALIDO', fuente: 'MIS_COMPROBANTES', detalle, comprobanteArcaId: c.id },
+        despues: { arcaEstado: 'VALIDO', fuente: 'MIS_COMPROBANTES', detalle, comprobanteArcaId: c.id, ...(diferencias.length ? { diferencias } : {}) },
       });
     }
   }
@@ -378,18 +410,19 @@ export async function cruzarMovimientoConArca(
  * persona). Idempotente.
  */
 export async function reconciliarTagArca(db: ScopedDb, usuarioId: string | null): Promise<{ corregidos: number }> {
-  const vinculados = await db.comprobanteArca.findMany({ where: { movimientoId: { not: null } }, select: { id: true, movimientoId: true, origen: true, fechaEmision: true } });
+  const vinculados = await db.comprobanteArca.findMany({ where: { movimientoId: { not: null } }, select: { id: true, movimientoId: true, origen: true, fechaEmision: true, moneda: true, tipoCambio: true, importeTotal: true } });
   const porMov = new Map<string, (typeof vinculados)[number]>();
   for (const c of vinculados) if (c.movimientoId && !porMov.has(c.movimientoId)) porMov.set(c.movimientoId, c);
   const movs = await db.movimiento.findMany({
     where: { origen: { in: ['COMPROBANTE', 'VENTA_COMPROBANTE'] } },
-    select: { id: true, arcaEstado: true, arcaDetalle: true },
+    select: { id: true, arcaEstado: true, arcaDetalle: true, flags: true, moneda: true, tipoCambio: true, total: true },
   });
   let corregidos = 0;
   for (const m of movs) {
     const c = porMov.get(m.id);
     if (c) {
-      const detalle = detalleMisComprobantes(c);
+      const { detalle, diferencias } = coherenciaArca(c, m);
+      await guardarDiferenciasArca(db, m, diferencias);
       if (m.arcaEstado === 'VALIDO' && m.arcaDetalle === detalle) continue;
       await db.movimiento.update({ where: { id: m.id }, data: { arcaEstado: 'VALIDO', arcaDetalle: detalle, arcaConsultadoAt: new Date() } });
       if (m.arcaEstado !== 'VALIDO') {

@@ -359,6 +359,10 @@ function formatear(e: EventoCrudo, refs: Referencias): Omit<EventoFormateado, 'i
         tecnico: null,
       };
 
+    case 'CORREGIR_DESDE_ARCA':
+      if (Array.isArray(d.cambios)) detalles.push(...(d.cambios as string[]));
+      return { titulo: 'Corregido con los datos de Mis Comprobantes de ARCA', detalles, tecnico: e.despues ?? null };
+
     default:
       return { titulo: e.accion, detalles, tecnico: e.despues ?? e.antes ?? null };
   }

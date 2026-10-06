@@ -4,6 +4,7 @@ import { scopedDb } from '@/lib/empresa/scope';
 import { getFileStorage } from '@/lib/storage';
 import { getExtractor } from '@/lib/extractor';
 import { cruzarMovimientoConArca } from '@/lib/arca/mis-comprobantes/service';
+import { diferenciasConArca } from '@/lib/arca/mis-comprobantes/coherencia';
 import { evaluarCampos, buscarDuplicados, normalizarCuit } from '@/lib/checks';
 import { assertTransicion } from '@/lib/movimientos/estados';
 import { getOrCreatePeriodo } from '@/lib/periodos';
@@ -254,6 +255,46 @@ export async function procesarExtraccion(
     monedaFinal !== 'ARS' && qrAfip && qrAfip.ctz > 0 ? qrAfip.ctz : null;
   const numeroFinal = qrAfip ? String(qrAfip.nroCmp).padStart(8, '0') : extraccion.numero;
 
+  // Mis Comprobantes de ARCA, si ya se sincronizó este comprobante: es el
+  // registro fiscal, así que manda sobre el QR (que arma el emisor y puede
+  // venir mal, ej. moneda DOL con el importe en pesos) y aporta la razón
+  // social de la contraparte, que el QR no trae.
+  const filaArca = caeFinal
+    ? await db.comprobanteArca.findFirst({ where: { codigoAutorizacion: String(caeFinal).trim() } })
+    : null;
+  const flagsArca: Record<string, unknown> = {};
+  if (filaArca?.denominacionContraparte) {
+    const cuitArca = normalizarCuit(filaArca.nroDocContraparte);
+    // RECIBIDO: la contraparte de ARCA es el emisor; EMITIDO: el receptor.
+    // Sólo si el CUIT coincide (el nombre del OCR puede ser el del recuadro
+    // del cliente, ej. la propia empresa como "emisor").
+    if (filaArca.origen === 'RECIBIDO' && cuit && cuitArca === cuit) {
+      if (extraccion.razonSocialEmisor !== filaArca.denominacionContraparte) {
+        flagsArca.razonSocialOcr = extraccion.razonSocialEmisor ?? null;
+        extraccion.razonSocialEmisor = filaArca.denominacionContraparte;
+      }
+    } else if (filaArca.origen === 'EMITIDO' && cuitReceptor && cuitArca === cuitReceptor) {
+      if (extraccion.razonSocialReceptor !== filaArca.denominacionContraparte) {
+        flagsArca.razonSocialOcr = extraccion.razonSocialReceptor ?? null;
+        extraccion.razonSocialReceptor = filaArca.denominacionContraparte;
+      }
+    }
+  }
+  const diferenciasArca = filaArca
+    ? diferenciasConArca(
+        { moneda: monedaFinal, tipoCambio: tipoCambioFinal, total: totalFinal != null ? Number(totalFinal) : null },
+        {
+          moneda: filaArca.moneda,
+          tipoCambio: filaArca.tipoCambio != null ? Number(filaArca.tipoCambio) : null,
+          importeTotal: filaArca.importeTotal != null ? Number(filaArca.importeTotal) : null,
+        },
+      )
+    : undefined;
+  if (diferenciasArca?.length) {
+    camposRevisar.arca = `No coincide con Mis Comprobantes de ARCA: ${diferenciasArca.join('; ')}`;
+    flagsArca.difiereArca = diferenciasArca;
+  }
+
   const clasificacion = clasificarDireccion({
     cuitEmisor: cuit,
     cuitReceptor,
@@ -357,6 +398,10 @@ export async function procesarExtraccion(
   // Posible prompt injection: el documento traía texto dirigido a la IA. No
   // autovalida (ver evaluarAutovalidacion) y la vista de Validación lo avisa.
   if (extraccion.instruccionesSospechosas) flags.instruccionesSospechosas = extraccion.instruccionesSospechosas;
+  // Reprocesar recalcula la coherencia con ARCA: no arrastrar la anterior.
+  delete flags.difiereArca;
+  delete flags.razonSocialOcr;
+  Object.assign(flags, flagsArca);
 
   // --- Preasignación por reglas + autovalidación (QR + aritmética) ---
   // Las reglas se evalúan SIEMPRE (período abierto), no solo cuando autovalida:
@@ -414,6 +459,7 @@ export async function procesarExtraccion(
     tipoCambio: tipoCambioFinal,
     tieneContraparte: contraparte != null,
     instruccionesSospechosas: extraccion.instruccionesSospechosas ?? null,
+    diferenciasArca,
   });
   let observarPorRegla: ReglaInfo | null = null;
   if (estadoFinal !== 'RETENIDO') {

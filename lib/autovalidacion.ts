@@ -18,6 +18,9 @@ export type EntradaAutoval = {
   tieneContraparte?: boolean;
   /** Texto del documento que parece una instrucción para la IA (prompt injection). */
   instruccionesSospechosas?: string | null;
+  /** Diferencias con la fila de Mis Comprobantes de ARCA (moneda, TC, importe).
+   *  undefined = no hay fila de ARCA todavía (no opina). */
+  diferenciasArca?: string[];
 };
 
 const COMPONENTES = [
@@ -43,6 +46,13 @@ export function evaluarAutovalidacion(e: EntradaAutoval): { apto: boolean; motiv
   }
   if (e.instruccionesSospechosas !== undefined) {
     chequeo(!e.instruccionesSospechosas, 'sin texto dirigido a la IA', 'el documento contiene texto dirigido a la IA');
+  }
+  if (e.diferenciasArca !== undefined) {
+    chequeo(
+      e.diferenciasArca.length === 0,
+      'coincide con ARCA (moneda, TC e importe)',
+      `difiere de ARCA: ${e.diferenciasArca.join('; ')}`,
+    );
   }
   if (e.tieneContraparte !== undefined) {
     chequeo(e.tieneContraparte, 'contraparte en el maestro', 'sin contraparte en el maestro');

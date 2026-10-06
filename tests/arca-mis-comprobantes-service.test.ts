@@ -339,6 +339,25 @@ describe('Mis Comprobantes: servicio (integración)', () => {
     expect((await reconciliarTagArca(ctx.db, usuarioId)).corregidos).toBe(0);
   });
 
+  it('reconciliarTagArca marca lo que no coincide con ARCA (moneda) y lo limpia cuando se corrige', async () => {
+    // Caso ISECOM: el QR decía DOL con TC 1545; en ARCA es en pesos.
+    const mov = await movimiento({ cae: '86405815549002', arcaEstado: 'VALIDO', moneda: 'USD', tipoCambio: 1545, total: 2313462.3 });
+    await arcaRecibido({ codigoAutorizacion: '86405815549002', movimientoId: mov.id, moneda: '$', tipoCambio: 1, importeTotal: 2313462.3 });
+
+    await reconciliarTagArca(ctx.db, usuarioId);
+    let actual = await prisma.movimiento.findUniqueOrThrow({ where: { id: mov.id } });
+    expect(actual.arcaEstado).toBe('VALIDO'); // figura en ARCA…
+    expect(actual.arcaDetalle).toContain('NO coincide: moneda: ARCA dice ARS y el comprobante USD');
+    expect((actual.flags as { difiereArca?: string[] }).difiereArca).toHaveLength(1);
+
+    // Corregido a pesos: la próxima reconciliación limpia la marca.
+    await prisma.movimiento.update({ where: { id: mov.id }, data: { moneda: 'ARS', tipoCambio: null } });
+    await reconciliarTagArca(ctx.db, usuarioId);
+    actual = await prisma.movimiento.findUniqueOrThrow({ where: { id: mov.id } });
+    expect(actual.arcaDetalle).not.toContain('NO coincide');
+    expect((actual.flags as { difiereArca?: string[] }).difiereArca).toBeUndefined();
+  });
+
   it('cruzarComprobantesArca reconcilia al final: un "válido" sin respaldo cae en la misma corrida', async () => {
     const fantasma = await movimiento({ cae: '86000000000002', arcaEstado: 'VALIDO', arcaDetalle: 'Comprobante autorizado (mock)' });
     await cruzarComprobantesArca(ctx.db, ctx.empresa, usuarioId);
