@@ -7,11 +7,12 @@ import { DocViewer } from '@/components/doc-viewer';
 import { ValidacionForm } from '@/components/validacion-form';
 import { ComprobanteDetalle } from '@/components/comprobante-detalle';
 import { HistorialComprobante } from '@/components/historial-comprobante';
+import { ConciliacionBadge, LineasConciliacion } from '@/components/conciliacion-badge';
+import { gradoConciliacion, lineaConciliada, ESTADOS_LINEA_CONCILIADA } from '@/lib/resumenes/conciliacion-comprobante';
 import { EstadoBadge, ArcaBadge, CanalBadge, QrBadge } from '@/components/badges';
 import { ErrorBanner, OkBanner, AvisoBanner } from '@/components/error-banner';
 import { fechaInputValue, formatFecha, formatMoney } from '@/lib/format';
 import { etiquetaComprobante } from '@/lib/movimientos/etiqueta';
-import { MES_LABEL } from '@/lib/periodos';
 import { elegirRegla, textoDeMatching, textoDocumentoDe } from '@/lib/reglas/matching';
 import { resolverAsignacionDeRegla } from '@/lib/reglas/aplicar';
 import { reglasDelCuit, describirCondiciones } from '@/lib/reglas/desde-asignacion';
@@ -61,8 +62,16 @@ export default async function ValidacionDetallePage({
     },
   });
   if (!mov) notFound();
-  // Un comprobante puede pagarse en varias líneas (pago parcial): se listan todas.
-  const lineasResumen = mov.vinculosResumen.map((v) => v.linea);
+  // Conciliación con resúmenes: un comprobante puede pagarse en varias líneas
+  // (cuotas, pago partido) y el grado compara lo cubierto contra el total.
+  const conciliacion = gradoConciliacion(
+    { total: mov.total != null ? Number(mov.total) : null, moneda: mov.moneda, tipoCambio: mov.tipoCambio != null ? Number(mov.tipoCambio) : null },
+    mov.vinculosResumen
+      .filter((v) => (ESTADOS_LINEA_CONCILIADA as readonly string[]).includes(v.linea.estado))
+      .map(lineaConciliada),
+  );
+  const mostrarConciliacion =
+    conciliacion.lineas.length > 0 || (mov.origen === 'COMPROBANTE' && !['DUPLICADO', 'ANULADO', 'NO_COMPROBANTE'].includes(mov.estado));
   const etiquetaDe = (m: { fechaDevengamiento: Date | null; tipoComprobante: string | null; puntoVenta: string | null; numero: string | null; total: unknown; origen: string; contraparte: { razonSocial: string } | null; extraccionRaw: unknown; cuitEmisor: string | null }) =>
     etiquetaComprobante({
       fecha: formatFecha(m.fechaDevengamiento),
@@ -170,20 +179,14 @@ export default async function ValidacionDetallePage({
       <OkBanner mensaje={searchParams.ok} />
       <AvisoBanner mensaje={searchParams.aviso} />
 
-      {lineasResumen.length > 0 && (
-        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800 space-y-1">
-          {lineasResumen.length > 1 && (
-            <p className="font-medium">Pagado en {lineasResumen.length} movimientos de resumen:</p>
-          )}
-          {lineasResumen.map((lineaResumen) => (
-            <p key={lineaResumen.id}>
-              Conciliado con la línea &quot;{lineaResumen.descriptor}&quot; del resumen {lineaResumen.resumen.emisor} (
-              {MES_LABEL[lineaResumen.resumen.periodo.mes]} {lineaResumen.resumen.periodo.anio}) —{' '}
-              <Link href={`/${params.empresaSlug}/resumenes/${lineaResumen.resumenId}?linea=${lineaResumen.id}`} className="underline">
-                ver en la bandeja
-              </Link>
-            </p>
-          ))}
+      {mostrarConciliacion && (
+        <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm space-y-1">
+          <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+            Conciliación con resúmenes <ConciliacionBadge c={conciliacion} empresaSlug={params.empresaSlug} />
+            {conciliacion.grado === 'COMPLETA' && <span className="font-normal">cubre el total</span>}
+            {conciliacion.grado === 'NINGUNA' && <span className="font-normal text-red-700">no aparece en ningún resumen</span>}
+          </p>
+          {conciliacion.lineas.length > 0 && <LineasConciliacion c={conciliacion} empresaSlug={params.empresaSlug} />}
         </div>
       )}
       {(mov.relacionado || mov.relacionados.length > 0) && (

@@ -13,8 +13,11 @@ import {
   resumirComprobantes,
   ladoDe,
   PROBLEMAS,
+  FILTROS_CONCILIACION,
   type FiltrosComprobantes,
 } from '@/lib/comprobantes/query';
+import { mapaConciliacion, idsPorGradoConciliacion } from '@/lib/resumenes/conciliacion-comprobante';
+import { ConciliacionBadge } from '@/components/conciliacion-badge';
 import { mapaCobranza, hoyUtc } from '@/lib/cobranzas/query';
 import { hayFiltroCobranza, idsPorFiltroCobranza, describirFiltroCobranza } from '@/lib/cobranzas/filtros';
 import { CobroBadge } from '@/components/cobro-badge';
@@ -46,8 +49,15 @@ export default async function ComprobantesPage({
   const hoy = hoyUtc();
   const cobranza = conVentas && esValidador ? await mapaCobranza(ctx.db, hoy) : null;
   const ids = cobranza ? await idsPorFiltroCobranza(cobranza, filtroCobranza, hoy) : null;
-  const f: FiltrosComprobantes = { ...searchParams, lado };
-  const opts = { esValidador, usuarioId: ctx.usuario.id, ids };
+  // Conciliación con resúmenes: es de las compras (las ventas tienen su tag de cobro).
+  const conCompras = lado !== 'ventas';
+  const filtroConciliacion = conCompras && searchParams.conciliacion && FILTROS_CONCILIACION[searchParams.conciliacion] ? searchParams.conciliacion : undefined;
+  const idsConciliacion =
+    filtroConciliacion === 'completa' || filtroConciliacion === 'parcial'
+      ? await idsPorGradoConciliacion(ctx.db, filtroConciliacion === 'completa' ? 'COMPLETA' : 'PARCIAL')
+      : null;
+  const f: FiltrosComprobantes = { ...searchParams, lado, conciliacion: filtroConciliacion };
+  const opts = { esValidador, usuarioId: ctx.usuario.id, ids, idsConciliacion };
   const where = buildWhereComprobantes(f, opts);
 
   const [comprobantes, paraResumen, porEstado, contrapartes, categorias] = await Promise.all([
@@ -80,6 +90,10 @@ export default async function ComprobantesPage({
     const raw = c.extraccionRaw as { razonSocialEmisor?: string; razonSocialReceptor?: string } | null;
     return c.contraparte?.razonSocial ?? (c.origen === 'COMPROBANTE' ? raw?.razonSocialEmisor : raw?.razonSocialReceptor) ?? 'Sin identificar';
   };
+  // Sin tag para lo que no es un gasto vigente (duplicado, anulado, no comprobante).
+  const conciliacion = conCompras
+    ? await mapaConciliacion(ctx.db, comprobantes.filter((c) => c.origen === 'COMPROBANTE' && !['DUPLICADO', 'ANULADO', 'NO_COMPROBANTE'].includes(c.estado)))
+    : null;
   const resumen = resumirComprobantes(paraResumen.map((c) => ({ ...c, proveedor: nombreEmisor(c) })));
   const conteo = Object.fromEntries(porEstado.map((g) => [g.estado, g._count._all])) as Record<string, number>;
   const vigentes = Object.entries(conteo).filter(([e]) => e !== 'DUPLICADO' && e !== 'ANULADO' && e !== 'NO_COMPROBANTE').reduce((s, [, n]) => s + n, 0);
@@ -87,7 +101,7 @@ export default async function ComprobantesPage({
 
   const hayFiltros = drill || Boolean(
     searchParams.q?.trim() || searchParams.desde || searchParams.hasta || searchParams.contraparteId || searchParams.categoriaId
-      || searchParams.canal || searchParams.moneda || searchParams.problema,
+      || searchParams.canal || searchParams.moneda || searchParams.problema || filtroConciliacion,
   );
   const base = `/${params.empresaSlug}/comprobantes`;
   const conParam = (clave: keyof FiltrosComprobantes, valor: string) => {
@@ -225,6 +239,12 @@ export default async function ComprobantesPage({
           <option value="">Sin filtro de calidad</option>
           {Object.entries(PROBLEMAS).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
         </select>
+        {conCompras && (
+          <select name="conciliacion" defaultValue={filtroConciliacion ?? ''} className="input !w-auto text-xs">
+            <option value="">Toda conciliación</option>
+            {Object.entries(FILTROS_CONCILIACION).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          </select>
+        )}
         <select name="moneda" defaultValue={searchParams.moneda ?? ''} className="input !w-auto text-xs">
           <option value="">Toda moneda</option>
           <option value="ARS">ARS</option>
@@ -307,6 +327,7 @@ export default async function ComprobantesPage({
                       <EstadoBadge estado={m.estado} />
                       {m.cae && <ArcaBadge estado={m.arcaEstado} />}
                       <QrBadge estado={m.qrEstado} />
+                      {conciliacion?.get(m.id) && <ConciliacionBadge c={conciliacion.get(m.id)!} empresaSlug={params.empresaSlug} />}
                       {cobranza?.get(m.id) && cobranza.get(m.id)!.estado !== 'NO_APLICA' && (() => {
                         const i = cobranza.get(m.id)!;
                         return (

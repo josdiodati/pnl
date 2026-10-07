@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { ESTADOS_LINEA_CONCILIADA } from '@/lib/resumenes/conciliacion-comprobante';
 
 // Vista Comprobantes: el DOCUMENTO fiscal (de compra, de venta o ambos) en
 // todo su ciclo (llega -> se valida -> se asigna), con sus datos fiscales. Es
@@ -37,6 +38,16 @@ export type FiltrosComprobantes = {
   canal?: string;
   moneda?: string;
   problema?: string; // ver PROBLEMAS
+  // Conciliación con resúmenes (sólo compras): completa | parcial | ninguna.
+  // Completa/parcial se resuelven a `idsConciliacion` antes de armar el where
+  // (el grado compara importes, ver lib/resumenes/conciliacion-comprobante).
+  conciliacion?: string;
+};
+
+export const FILTROS_CONCILIACION: Record<string, string> = {
+  completa: 'Conciliado completo',
+  parcial: 'Conciliado en parte',
+  ninguna: 'Sin conciliar (en ningún resumen)',
 };
 
 export const PROBLEMAS: Record<string, { label: string; where: Prisma.MovimientoWhereInput }> = {
@@ -52,10 +63,15 @@ export const ESTADOS_OCULTOS_POR_DEFECTO = ['DUPLICADO', 'ANULADO', 'NO_COMPROBA
 /** Where sin el filtro de estado (para contar los chips con el resto de los filtros). */
 export function buildWhereComprobantesSinEstado(
   f: FiltrosComprobantes,
-  opts: { esValidador: boolean; usuarioId: string; ids?: string[] | null },
+  opts: { esValidador: boolean; usuarioId: string; ids?: string[] | null; idsConciliacion?: string[] | null },
 ): Prisma.MovimientoWhereInput {
   const and: Prisma.MovimientoWhereInput[] = [{ origen: { in: ORIGENES_POR_LADO[ladoDe(f.lado)] as never } }];
   if (opts.ids) and.push({ id: { in: opts.ids } });
+  if (f.conciliacion === 'ninguna') {
+    and.push({ vinculosResumen: { none: { linea: { estado: { in: [...ESTADOS_LINEA_CONCILIADA] } } } } });
+  } else if (f.conciliacion && FILTROS_CONCILIACION[f.conciliacion] && opts.idsConciliacion) {
+    and.push({ id: { in: opts.idsConciliacion } });
+  }
   if (!opts.esValidador) and.push({ creadoPorId: opts.usuarioId });
   if (f.desde || f.hasta) {
     and.push({
@@ -94,7 +110,7 @@ export function buildWhereComprobantesSinEstado(
 
 export function buildWhereComprobantes(
   f: FiltrosComprobantes,
-  opts: { esValidador: boolean; usuarioId: string; ids?: string[] | null },
+  opts: { esValidador: boolean; usuarioId: string; ids?: string[] | null; idsConciliacion?: string[] | null },
 ): Prisma.MovimientoWhereInput {
   const base = buildWhereComprobantesSinEstado(f, opts);
   const estado: Prisma.MovimientoWhereInput = f.estado
