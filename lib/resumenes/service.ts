@@ -265,13 +265,19 @@ export async function rechazarCandidato(ctx: EmpresaContext, params: { lineaId: 
 
 export async function ignorarLinea(
   ctx: EmpresaContext,
-  params: { lineaId: string; motivo: string; centroCostoId?: string | null; categoriaId?: string | null },
+  params: { lineaId: string; motivo: string; centroCostoId?: string | null; categoriaId?: string | null; montoArs?: number | null },
 ): Promise<void> {
   const motivo = params.motivo.trim();
   // Seguros, comisiones, consumos sin comprobante: son gasto real, no se
   // ignoran — se imputan (crean movimiento) para que estén en el libro.
   if (esMotivoCargo(motivo)) {
-    await imputarCargo(ctx, { lineaId: params.lineaId, motivo, centroCostoId: params.centroCostoId, categoriaId: params.categoriaId });
+    await imputarCargo(ctx, {
+      lineaId: params.lineaId,
+      motivo,
+      centroCostoId: params.centroCostoId,
+      categoriaId: params.categoriaId,
+      montoArs: params.montoArs,
+    });
     return;
   }
   const linea = await lineaOrThrow(ctx, params.lineaId);
@@ -292,18 +298,24 @@ export async function ignorarLinea(
  * Cargo sin comprobante (chips Seguros / Comisiones / Consumo sin comprobante):
  * imputa la línea 100% al centro de costo elegido, con la categoría del motivo
  * (CATEGORIA_DE_CARGO, se crea si la empresa no la tiene) o la que se elija.
+ * Una línea sin pesificar (consumo en USD) necesita `montoArs`, como Imputar.
  */
 export async function imputarCargo(
   ctx: EmpresaContext,
-  params: { lineaId: string; motivo: MotivoCargo; centroCostoId?: string | null; categoriaId?: string | null },
+  params: { lineaId: string; motivo: MotivoCargo; centroCostoId?: string | null; categoriaId?: string | null; montoArs?: number | null },
 ): Promise<void> {
   if (!params.centroCostoId) throw new DomainError(`«${params.motivo}» crea un movimiento: elegí el centro de costo.`);
   const linea = await lineaOrThrow(ctx, params.lineaId);
-  if (linea.monto == null) {
-    throw new DomainError('La línea no tiene importe en pesos: usá Imputar e ingresá el monto final en pesos.');
+  if (linea.monto == null && !(params.montoArs != null && params.montoArs > 0)) {
+    throw new DomainError('La línea no tiene importe en pesos (consumo en moneda extranjera): ingresá el monto final en pesos.');
   }
   const categoriaId = params.categoriaId || (await categoriaDeCargo(ctx, params.motivo));
-  await imputarLinea(ctx, { lineaId: params.lineaId, categoriaId, lineas: [{ centroCostoId: params.centroCostoId, porcentaje: 100 }] });
+  await imputarLinea(ctx, {
+    lineaId: params.lineaId,
+    categoriaId,
+    lineas: [{ centroCostoId: params.centroCostoId, porcentaje: 100 }],
+    montoArs: params.montoArs,
+  });
 }
 
 /** Categoría de egreso del motivo de cargo; si no existe (o está inactiva) se crea/reactiva. */

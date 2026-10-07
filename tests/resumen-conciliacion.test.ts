@@ -154,10 +154,15 @@ describe('conciliación de líneas de resumen (integración)', () => {
     expect(movConsumo!.movimiento.categoriaId).toBe(categoriaId);
   });
 
-  it('un cargo sin importe en pesos pide usar Imputar con el monto', async () => {
+  it('un cargo sin importe en pesos exige el monto en pesos y lo imputa por ese total', async () => {
     const l = await linea({ monto: null, moneda: 'USD', montoOrigen: -26.25 });
     await expect(ignorarLinea(ctx, { lineaId: l.id, motivo: 'Consumo sin comprobante', centroCostoId: centroId })).rejects.toThrow(/pesos/);
     expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
+
+    await ignorarLinea(ctx, { lineaId: l.id, motivo: 'Consumo sin comprobante', centroCostoId: centroId, montoArs: 38_850.5 });
+    const vinculo = await prisma.resumenLineaVinculo.findFirstOrThrow({ where: { lineaId: l.id }, include: { movimiento: { include: { categoria: true } } } });
+    expect(Number(vinculo.movimiento.total)).toBeCloseTo(38_850.5, 2);
+    expect(vinculo.movimiento.categoria!.nombre).toBe('Consumos sin comprobante');
   });
 
   it('un motivo que no es cargo no exige centro y no lo guarda', async () => {

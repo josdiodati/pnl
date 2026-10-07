@@ -179,8 +179,9 @@ export async function ignorarAction(formData: FormData): Promise<void> {
     const motivo = String(formData.get('motivoRapido') ?? '') || String(formData.get('motivo') ?? '');
     const centroCostoId = String(formData.get('centroCostoId') ?? '') || null;
     const categoriaId = String(formData.get('categoriaId') ?? '') || null;
+    const montoArs = numeroOpcional(formData, 'montoArs') ?? null;
     const cargo = esMotivoCargo(motivo);
-    await ignorarLinea(ctx, { lineaId, motivo, centroCostoId, categoriaId });
+    await ignorarLinea(ctx, { lineaId, motivo, centroCostoId, categoriaId, montoArs });
     if (cargo) mensaje = `«${motivo.trim()}»: movimiento creado`;
     if (formData.get('crearRegla')) {
       const r = await crearReglaDesdeLinea(ctx.db, { lineaId, accion: 'IGNORAR', motivo: motivo.trim(), centroCostoId: cargo ? centroCostoId : null });

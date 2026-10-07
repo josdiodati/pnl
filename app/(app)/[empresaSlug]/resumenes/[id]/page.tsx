@@ -455,7 +455,7 @@ export default async function ResumenDetallePage({
                 <div className="flex gap-2 flex-wrap">
                   <div className="w-56">
                     <label className="label">Centro de costo</label>
-                    <select name="centroCostoId" className="input text-xs" defaultValue="">
+                    <select name="centroCostoId" className="input text-xs" defaultValue="" required>
                       <option value="">Centro de costo…</option>
                       {centros.map((c) => (
                         <option key={c.id} value={c.id}>{c.nombre}</option>
@@ -471,6 +471,14 @@ export default async function ResumenDetallePage({
                       ))}
                     </select>
                   </div>
+                  {linea.monto == null && (
+                    <div className="w-56">
+                      <MontoArsHint
+                        montoOrigen={linea.montoOrigen != null ? Number(linea.montoOrigen) : null}
+                        moneda={linea.moneda}
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {MOTIVOS_CARGO.map((m) => (
@@ -826,6 +834,7 @@ export default async function ResumenDetallePage({
                           key={m}
                           name="motivoRapido"
                           value={m}
+                          formNoValidate
                           className="block w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-amber-50"
                         >
                           {m}
@@ -834,13 +843,23 @@ export default async function ResumenDetallePage({
                       <p className="px-3 pt-2 pb-1 text-[11px] font-semibold text-slate-400 border-t border-slate-100 mt-1">
                         Cargo sin comprobante — crea movimiento
                       </p>
-                      <div className="px-3 pb-1">
-                        <select name="centroCostoId" className="input text-xs w-full" defaultValue="">
+                      <div className="px-3 pb-1 space-y-1">
+                        <select name="centroCostoId" className="input text-xs w-full" defaultValue="" required>
                           <option value="">Centro de costo…</option>
                           {centros.map((c) => (
                             <option key={c.id} value={c.id}>{c.nombre}</option>
                           ))}
                         </select>
+                        {/* Consumo en moneda extranjera sin pesificar: el cargo necesita el monto en pesos. */}
+                        {l.monto == null && (
+                          <input
+                            name="montoArs"
+                            className="input text-xs w-full text-right tabular-nums"
+                            inputMode="decimal"
+                            placeholder={`Monto en $ (${l.moneda}${l.montoOrigen != null ? ` ${Math.abs(Number(l.montoOrigen)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : ''})`}
+                            required
+                          />
+                        )}
                       </div>
                       {MOTIVOS_CARGO.map((m) => (
                         <button
