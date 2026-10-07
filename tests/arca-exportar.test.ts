@@ -71,4 +71,18 @@ describe('exportación de ARCA', () => {
       origen: 'EMITIDO', movimientoId: { not: null }, fechaEmision: { gte: d('2026-08-01'), lt: d('2026-09-01') },
     });
   });
+
+  it('filtros: "todos" acotado a un ejercicio contable', () => {
+    const f = parsearFiltrosArca({ mes: 'todos', estado: 'faltantes', ejercicio: '2026' }, '2026-09', 7);
+    expect(f).toEqual({ mes: 'todos', origen: undefined, estado: 'faltantes', ejercicio: { anio: 2026, inicio: 7 } });
+    expect(whereArca(f)).toEqual({ movimientoId: null, ignoradoAt: null, fechaEmision: { gte: d('2026-07-01'), lt: d('2027-07-01') } });
+    // Ejercicio calendario.
+    expect(whereArca(parsearFiltrosArca({ mes: 'todos', ejercicio: '2026' }, '2026-09', 1))).toEqual({
+      fechaEmision: { gte: d('2026-01-01'), lt: d('2027-01-01') },
+    });
+    // Un mes puntual manda sobre el ejercicio; sin inicio o con basura, se ignora.
+    expect(parsearFiltrosArca({ mes: '2026-08', ejercicio: '2026' }, '2026-09', 7).ejercicio).toBeUndefined();
+    expect(parsearFiltrosArca({ mes: 'todos', ejercicio: '2026' }, '2026-09').ejercicio).toBeUndefined();
+    expect(parsearFiltrosArca({ mes: 'todos', ejercicio: 'x' }, '2026-09', 7).ejercicio).toBeUndefined();
+  });
 });

@@ -1,15 +1,17 @@
 import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { requireEmpresaPage } from '@/lib/empresa/require-empresa';
-import { MES_LABEL } from '@/lib/periodos';
+import { MES_LABEL, ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
 import { formatMoney } from '@/lib/format';
 import { ResumenesUpload } from '@/components/resumenes-upload';
 import { OkBanner } from '@/components/error-banner';
 import { AutoRefresh } from '@/components/auto-refresh';
+import { SelectorEjercicio } from '@/components/selector-ejercicio';
 
 // Lista de resúmenes de tarjeta/banco: estado de extracción + avance de
 // conciliación de sus líneas. El detalle (bandeja de conciliación por línea)
-// vive en resumenes/[id] (Task 7).
+// vive en resumenes/[id] (Task 7). Se muestra un ejercicio contable por vez
+// (por defecto el corriente), según el período de cada resumen.
 
 const TIPO_LABEL: Record<string, string> = { TARJETA: 'Tarjeta', BANCO: 'Banco' };
 const TIPO_COLOR: Record<string, string> = {
@@ -24,16 +26,20 @@ export default async function ResumenesPage({
   searchParams,
 }: {
   params: { empresaSlug: string };
-  searchParams: { ok?: string; error?: string };
+  searchParams: { ok?: string; error?: string; ejercicio?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const base = `/${params.empresaSlug}/resumenes`;
+  const inicio = ctx.empresa.inicioEjercicioFiscal;
+  const hoy = new Date();
+  const ejercicio = Number(searchParams.ejercicio ?? ejercicioDeMes(hoy.getFullYear(), hoy.getMonth() + 1, inicio));
+  const meses = mesesDeEjercicio(ejercicio, inicio);
 
   const [resumenes, jobsFallados, jobsEnCola] = await Promise.all([
     ctx.db.resumen.findMany({
+      where: { periodo: { OR: meses.map(({ anio, mes }) => ({ anio, mes })) } },
       include: { periodo: true, lineas: { select: { estado: true, monto: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
+      orderBy: [{ periodo: { anio: 'desc' } }, { periodo: { mes: 'desc' } }, { createdAt: 'desc' }],
     }),
     prisma.job.findMany({
       where: { tipo: 'EXTRACCION_RESUMEN', empresaId: ctx.empresa.id, estado: 'failed' },
@@ -57,6 +63,7 @@ export default async function ResumenesPage({
         </div>
         <ResumenesUpload empresaSlug={params.empresaSlug} />
       </div>
+      <SelectorEjercicio ejercicio={ejercicio} inicio={inicio} href={(e) => `${base}?ejercicio=${e}`} />
       <OkBanner mensaje={searchParams.ok} />
       {searchParams.error && <p className="text-sm text-red-600">{searchParams.error}</p>}
       {jobsEnCola > 0 && (
@@ -142,7 +149,7 @@ export default async function ResumenesPage({
               );
             })}
             {resumenes.length === 0 && (
-              <tr><td colSpan={7} className="text-center text-slate-400 py-8">Sin resúmenes: subí uno o varios PDFs para empezar.</td></tr>
+              <tr><td colSpan={7} className="text-center text-slate-400 py-8">Sin resúmenes en este ejercicio: subí uno o varios PDFs para empezar.</td></tr>
             )}
           </tbody>
         </table>

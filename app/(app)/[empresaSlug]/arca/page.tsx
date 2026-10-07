@@ -12,8 +12,9 @@ import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { sincronizarArcaAction, ignorarArcaAction, dejarDeIgnorarArcaAction } from './actions';
 import { resumirPorMes } from '@/lib/arca/mis-comprobantes/resumen-mensual';
-import { parsearFiltrosArca, rangoDeMes, whereArca, SIN_RESOLVER, IGNORADOS } from '@/lib/arca/mis-comprobantes/exportar';
-import { MES_LABEL } from '@/lib/periodos';
+import { parsearFiltrosArca, rangoDeFiltros, rangoDeEjercicio, whereArca, SIN_RESOLVER, IGNORADOS } from '@/lib/arca/mis-comprobantes/exportar';
+import { MES_LABEL, ejercicioDeMes, mesesDeEjercicio } from '@/lib/periodos';
+import { SelectorEjercicio } from '@/components/selector-ejercicio';
 
 // ARCA · Mis Comprobantes: lo que ARCA registra como emitido y recibido por
 // la empresa, cruzado contra el libro. Sirve para ver qué falta cargar
@@ -21,7 +22,9 @@ import { MES_LABEL } from '@/lib/periodos';
 // y ARCA no lo lista en la ventana sincronizada).
 //
 // Sin ?mes= la vista es una lista por mes con una barra de cumplimiento
-// (cruzados / total), como Resúmenes; cada mes abre el detalle.
+// (cruzados / total), como Resúmenes; cada mes abre el detalle. La lista
+// muestra un ejercicio contable por vez (?ejercicio=, por defecto el
+// corriente); con mes=todos, ?ejercicio= acota el detalle a ese ejercicio.
 //
 // Un comprobante imposible de conseguir se puede "Ignorar": cuenta como
 // resuelto en el cumplimiento (el período puede cerrar al 100%) y se cuenta
@@ -39,19 +42,33 @@ export default async function ArcaPage({
   searchParams,
 }: {
   params: { empresaSlug: string };
-  searchParams: { ok?: string; error?: string; origen?: string; estado?: string; mes?: string };
+  searchParams: { ok?: string; error?: string; origen?: string; estado?: string; mes?: string; ejercicio?: string };
 }) {
   const ctx = await requireEmpresaPage(params.empresaSlug, 'VALIDADOR');
   const base = `/${params.empresaSlug}/arca`;
   const esAdmin = rolAlcanza(ctx.rol, 'ADMINISTRADOR');
 
-  const filtros = parsearFiltrosArca(searchParams, mesActualAr());
+  const inicio = ctx.empresa.inicioEjercicioFiscal;
+  const [anioHoy, mesHoy] = mesActualAr().split('-').map(Number);
+  const ejercicioCorriente = ejercicioDeMes(anioHoy, mesHoy, inicio);
+  const filtros = parsearFiltrosArca(searchParams, mesActualAr(), inicio);
   const { origen, estado, mes } = filtros;
+  // Ejercicio en pantalla: el pedido, el del mes abierto, o el corriente.
+  const ejercicio = /^\d{4}$/.test(searchParams.ejercicio ?? '')
+    ? Number(searchParams.ejercicio)
+    : mes !== 'todos'
+      ? ejercicioDeMes(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), inicio)
+      : ejercicioCorriente;
   // Sin mes: lista mensual. Con mes (o "todos"): el detalle de comprobantes.
   const vistaLista = !searchParams.mes;
-  const rangoMes = rangoDeMes(mes);
+  const rangoMes = rangoDeFiltros(filtros);
   const resumenMensual = vistaLista
-    ? resumirPorMes(await ctx.db.comprobanteArca.findMany({ select: { fechaEmision: true, origen: true, movimientoId: true, ignoradoAt: true } }))
+    ? resumirPorMes(
+        await ctx.db.comprobanteArca.findMany({
+          where: { fechaEmision: rangoDeEjercicio(ejercicio, inicio) },
+          select: { fechaEmision: true, origen: true, movimientoId: true, ignoradoAt: true },
+        }),
+      )
     : [];
 
   const [credencial, jobEnCurso, ultimoJob, comprobantes, resumenPorOrigen] = await Promise.all([
@@ -95,16 +112,15 @@ export default async function ArcaPage({
       })
     : [];
 
-  const meses: string[] = [];
-  for (let i = 0; i < 12; i++) {
-    const d = new Date();
-    d.setUTCDate(1);
-    d.setUTCMonth(d.getUTCMonth() - i);
-    meses.push(d.toISOString().slice(0, 7));
-  }
+  // Meses del ejercicio hasta el actual, del más nuevo al más viejo.
+  const meses = mesesDeEjercicio(ejercicio, inicio)
+    .map(({ anio, mes: m }) => `${anio}-${String(m).padStart(2, '0')}`)
+    .filter((m) => m <= mesActualAr())
+    .reverse();
   const filtro = (cambios: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    const valores = { origen, estado, mes, ...cambios };
+    // `ejercicio` sólo cuenta con mes=todos, pero viaja siempre para volver a la lista del mismo ejercicio.
+    const valores = { origen, estado, mes, ejercicio: String(ejercicio), ...cambios };
     for (const [k, v] of Object.entries(valores)) if (v) q.set(k, v);
     return `${base}?${q.toString()}`;
   };
@@ -179,6 +195,7 @@ export default async function ArcaPage({
 
       {vistaLista ? (
         <>
+          <SelectorEjercicio ejercicio={ejercicio} inicio={inicio} href={(e) => `${base}?ejercicio=${e}`} />
           <div className="card p-4 flex flex-wrap items-center gap-6 text-sm">
             <div>
               <span className="text-xs text-slate-500">Última sincronización</span>
@@ -189,13 +206,13 @@ export default async function ArcaPage({
               <div>{credencial?.syncAutomatico && credencial.estado === 'OK' ? '06:30, últimos 30 días' : 'apagado'}</div>
             </div>
             <div>
-              <span className="text-xs text-slate-500">Total sin cargar en PNL</span>
+              <span className="text-xs text-slate-500">Sin cargar en PNL (ejercicio)</span>
               <div className="tabular-nums">
                 {resumenMensual.reduce((s, m) => s + m.faltan, 0)} de {resumenMensual.reduce((s, m) => s + m.total, 0)} comprobantes en ARCA
               </div>
             </div>
             <div>
-              <span className="text-xs text-slate-500">Ignorados</span>
+              <span className="text-xs text-slate-500">Ignorados (ejercicio)</span>
               <div className="tabular-nums">
                 {totalIgnorados > 0 ? (
                   <Link href={filtro({ mes: 'todos', origen: undefined, estado: 'ignorados' })} className="underline" title="Comprobantes de ARCA imposibles de conseguir: cuentan como resueltos para el cumplimiento">
@@ -207,9 +224,9 @@ export default async function ArcaPage({
               </div>
             </div>
             <Link href={filtro({ mes: 'todos', estado: 'faltantes' })} className="ml-auto text-xs underline text-slate-600">
-              Ver todos los faltantes
+              Ver los faltantes del ejercicio
             </Link>
-            <a href={`${base}/export?mes=todos`} className="btn-secondary text-xs" title="Todos los comprobantes de ARCA, con los datos del comprobante de PNL con el que cruzó cada uno">
+            <a href={`${base}/export?mes=todos&ejercicio=${ejercicio}`} className="btn-secondary text-xs" title="Los comprobantes de ARCA del ejercicio, con los datos del comprobante de PNL con el que cruzó cada uno">
               Exportar XLSX
             </a>
           </div>
@@ -285,7 +302,9 @@ export default async function ArcaPage({
                 {resumenMensual.length === 0 && (
                   <tr>
                     <td colSpan={6} className="text-center text-slate-400 py-8">
-                      Todavía no hay datos: sincronizá o importá el CSV de Mis Comprobantes.
+                      {ejercicio === ejercicioCorriente
+                        ? 'Todavía no hay datos: sincronizá o importá el CSV de Mis Comprobantes.'
+                        : 'Sin comprobantes de ARCA en este ejercicio.'}
                     </td>
                   </tr>
                 )}
@@ -295,7 +314,7 @@ export default async function ArcaPage({
         </>
       ) : (
       <>
-      <Link href={base} className="text-sm text-slate-500 underline">← Todos los meses</Link>
+      <Link href={`${base}?ejercicio=${ejercicio}`} className="text-sm text-slate-500 underline">← Todos los meses del ejercicio</Link>
       <div className="card p-4 flex flex-wrap items-center gap-4 text-sm">
         <div>
           <span className="text-xs text-slate-500">Última sincronización</span>
@@ -307,7 +326,7 @@ export default async function ArcaPage({
         </div>
         {(['EMITIDO', 'RECIBIDO'] as const).map((o) => (
           <div key={o}>
-            <span className="text-xs text-slate-500">{ORIGEN_LABEL[o]} {mes === 'todos' ? '' : `(${mes})`}</span>
+            <span className="text-xs text-slate-500">{ORIGEN_LABEL[o]} {mes !== 'todos' ? `(${mes})` : filtros.ejercicio ? `(ejercicio ${ejercicio})` : ''}</span>
             <div className="tabular-nums">
               {cuenta(o, resumenPorOrigen)} en ARCA ·{' '}
               <Link href={filtro({ origen: o, estado: 'faltantes' })} className={cuenta(o, faltantesPorOrigen) > 0 ? 'text-red-700 underline' : 'text-slate-500'}>
@@ -338,9 +357,10 @@ export default async function ArcaPage({
           {meses.map((m) => (
             <option key={m} value={m}>{m}</option>
           ))}
-          <option value="todos">todos</option>
+          <option value="todos">todo el ejercicio</option>
         </select>
         <form id="filtros" action={base} method="get" className="contents">
+          <input type="hidden" name="ejercicio" value={ejercicio} />
           {origen && <input type="hidden" name="origen" value={origen} />}
           <input type="hidden" name="estado" value={estado} />
           <button className="btn-secondary !py-0.5 !px-2 text-xs">Aplicar</button>

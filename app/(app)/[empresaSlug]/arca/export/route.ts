@@ -5,8 +5,9 @@ import { generarXlsx } from '@/lib/movimientos/xlsx';
 import { ENCABEZADOS_EXPORT_ARCA, filasExportArca, parsearFiltrosArca, whereArca } from '@/lib/arca/mis-comprobantes/exportar';
 
 // ARCA · Mis Comprobantes a XLSX, con los mismos filtros que la pantalla (sin
-// mes: todos). Cada fila de ARCA lleva al lado el comprobante de PNL con el
-// que cruzó, o el motivo por el que se ignoró.
+// mes: todos; con mes=todos&ejercicio=, ese ejercicio contable). Cada fila de
+// ARCA lleva al lado el comprobante de PNL con el que cruzó, o el motivo por
+// el que se ignoró.
 export async function GET(req: NextRequest, { params }: { params: { empresaSlug: string } }) {
   let ctx;
   try {
@@ -16,7 +17,11 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
     throw err;
   }
   const sp = req.nextUrl.searchParams;
-  const filtros = parsearFiltrosArca({ mes: sp.get('mes'), origen: sp.get('origen'), estado: sp.get('estado') }, 'todos');
+  const filtros = parsearFiltrosArca(
+    { mes: sp.get('mes'), origen: sp.get('origen'), estado: sp.get('estado'), ejercicio: sp.get('ejercicio') },
+    'todos',
+    ctx.empresa.inicioEjercicioFiscal,
+  );
   const comprobantes = await ctx.db.comprobanteArca.findMany({
     where: whereArca(filtros),
     include: {
@@ -27,7 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: { empresaSlug:
   });
   const urlApp = (process.env.APP_URL || 'https://pnl.ledger.ar').replace(/\/$/, '');
   const buffer = await generarXlsx('ARCA', ENCABEZADOS_EXPORT_ARCA, filasExportArca(comprobantes, urlApp, params.empresaSlug));
-  const sufijo = [filtros.mes === 'todos' ? null : filtros.mes, filtros.origen?.toLowerCase(), filtros.estado === 'todos' ? null : filtros.estado].filter(Boolean).join('-');
+  const sufijo = [filtros.mes === 'todos' ? (filtros.ejercicio ? `ejercicio-${filtros.ejercicio.anio}` : null) : filtros.mes, filtros.origen?.toLowerCase(), filtros.estado === 'todos' ? null : filtros.estado].filter(Boolean).join('-');
   const nombre = `arca-${params.empresaSlug}${sufijo ? `-${sufijo}` : ''}-${new Date().toISOString().slice(0, 10)}.xlsx`;
   return new NextResponse(new Uint8Array(buffer), {
     headers: {

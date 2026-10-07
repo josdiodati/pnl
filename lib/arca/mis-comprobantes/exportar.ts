@@ -7,17 +7,27 @@ import type { CeldaXlsx } from '@/lib/movimientos/xlsx';
 import { nombreTipoArca, numeroComprobanteArca } from './tipos-arca';
 
 export type EstadoFiltroArca = 'todos' | 'faltantes' | 'cruzados' | 'ignorados';
-export type FiltrosArca = { mes: string; origen?: 'EMITIDO' | 'RECIBIDO'; estado: EstadoFiltroArca };
+// `ejercicio` acota "todos" a un ejercicio contable (año de inicio + mes de inicio de la empresa).
+export type FiltrosArca = { mes: string; origen?: 'EMITIDO' | 'RECIBIDO'; estado: EstadoFiltroArca; ejercicio?: { anio: number; inicio: number } };
 
 export const SIN_RESOLVER = { movimientoId: null, ignoradoAt: null };
 export const IGNORADOS = { movimientoId: null, ignoradoAt: { not: null } };
 
-/** Mes "YYYY-MM" o "todos"; si no viene (o no es válido), el de `mesPorDefecto`. */
-export function parsearFiltrosArca(sp: { mes?: string | null; origen?: string | null; estado?: string | null }, mesPorDefecto: string): FiltrosArca {
+/**
+ * Mes "YYYY-MM" o "todos"; si no viene (o no es válido), el de `mesPorDefecto`.
+ * Con "todos", `ejercicio` (año de inicio) lo acota a ese ejercicio contable
+ * cuando se conoce el mes de inicio de la empresa.
+ */
+export function parsearFiltrosArca(
+  sp: { mes?: string | null; origen?: string | null; estado?: string | null; ejercicio?: string | null },
+  mesPorDefecto: string,
+  inicioEjercicio?: number,
+): FiltrosArca {
   const origen = sp.origen === 'EMITIDO' || sp.origen === 'RECIBIDO' ? sp.origen : undefined;
   const estado = sp.estado === 'faltantes' || sp.estado === 'cruzados' || sp.estado === 'ignorados' ? sp.estado : 'todos';
   const mes = /^\d{4}-\d{2}$/.test(sp.mes ?? '') ? sp.mes! : sp.mes === 'todos' ? 'todos' : mesPorDefecto;
-  return { mes, origen, estado };
+  const ejercicio = mes === 'todos' && inicioEjercicio && /^\d{4}$/.test(sp.ejercicio ?? '') ? { anio: Number(sp.ejercicio), inicio: inicioEjercicio } : undefined;
+  return { mes, origen, estado, ...(ejercicio ? { ejercicio } : {}) };
 }
 
 export function rangoDeMes(mes: string): { gte: Date; lt: Date } | undefined {
@@ -26,8 +36,17 @@ export function rangoDeMes(mes: string): { gte: Date; lt: Date } | undefined {
   return { gte: new Date(Date.UTC(anio, m - 1, 1)), lt: new Date(Date.UTC(anio, m, 1)) };
 }
 
+/** Los 12 meses del ejercicio que empieza en {anio, inicio}. */
+export function rangoDeEjercicio(anio: number, inicio: number): { gte: Date; lt: Date } {
+  return { gte: new Date(Date.UTC(anio, inicio - 1, 1)), lt: new Date(Date.UTC(anio + 1, inicio - 1, 1)) };
+}
+
+export function rangoDeFiltros(f: FiltrosArca): { gte: Date; lt: Date } | undefined {
+  return f.ejercicio ? rangoDeEjercicio(f.ejercicio.anio, f.ejercicio.inicio) : rangoDeMes(f.mes);
+}
+
 export function whereArca(f: FiltrosArca) {
-  const rango = rangoDeMes(f.mes);
+  const rango = rangoDeFiltros(f);
   return {
     ...(f.origen ? { origen: f.origen } : {}),
     ...(f.estado === 'faltantes' ? SIN_RESOLVER : f.estado === 'cruzados' ? { movimientoId: { not: null } } : f.estado === 'ignorados' ? IGNORADOS : {}),
