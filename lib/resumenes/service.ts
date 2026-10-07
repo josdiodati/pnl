@@ -156,16 +156,26 @@ export async function desvincularLinea(ctx: EmpresaContext, params: { lineaId: s
   });
 }
 
+/**
+ * Pesos de una línea sin pesificar (consumo en moneda extranjera): el importe
+ * original por el tipo de cambio que ingresa el validador, al centavo.
+ */
+export function pesificar(montoOrigen: unknown, tipoCambio: number | null | undefined): number | null {
+  if (montoOrigen == null || tipoCambio == null || !Number.isFinite(tipoCambio) || tipoCambio <= 0) return null;
+  const pesos = Math.round(Math.abs(Number(montoOrigen)) * tipoCambio * 100) / 100;
+  return pesos > 0 ? pesos : null;
+}
+
 export async function imputarLinea(
   ctx: EmpresaContext,
-  params: { lineaId: string; categoriaId: string; lineas: LineaDistribucion[]; contraparteId?: string | null; montoArs?: number | null },
+  params: { lineaId: string; categoriaId: string; lineas: LineaDistribucion[]; contraparteId?: string | null; tipoCambio?: number | null },
 ): Promise<void> {
   const linea = await lineaOrThrow(ctx, params.lineaId);
   assertTitularVerificado(linea.resumen);
   if (linea.estado !== 'PENDIENTE' && linea.estado !== 'SUGERIDA') throw new DomainError('La línea ya está resuelta: deshacela primero.');
 
-  const montoBase = linea.monto != null ? Math.abs(Number(linea.monto)) : params.montoArs != null && params.montoArs > 0 ? params.montoArs : null;
-  if (montoBase == null) throw new DomainError('La línea no tiene importe en pesos: ingresá el monto final en pesos para imputarla.');
+  const montoBase = linea.monto != null ? Math.abs(Number(linea.monto)) : pesificar(linea.montoOrigen, params.tipoCambio);
+  if (montoBase == null) throw new DomainError(`La línea no tiene importe en pesos: ingresá el tipo de cambio (pesos por ${linea.moneda}) para imputarla.`);
 
   const categoria = await ctx.db.categoria.findFirst({ where: { id: params.categoriaId, activa: true } });
   if (!categoria) throw new DomainError('Elegí una categoría válida.');
@@ -217,7 +227,14 @@ export async function imputarLinea(
     entidad: 'Resumen',
     entidadId: linea.resumenId,
     accion: 'RESUMEN_IMPUTAR',
-    despues: { lineaId: linea.id, descriptor: linea.descriptor, movimientoId: mov.id, total: montoBase, categoria: categoria.nombre },
+    despues: {
+      lineaId: linea.id,
+      descriptor: linea.descriptor,
+      movimientoId: mov.id,
+      total: montoBase,
+      categoria: categoria.nombre,
+      ...(linea.monto == null ? { montoOrigen: Number(linea.montoOrigen), moneda: linea.moneda, tipoCambio: params.tipoCambio } : {}),
+    },
   });
   // Espejo en el historial del movimiento: nace acá y sin este evento su
   // historial quedaría vacío (el evento de arriba cuelga del Resumen).
@@ -265,7 +282,7 @@ export async function rechazarCandidato(ctx: EmpresaContext, params: { lineaId: 
 
 export async function ignorarLinea(
   ctx: EmpresaContext,
-  params: { lineaId: string; motivo: string; centroCostoId?: string | null; categoriaId?: string | null; montoArs?: number | null },
+  params: { lineaId: string; motivo: string; centroCostoId?: string | null; categoriaId?: string | null; tipoCambio?: number | null },
 ): Promise<void> {
   const motivo = params.motivo.trim();
   // Seguros, comisiones, consumos sin comprobante: son gasto real, no se
@@ -276,7 +293,7 @@ export async function ignorarLinea(
       motivo,
       centroCostoId: params.centroCostoId,
       categoriaId: params.categoriaId,
-      montoArs: params.montoArs,
+      tipoCambio: params.tipoCambio,
     });
     return;
   }
@@ -298,23 +315,23 @@ export async function ignorarLinea(
  * Cargo sin comprobante (chips Seguros / Comisiones / Consumo sin comprobante):
  * imputa la línea 100% al centro de costo elegido, con la categoría del motivo
  * (CATEGORIA_DE_CARGO, se crea si la empresa no la tiene) o la que se elija.
- * Una línea sin pesificar (consumo en USD) necesita `montoArs`, como Imputar.
+ * Una línea sin pesificar (consumo en USD) necesita el tipo de cambio, como Imputar.
  */
 export async function imputarCargo(
   ctx: EmpresaContext,
-  params: { lineaId: string; motivo: MotivoCargo; centroCostoId?: string | null; categoriaId?: string | null; montoArs?: number | null },
+  params: { lineaId: string; motivo: MotivoCargo; centroCostoId?: string | null; categoriaId?: string | null; tipoCambio?: number | null },
 ): Promise<void> {
   if (!params.centroCostoId) throw new DomainError(`«${params.motivo}» crea un movimiento: elegí el centro de costo.`);
   const linea = await lineaOrThrow(ctx, params.lineaId);
-  if (linea.monto == null && !(params.montoArs != null && params.montoArs > 0)) {
-    throw new DomainError('La línea no tiene importe en pesos (consumo en moneda extranjera): ingresá el monto final en pesos.');
+  if (linea.monto == null && pesificar(linea.montoOrigen, params.tipoCambio) == null) {
+    throw new DomainError(`La línea no tiene importe en pesos (consumo en ${linea.moneda}): ingresá el tipo de cambio.`);
   }
   const categoriaId = params.categoriaId || (await categoriaDeCargo(ctx, params.motivo));
   await imputarLinea(ctx, {
     lineaId: params.lineaId,
     categoriaId,
     lineas: [{ centroCostoId: params.centroCostoId, porcentaje: 100 }],
-    montoArs: params.montoArs,
+    tipoCambio: params.tipoCambio,
   });
 }
 

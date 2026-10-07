@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
 import { scopedDb } from '@/lib/empresa/scope';
-import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea, rechazarCandidato } from '@/lib/resumenes/service';
+import { conciliarLinea, imputarLinea, ignorarLinea, deshacerLinea, rechazarCandidato, pesificar } from '@/lib/resumenes/service';
 import { rematchearResumen } from '@/lib/resumenes/ingesta';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
 import { DomainError } from '@/lib/errors';
@@ -81,12 +81,19 @@ describe('conciliación de líneas de resumen (integración)', () => {
     expect(movimiento.moneda).toBe('ARS');
   });
 
-  it('imputar una línea USD sin pesos exige montoArs', async () => {
+  it('imputar una línea USD sin pesos exige el tipo de cambio y pesifica el importe original', async () => {
     const l = await linea({ monto: null, moneda: 'USD', montoOrigen: -50 });
-    await expect(imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] })).rejects.toThrow(/pesos/);
-    await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }], montoArs: 76000 });
+    await expect(imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }] })).rejects.toThrow(/tipo de cambio/);
+    await imputarLinea(ctx, { lineaId: l.id, categoriaId, lineas: [{ centroCostoId: centroId, porcentaje: 100 }], tipoCambio: 1520 });
     const actual = await prisma.resumenLinea.findUnique({ where: { id: l.id }, include: { vinculos: { include: { movimiento: true } } } });
     expect(Number(actual!.vinculos[0].movimiento.total)).toBe(76000);
+  });
+
+  it('pesificar redondea al centavo y descarta tipos de cambio inválidos', () => {
+    expect(pesificar(-2.94, 1480.5)).toBe(4352.67);
+    expect(pesificar(-2.94, 0)).toBeNull();
+    expect(pesificar(-2.94, null)).toBeNull();
+    expect(pesificar(null, 1480)).toBeNull();
   });
 
   it('ignorar y deshacer', async () => {
@@ -154,14 +161,14 @@ describe('conciliación de líneas de resumen (integración)', () => {
     expect(movConsumo!.movimiento.categoriaId).toBe(categoriaId);
   });
 
-  it('un cargo sin importe en pesos exige el monto en pesos y lo imputa por ese total', async () => {
+  it('un cargo sin importe en pesos exige el tipo de cambio e imputa el importe pesificado', async () => {
     const l = await linea({ monto: null, moneda: 'USD', montoOrigen: -26.25 });
-    await expect(ignorarLinea(ctx, { lineaId: l.id, motivo: 'Consumo sin comprobante', centroCostoId: centroId })).rejects.toThrow(/pesos/);
+    await expect(ignorarLinea(ctx, { lineaId: l.id, motivo: 'Consumo sin comprobante', centroCostoId: centroId })).rejects.toThrow(/tipo de cambio/);
     expect((await prisma.resumenLinea.findUnique({ where: { id: l.id } }))!.estado).toBe('PENDIENTE');
 
-    await ignorarLinea(ctx, { lineaId: l.id, motivo: 'Consumo sin comprobante', centroCostoId: centroId, montoArs: 38_850.5 });
+    await ignorarLinea(ctx, { lineaId: l.id, motivo: 'Consumo sin comprobante', centroCostoId: centroId, tipoCambio: 1480 });
     const vinculo = await prisma.resumenLineaVinculo.findFirstOrThrow({ where: { lineaId: l.id }, include: { movimiento: { include: { categoria: true } } } });
-    expect(Number(vinculo.movimiento.total)).toBeCloseTo(38_850.5, 2);
+    expect(Number(vinculo.movimiento.total)).toBeCloseTo(38_850, 2); // 26,25 × 1480
     expect(vinculo.movimiento.categoria!.nombre).toBe('Consumos sin comprobante');
   });
 

@@ -144,7 +144,7 @@ export async function imputarAction(formData: FormData): Promise<void> {
       categoriaId,
       lineas,
       contraparteId: String(formData.get('contraparteId') ?? '') || null,
-      montoArs: numeroOpcional(formData, 'montoArs') ?? null,
+      tipoCambio: numeroOpcional(formData, 'tipoCambio') ?? null,
     });
     if (formData.get('crearRegla')) {
       // La regla guarda un centro único (línea 100%): con distribución múltiple no se crea.
@@ -179,9 +179,9 @@ export async function ignorarAction(formData: FormData): Promise<void> {
     const motivo = String(formData.get('motivoRapido') ?? '') || String(formData.get('motivo') ?? '');
     const centroCostoId = String(formData.get('centroCostoId') ?? '') || null;
     const categoriaId = String(formData.get('categoriaId') ?? '') || null;
-    const montoArs = numeroOpcional(formData, 'montoArs') ?? null;
+    const tipoCambio = numeroOpcional(formData, 'tipoCambio') ?? null;
     const cargo = esMotivoCargo(motivo);
-    await ignorarLinea(ctx, { lineaId, motivo, centroCostoId, categoriaId, montoArs });
+    await ignorarLinea(ctx, { lineaId, motivo, centroCostoId, categoriaId, tipoCambio });
     if (cargo) mensaje = `«${motivo.trim()}»: movimiento creado`;
     if (formData.get('crearRegla')) {
       const r = await crearReglaDesdeLinea(ctx.db, { lineaId, accion: 'IGNORAR', motivo: motivo.trim(), centroCostoId: cargo ? centroCostoId : null });

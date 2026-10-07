@@ -8,7 +8,7 @@ import { formatMoney, formatFecha, fechaInputValue } from '@/lib/format';
 import { nombreContraparte } from '@/lib/movimientos/nombre-contraparte';
 import { DocViewer } from '@/components/doc-viewer';
 import { DistribucionEditor } from '@/components/distribucion-editor';
-import { MontoArsHint } from '@/components/monto-ars-hint';
+import { TipoCambioInput } from '@/components/tipo-cambio-input';
 import { ErrorBanner, OkBanner } from '@/components/error-banner';
 import { HistorialComprobante } from '@/components/historial-comprobante';
 import { BuscadorMovimiento } from '@/components/buscador-movimiento';
@@ -435,7 +435,7 @@ export default async function ResumenDetallePage({
                   </select>
                 </div>
                 {linea.monto == null && (
-                  <MontoArsHint
+                  <TipoCambioInput
                     montoOrigen={linea.montoOrigen != null ? Number(linea.montoOrigen) : null}
                     moneda={linea.moneda}
                   />
@@ -473,7 +473,7 @@ export default async function ResumenDetallePage({
                   </div>
                   {linea.monto == null && (
                     <div className="w-56">
-                      <MontoArsHint
+                      <TipoCambioInput
                         montoOrigen={linea.montoOrigen != null ? Number(linea.montoOrigen) : null}
                         moneda={linea.moneda}
                       />
@@ -850,14 +850,12 @@ export default async function ResumenDetallePage({
                             <option key={c.id} value={c.id}>{c.nombre}</option>
                           ))}
                         </select>
-                        {/* Consumo en moneda extranjera sin pesificar: el cargo necesita el monto en pesos. */}
+                        {/* Consumo en moneda extranjera sin pesificar: el cargo necesita el tipo de cambio. */}
                         {l.monto == null && (
-                          <input
-                            name="montoArs"
-                            className="input text-xs w-full text-right tabular-nums"
-                            inputMode="decimal"
-                            placeholder={`Monto en $ (${l.moneda}${l.montoOrigen != null ? ` ${Math.abs(Number(l.montoOrigen)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : ''})`}
-                            required
+                          <TipoCambioInput
+                            montoOrigen={l.montoOrigen != null ? Number(l.montoOrigen) : null}
+                            moneda={l.moneda}
+                            compacto
                           />
                         )}
                       </div>
