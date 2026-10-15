@@ -263,7 +263,7 @@ model PlantillaDistribucionLinea {
   centroCostoId String
   clienteId     String?
   proyectoId    String?
-  porcentaje    Decimal               @db.Decimal(7, 4) // lines must sum 100
+  porcentaje    Decimal               @db.Decimal(13, 10) // lines must sum 100
   plantilla     PlantillaDistribucion @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
   centroCosto   CentroCosto           @relation(fields: [centroCostoId], references: [id])
   cliente       Cliente?              @relation(fields: [clienteId], references: [id])
@@ -471,7 +471,7 @@ model MovimientoLinea {
   centroCostoId String
   clienteId     String? // second dimension, optional
   proyectoId    String? // third dimension, optional
-  porcentaje    Decimal     @db.Decimal(7, 4) // sum per movement = 100.0000
+  porcentaje    Decimal     @db.Decimal(13, 10) // sum per movement = 100.0000
   origen        OrigenLinea @default(MANUAL)
   movimiento    Movimiento  @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
   centroCosto   CentroCosto @relation(fields: [centroCostoId], references: [id])
@@ -763,7 +763,7 @@ model EmpleadoDistribucionLinea {
   centroCostoId String
   clienteId     String?
   proyectoId    String?
-  porcentaje    Decimal     @db.Decimal(7, 4) // suman 100
+  porcentaje    Decimal     @db.Decimal(13, 10) // suman 100
   empleado      Empleado    @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
   centroCosto   CentroCosto @relation("empleadoLineas", fields: [centroCostoId], references: [id])
   cliente       Cliente?    @relation("empleadoLineas", fields: [clienteId], references: [id])
@@ -826,7 +826,7 @@ model ReciboDistribucionLinea {
   centroCostoId String
   clienteId     String?
   proyectoId    String?
-  porcentaje    Decimal      @db.Decimal(7, 4)
+  porcentaje    Decimal      @db.Decimal(13, 10)
   recibo        ReciboSueldo @relation(fields: [reciboId], references: [id], onDelete: Cascade)
   centroCosto   CentroCosto  @relation("reciboLineas", fields: [centroCostoId], references: [id])
   cliente       Cliente?     @relation("reciboLineas", fields: [clienteId], references: [id])

@@ -62,6 +62,9 @@ export default async function AsignacionDetallePage({
 
   const tfCents = totalFirmadoDe(mov as never);
   const totalFirmado = tfCents != null ? tfCents / 100 : null;
+  // Neto (sin IVA ni percepciones): base del reparto por monto.
+  const netoMov = netoDe(mov);
+  const neto = netoMov ? { importe: Math.abs(netoMov), moneda: mov.moneda } : null;
 
   // Si el movimiento llega sin líneas, una regla de preasignación puede pre-llenar
   // la asignación (categoría + líneas). Es sólo un default editable.
@@ -221,6 +224,7 @@ export default async function AsignacionDetallePage({
               }))}
               inicial={inicial}
               totalFirmado={totalFirmado}
+              neto={neto}
             />
 
             <ReglaDesdeAsignacion

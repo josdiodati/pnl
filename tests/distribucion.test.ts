@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { validarDistribucion, importesPorLinea, repartirEnPartesIguales } from '@/lib/movimientos/distribucion';
+import {
+  validarDistribucion,
+  importesPorLinea,
+  repartirEnPartesIguales,
+  porcentajesDesdeMontos,
+  montosDesdePorcentajes,
+  esRepartoPorMonto,
+  redondearPorcentajes,
+} from '@/lib/movimientos/distribucion';
 import { signoMovimiento, totalFirmadoCentavos } from '@/lib/movimientos/signo';
 import { DomainError } from '@/lib/errors';
 
@@ -95,6 +103,55 @@ describe('importes por línea: la última absorbe el redondeo', () => {
       const partes = repartirEnPartesIguales(n);
       expect(partes.reduce((a, b) => a + Math.round(b * 10000), 0)).toBe(1000000);
     }
+  });
+});
+
+describe('reparto por monto neto (el % se deriva con 10 decimales)', () => {
+  // Swiss Medical FC A 01020-01135777: neto 5.505.459,88 = 4.310.901,45 (staff) + 1.194.558,43 (GG).
+  const neto = 550545988;
+  const montos = [431090145, 119455843];
+  const comoLineas = (pcts: number[]) => pcts.map((p, i) => ({ centroCostoId: `c${i}`, porcentaje: p }));
+
+  it('los % derivados suman exactamente 100', () => {
+    expect(() => validarDistribucion(comoLineas(porcentajesDesdeMontos(montos, neto)))).not.toThrow();
+  });
+
+  it('aplicados al neto devuelven los montos al centavo (con y sin signo)', () => {
+    const lineas = comoLineas(porcentajesDesdeMontos(montos, neto));
+    expect(importesPorLinea(neto, lineas)).toEqual(montos);
+    expect(importesPorLinea(-neto, lineas)).toEqual(montos.map((m) => -m));
+  });
+
+  it('tres montos arbitrarios de un neto grande cierran al centavo', () => {
+    const ms = [987654321, 1234567, 11111111111];
+    const total = ms.reduce((a, b) => a + b, 0);
+    expect(importesPorLinea(total, comoLineas(porcentajesDesdeMontos(ms, total)))).toEqual(ms);
+  });
+
+  it('si los montos no suman el neto, los % no suman 100 (y la validación lo rechaza)', () => {
+    expect(() => validarDistribucion(comoLineas(porcentajesDesdeMontos([100000, 100000], 300000)))).toThrow(DomainError);
+  });
+
+  it('montosDesdePorcentajes es la inversa (la última absorbe el redondeo)', () => {
+    expect(montosDesdePorcentajes([60, 40], 121000)).toEqual([72600, 48400]);
+    expect(montosDesdePorcentajes([33.3333, 33.3333, 33.3334], 10000)).toEqual([3333, 3333, 3334]);
+  });
+
+  it('esRepartoPorMonto: más de 4 decimales delata un reparto cargado por monto', () => {
+    expect(esRepartoPorMonto([60, 40])).toBe(false);
+    expect(esRepartoPorMonto([33.3333, 33.3334, 33.3333])).toBe(false);
+    expect(esRepartoPorMonto(porcentajesDesdeMontos(montos, neto))).toBe(true);
+  });
+});
+
+describe('redondear % para una regla (4 decimales, la última absorbe)', () => {
+  it('mantiene la suma en 100 con 4 decimales', () => {
+    const r = redondearPorcentajes(porcentajesDesdeMontos([431090145, 119455843], 550545988), 4);
+    expect(r).toEqual([78.3023, 21.6977]);
+  });
+
+  it('deja intactos los % que ya tienen 4 decimales', () => {
+    expect(redondearPorcentajes([33.3333, 33.3333, 33.3334], 4)).toEqual([33.3333, 33.3333, 33.3334]);
   });
 });
 

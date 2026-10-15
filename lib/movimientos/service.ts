@@ -6,7 +6,7 @@ import { assertSinCobros } from '@/lib/cobranzas/service';
 import { DomainError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import { assertTransicion, esEstadoInicialValido, ESTADOS_BLOQUEAN_CIERRE } from './estados';
-import { validarDistribucion, type LineaDistribucion } from './distribucion';
+import { validarDistribucion, sumaCien, type LineaDistribucion } from './distribucion';
 import { getOrCreatePeriodo, periodoDeFecha, nombrePeriodo } from '@/lib/periodos';
 import { checkAritmetica } from '@/lib/checks';
 import { rolAlcanza } from '@/lib/roles';
@@ -21,8 +21,7 @@ export function puedeAsignar(estado: string): boolean {
 /** ¿El movimiento ya tiene imputación completa (categoría + líneas que suman 100)? */
 export function tieneAsignacionCompleta(categoriaId: string | null | undefined, lineas: LineaDistribucion[]): boolean {
   if (!categoriaId || !lineas.length) return false;
-  const suma = lineas.reduce((a, l) => a + Math.round(l.porcentaje * 10000), 0);
-  return suma === 1000000 && lineas.every((l) => l.centroCostoId);
+  return sumaCien(lineas.map((l) => l.porcentaje)) && lineas.every((l) => l.centroCostoId);
 }
 
 // Service layer: every relevant mutation passes through here so state

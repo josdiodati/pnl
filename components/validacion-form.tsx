@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { validarAction } from '@/app/(app)/[empresaSlug]/validacion/actions';
 import { mensajeAritmetica, parseImporte } from '@/lib/checks/aritmetica';
 import { IMPORTES, desglosarIvaIncluido } from '@/lib/movimientos/importes';
+import { netoDe } from '@/lib/movimientos/neto';
 import { DistribucionEditor, type OpcionId, type OpcionCliente, type OpcionProyecto, type PlantillaOpcion } from './distribucion-editor';
 import { ReglaDesdeAsignacion, type ReglaExistente } from './regla-desde-asignacion';
 import type { OcrParaRegla } from '@/lib/reglas/ocr-para-regla';
@@ -136,6 +137,12 @@ export function ValidacionForm({
     if (tipoComprobante.startsWith('NOTA_CREDITO')) signo *= -1;
     return signo * t;
   }, [total, categoriaSel, tipoComprobante]);
+
+  // Neto en vivo (total menos IVA y percepciones): base del reparto por monto.
+  const neto = useMemo(() => {
+    const n = netoDe({ ...Object.fromEntries(IMPORTES.map(({ campo }) => [campo, parseImporte(componentes[campo] ?? '')])), total: parseImporte(total) });
+    return n ? { importe: Math.abs(n), moneda } : null;
+  }, [componentes, total, moneda]);
 
   const r = mov.camposRevisar;
 
@@ -410,6 +417,7 @@ export function ValidacionForm({
           plantillas={plantillas}
           inicial={mov.lineas.length ? mov.lineas : undefined}
           totalFirmado={totalFirmado}
+          neto={neto}
         />
         {/* Sólo tiene sentido si se está imputando: sin categoría queda VALIDADO
             y no hay asignación que convertir en regla. */}

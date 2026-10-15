@@ -119,7 +119,7 @@ function resumenLineas(lineas: unknown, refs: Referencias): string | null {
     const centro = nombreDe(refs.centros, o.centroCostoId);
     const cliente = o.clienteId ? ` / ${nombreDe(refs.clientes, o.clienteId)}` : '';
     const proyecto = o.proyectoId ? ` / ${nombreDe(refs.proyectos, o.proyectoId)}` : '';
-    return `${Number(o.porcentaje)}% ${centro}${cliente}${proyecto}`;
+    return `${Number(o.porcentaje).toLocaleString('es-AR', { maximumFractionDigits: 4 })}% ${centro}${cliente}${proyecto}`;
   });
   return `Distribución: ${partes.join(' + ')}`;
 }

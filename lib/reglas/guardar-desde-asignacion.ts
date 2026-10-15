@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import type { EmpresaContext } from '@/lib/empresa/require-empresa';
-import type { LineaDistribucion } from '@/lib/movimientos/distribucion';
+import { redondearPorcentajes, type LineaDistribucion } from '@/lib/movimientos/distribucion';
 import { normalizarCuit } from '@/lib/checks';
 import { writeAudit } from '@/lib/audit';
 import { construirReglaDesdeAsignacion, reglasDelCuit, reglaEquivalente, prioridadParaEspecifica, canalRegla } from './desde-asignacion';
@@ -67,6 +67,11 @@ export async function guardarReglaDesdeAsignacion(
     if (p.empleadoId && !empleado) return falla('No se creó la regla: el empleado elegido no existe.');
     const avisoEmpleado = empleado ? `; vincula al empleado ${empleado.nombre}` : '';
 
+    // Una regla aplica porcentajes a comprobantes futuros cuyos montos varían:
+    // un reparto cargado por monto queda como sus % equivalentes, redondeados.
+    const pcts = redondearPorcentajes(p.lineas.map((l) => l.porcentaje), 4);
+    const lineasRegla = p.lineas.map((l, i) => ({ ...l, porcentaje: pcts[i] }));
+
     const decision = construirReglaDesdeAsignacion({
       cuit: p.cuit,
       razonSocial: p.razonSocial,
@@ -77,7 +82,7 @@ export async function guardarReglaDesdeAsignacion(
       cargadoPorId: miembro?.usuarioId ?? null,
       nombreUsuario: miembro ? miembro.usuario.nombre || miembro.usuario.email : null,
       nombrePropuesto: p.nombre,
-      lineas: p.lineas,
+      lineas: lineasRegla,
       plantillas: plantillas.map((pl) => ({
         id: pl.id,
         lineas: pl.lineas.map((l) => ({

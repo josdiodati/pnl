@@ -1,12 +1,22 @@
 'use client';
 
 import { useState } from 'react';
+import {
+  esRepartoPorMonto,
+  montosDesdePorcentajes,
+  porcentajesDesdeMontos,
+  redondearPorcentajes,
+  sumaCien,
+} from '@/lib/movimientos/distribucion';
 
 // Reusable editor for percentage splits (doc 06): N rows of
 // cost center (required) + client/project (optional) + percentage.
 // Shows the live amount per row and how much is missing to reach 100%.
 // Inputs are named linea_centroCostoId / linea_clienteId /
 // linea_porcentaje so plain server actions can read them as parallel arrays.
+// With `neto`, the split can also be loaded by amount ("Monto neto"): the
+// user types each line's neto and the hidden percentage is derived with 10
+// decimals, so the amounts come back to the cent on the comprobante's neto.
 
 export type OpcionId = { id: string; nombre: string };
 // Árbol de asignación: cliente clasificado bajo un centro, proyecto bajo un
@@ -22,6 +32,21 @@ export type PlantillaOpcion = {
 
 const moneyFmt = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+type Modo = 'porcentaje' | 'monto';
+
+/** Importe tipeado: acepta "1.234.567,89", "1234567,89" o "1234567.89". */
+function parseMonto(valor: string): number | null {
+  let t = valor.trim().replace(/\$|\s/g, '');
+  if (!t) return null;
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if ((t.match(/\./g) ?? []).length > 1) t = t.replace(/\./g, '');
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+const aCentavos = (pesos: number) => Math.round(pesos * 100);
+const pctNum = (p: string) => Number(p.replace(',', '.')) || 0;
+
 export function DistribucionEditor({
   centros,
   clientes,
@@ -29,6 +54,7 @@ export function DistribucionEditor({
   plantillas = [],
   inicial,
   totalFirmado,
+  neto,
 }: {
   centros: OpcionId[];
   clientes: OpcionCliente[];
@@ -37,6 +63,8 @@ export function DistribucionEditor({
   inicial?: LineaEditor[];
   /** Signed total in pesos; when present, each row shows its derived amount live. */
   totalFirmado?: number | null;
+  /** Neto del comprobante (sin signo, en su moneda): habilita repartir por monto. */
+  neto?: { importe: number; moneda: string } | null;
 }) {
   const filaVacia = (): LineaEditor => ({
     centroCostoId: centros[0]?.id ?? '',
@@ -47,10 +75,46 @@ export function DistribucionEditor({
   const [lineas, setLineas] = useState<LineaEditor[]>(
     inicial && inicial.length ? inicial : [filaVacia()],
   );
+  const netoCentavos = neto && neto.importe > 0 ? aCentavos(neto.importe) : null;
+  const montoHabilitado = netoCentavos != null;
+  // Un reparto guardado por monto (más de 4 decimales) se reabre por monto.
+  const [modo, setModo] = useState<Modo>(() =>
+    montoHabilitado && inicial?.length && esRepartoPorMonto(inicial.map((l) => pctNum(l.porcentaje))) ? 'monto' : 'porcentaje',
+  );
+  const formatearMontos = (pcts: number[]) =>
+    montosDesdePorcentajes(pcts, netoCentavos ?? 0).map((c) => moneyFmt.format(c / 100));
+  const [montos, setMontos] = useState<string[]>(() =>
+    modo === 'monto' ? formatearMontos(lineas.map((l) => pctNum(l.porcentaje))) : [],
+  );
+  const porMonto = modo === 'monto' && montoHabilitado;
 
-  const suma = lineas.reduce((acc, l) => acc + (Number(l.porcentaje.replace(',', '.')) || 0), 0);
+  // Por monto, el % de cada línea se deriva de los montos sobre el neto.
+  const montosCentavos = lineas.map((_, i) => {
+    const m = parseMonto(montos[i] ?? '');
+    return m == null ? 0 : aCentavos(m);
+  });
+  const pctsDerivados = porMonto ? porcentajesDesdeMontos(montosCentavos, netoCentavos!) : [];
+  const sumaMontos = montosCentavos.reduce((a, b) => a + b, 0);
+
+  const suma = lineas.reduce((acc, l) => acc + pctNum(l.porcentaje), 0);
   const sumaRedondeada = Math.round(suma * 10000) / 10000;
-  const completo = sumaRedondeada === 100;
+  const completo = porMonto ? sumaMontos === netoCentavos && sumaCien(pctsDerivados) : sumaRedondeada === 100;
+
+  function cambiarModo(nuevo: Modo) {
+    if (nuevo === modo) return;
+    if (nuevo === 'monto') {
+      setMontos(formatearMontos(lineas.map((l) => pctNum(l.porcentaje))));
+    } else {
+      // Vuelta a %: los derivados, legibles (4 decimales) si cierran 100.
+      const pcts = sumaCien(pctsDerivados) ? redondearPorcentajes(pctsDerivados, 4) : pctsDerivados;
+      setLineas((prev) => prev.map((l, i) => ({ ...l, porcentaje: String(pcts[i] ?? '') })));
+    }
+    setModo(nuevo);
+  }
+
+  function actualizarMonto(i: number, valor: string) {
+    setMontos((prev) => lineas.map((_, j) => (j === i ? valor : prev[j] ?? '')));
+  }
 
   // Opciones válidas por fila según el árbol (los sin clasificar valen siempre).
   const clientesDe = (centroCostoId: string) =>
@@ -80,13 +144,26 @@ export function DistribucionEditor({
 
   function dividir() {
     setLineas((prev) => [...prev, { ...filaVacia(), porcentaje: '' }]);
+    // Por monto, la línea nueva propone lo que falta para llegar al neto.
+    if (porMonto) {
+      const falta = netoCentavos! - sumaMontos;
+      setMontos((prev) => [...lineas.map((_, j) => prev[j] ?? ''), falta > 0 ? moneyFmt.format(falta / 100) : '']);
+    }
   }
 
   function quitar(i: number) {
-    setLineas((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : prev));
+    if (lineas.length <= 1) return;
+    setLineas((prev) => prev.filter((_, j) => j !== i));
+    setMontos((prev) => prev.filter((_, j) => j !== i));
   }
 
   function partesIguales() {
+    if (porMonto) {
+      const n = lineas.length;
+      const base = Math.floor(1000000 / n);
+      setMontos(formatearMontos(lineas.map((_, i) => (base + (i === n - 1 ? 1000000 - base * n : 0)) / 10000)));
+      return;
+    }
     setLineas((prev) => {
       const n = prev.length;
       const base = Math.floor(1000000 / n);
@@ -108,11 +185,18 @@ export function DistribucionEditor({
         porcentaje: String(l.porcentaje),
       })),
     );
+    if (porMonto) setMontos(formatearMontos(p.lineas.map((l) => l.porcentaje)));
   }
 
+  const simbolo = neto && neto.moneda !== 'ARS' ? neto.moneda : '$';
+  const faltaMonto = porMonto ? netoCentavos! - sumaMontos : 0;
+
+  // Importe en vivo de cada fila: sobre el neto si se conoce (es la base que
+  // reparte el P&L), si no sobre el total firmado.
   function importeFila(l: LineaEditor): string {
+    const pct = pctNum(l.porcentaje);
+    if (netoCentavos != null) return `neto ${simbolo} ${moneyFmt.format(Math.round(netoCentavos * pct) / 10000)}`;
     if (totalFirmado == null) return '';
-    const pct = Number(l.porcentaje.replace(',', '.')) || 0;
     return `$ ${moneyFmt.format(Math.round(totalFirmado * pct) / 100)}`;
   }
 
@@ -138,7 +222,28 @@ export function DistribucionEditor({
         <button type="button" onClick={partesIguales} className="text-xs underline text-slate-500">
           repartir en partes iguales
         </button>
+        {montoHabilitado && (
+          <span className="ml-auto inline-flex items-center gap-1 text-xs">
+            <span className="text-slate-500">Repartir por</span>
+            {(['porcentaje', 'monto'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => cambiarModo(m)}
+                className={`rounded px-2 py-0.5 border ${modo === m ? 'border-slate-700 bg-slate-700 text-white' : 'border-slate-300 text-slate-600'}`}
+              >
+                {m === 'porcentaje' ? '%' : 'Monto neto'}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
+      {porMonto && (
+        <p className="text-[11px] text-slate-500">
+          Cargá el neto (sin IVA ni percepciones) de cada línea; el % se calcula solo. Neto del comprobante:{' '}
+          <strong className="tabular-nums">{simbolo} {moneyFmt.format(netoCentavos! / 100)}</strong>.
+        </p>
+      )}
 
       {lineas.map((l, i) => (
         <div key={i} className="flex flex-wrap items-center gap-2">
@@ -176,20 +281,40 @@ export function DistribucionEditor({
               <option key={p.id} value={p.id}>{p.nombre}</option>
             ))}
           </select>
-          <div className="flex items-center gap-1">
-            <input
-              name="linea_porcentaje"
-              value={l.porcentaje}
-              onChange={(e) => actualizar(i, 'porcentaje', e.target.value)}
-              className="input !w-24 text-right tabular-nums"
-              inputMode="decimal"
-              placeholder="%"
-              required
-            />
-            <span className="text-xs text-slate-500">%</span>
-          </div>
-          {totalFirmado != null && (
-            <span className="text-xs tabular-nums text-slate-500 w-28 text-right">{importeFila(l)}</span>
+          {porMonto ? (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-slate-500">{simbolo}</span>
+              <input
+                value={montos[i] ?? ''}
+                onChange={(e) => actualizarMonto(i, e.target.value)}
+                className="input !w-36 text-right tabular-nums"
+                inputMode="decimal"
+                placeholder="Monto neto"
+                required
+              />
+              <input type="hidden" name="linea_porcentaje" value={String(pctsDerivados[i] ?? 0)} />
+              <span className="text-xs tabular-nums text-slate-500 w-20 text-right">
+                {(pctsDerivados[i] ?? 0).toLocaleString('es-AR', { maximumFractionDigits: 4 })}%
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-1">
+                <input
+                  name="linea_porcentaje"
+                  value={l.porcentaje}
+                  onChange={(e) => actualizar(i, 'porcentaje', e.target.value)}
+                  className="input !w-24 text-right tabular-nums"
+                  inputMode="decimal"
+                  placeholder="%"
+                  required
+                />
+                <span className="text-xs text-slate-500">%</span>
+              </div>
+              {(totalFirmado != null || netoCentavos != null) && (
+                <span className="text-xs tabular-nums text-slate-500 w-36 text-right">{importeFila(l)}</span>
+              )}
+            </>
           )}
           {lineas.length > 1 && (
             <button type="button" onClick={() => quitar(i)} className="text-xs text-red-500 underline">
@@ -202,7 +327,11 @@ export function DistribucionEditor({
       <div className="flex items-center gap-3">
         <button type="button" onClick={dividir} className="btn-secondary text-xs">+ Dividir</button>
         <span className={`text-xs font-medium tabular-nums ${completo ? 'text-emerald-600' : 'text-amber-600'}`}>
-          {completo
+          {porMonto
+            ? completo
+              ? `Suma el neto ${simbolo} ${moneyFmt.format(netoCentavos! / 100)} ✓`
+              : `Suma ${simbolo} ${moneyFmt.format(sumaMontos / 100)} — ${faltaMonto > 0 ? 'faltan' : 'sobran'} ${simbolo} ${moneyFmt.format(Math.abs(faltaMonto) / 100)}`
+            : completo
             ? 'Suma 100% ✓'
             : `Suma ${sumaRedondeada.toLocaleString('es-AR')}% — ${sumaRedondeada < 100 ? 'faltan' : 'sobran'} ${Math.abs(Math.round((100 - sumaRedondeada) * 10000) / 10000).toLocaleString('es-AR')}%`}
         </span>
